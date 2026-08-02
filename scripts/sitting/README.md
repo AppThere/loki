@@ -26,7 +26,7 @@ CX=36 CY=740 scripts/sitting/run.sh picker   # the colour picker's SV square
 scripts/sitting/run.sh anchor         # zoom holds the middle of the page still
 ZX=1176 ZY=788 scripts/sitting/run.sh typed  # the typed zoom field
 scripts/sitting/run.sh wheelzoom      # Ctrl+wheel zooms, plain wheel scrolls
-scripts/sitting/run.sh highlight      # named and custom highlight, both routes
+scripts/sitting/run.sh highlight      # highlight: typed, clicked and custom
 ```
 
 Shots land in `target/sitting/`. `SETTLE` (default 10s) is how long to wait
@@ -81,6 +81,23 @@ too, and it affects the existing scroll path identically — do not "correct" fo
 it in app code, which would halve the step everywhere else.
 
 ## What the sittings have found
+
+**r90 — the Phase 5 close audit, and a feature that was inert.** The mechanical
+"decisions with no consumer" count — the same check that stopped the Phase 4
+close — found `DisplayKey::from_output` called by nothing but its own test. So
+T5.5's per-display calibration was per-*machine*: every read and every write used
+`DisplayKey::unidentified`, and the module's own opening paragraph described the
+docked-laptop case it did not implement.
+
+The data was one field away. The X11 probe already read the output name and crtc
+geometry in the same reply and returned neither — and it only returned *anything*
+when the physical size was believable, which is backwards: a display whose
+`mm_width` is zero is exactly the one a reader calibrates by hand. Xvfb is such a
+display (`name="screen"`, 1280x900, `mm=0x0`), which is how that got measured
+rather than reasoned about.
+
+Verified both directions, because only the second is discriminating: the same
+display restores its calibration, and a 1600x1000 one restores nothing.
 
 **r89 — one, and it made a whole control dead.** The colour picker's custom
 saturation/value square looked entirely correct: drag a colour, the preview

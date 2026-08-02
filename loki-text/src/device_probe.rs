@@ -36,7 +36,7 @@ use appthere_ui::{
     GpuClass, note_device_scale_factor, note_display_density, note_gpu_class, use_memory_resampling,
 };
 use dioxus::prelude::*;
-use loki_app_shell::display_calibration::{DisplayCalibrations, DisplayKey};
+use loki_app_shell::display_calibration::DisplayCalibrations;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -127,12 +127,23 @@ pub fn DeviceProbeSensor() -> Element {
     // calibration is already in CSS pixels per inch.
     use_hook(|| {
         let store = DisplayCalibrations::load();
-        if let Some(d) = store.get(&DisplayKey::unidentified()) {
-            tracing::info!(
-                css_px_per_inch = d.css_px_per_inch,
-                "restored the reader's display calibration",
-            );
-            note_display_density(d.css_px_per_inch, true);
+        let key = current_display_key();
+        // The key is logged whether or not there is an entry: "no calibration
+        // for this display" and "the display was not identified" are different
+        // states with the same silence, and the second is the one that would
+        // make the per-display design inert without anyone noticing (it did,
+        // until the Phase 5 close audit — every read and write used
+        // `unidentified`).
+        match store.get(&key) {
+            Some(d) => {
+                tracing::info!(
+                    display = %key.0,
+                    css_px_per_inch = d.css_px_per_inch,
+                    "restored the reader's display calibration",
+                );
+                note_display_density(d.css_px_per_inch, true);
+            }
+            None => tracing::info!(display = %key.0, "no stored calibration for this display"),
         }
     });
 
@@ -167,6 +178,35 @@ fn probe_display_density(
     _device_scale_factor: f64,
 ) -> Option<loki_app_shell::display_density::DisplayDensity> {
     None
+}
+
+/// The display this session is on, for the calibration store (Spec 08 T5.5).
+///
+/// # One derivation, because two would calibrate different panels
+///
+/// The store is read here (to restore a measurement) and written by
+/// `editor_calibrate` (when the reader makes one). Both must name the **same**
+/// display or a calibration is saved under one key and looked up under another
+/// — which reads as the app forgetting, and on a two-monitor machine as it
+/// applying the wrong panel's density. So both go through this.
+///
+/// `DisplayKey::unidentified` is the answer where no platform query exists —
+/// deliberately a real key, so a reader on macOS or Windows still gets their one
+/// calibration remembered rather than being asked at every launch.
+///
+/// **Not gated on the density query succeeding.** A display whose physical size
+/// is unknown is exactly the one the reader calibrates, so tying identity to a
+/// successful size query would give `unidentified` for precisely the panels this
+/// exists for. Measured: Xvfb reports a usable name and geometry with `mm=0x0`.
+#[must_use]
+pub fn current_display_key() -> loki_app_shell::display_calibration::DisplayKey {
+    #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
+    {
+        if let Some(key) = loki_app_shell::display_probe_x11::probe_display_key() {
+            return key;
+        }
+    }
+    loki_app_shell::display_calibration::DisplayKey::unidentified()
 }
 
 /// How often to look for the paint path's observations, and for how long.

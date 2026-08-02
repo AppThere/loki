@@ -22,7 +22,7 @@ use appthere_ui::{
     note_display_density,
 };
 use dioxus::prelude::*;
-use loki_app_shell::display_calibration::{DisplayCalibrations, DisplayKey};
+use loki_app_shell::display_calibration::DisplayCalibrations;
 use loki_app_shell::display_density::calibrated_css_ppi;
 use loki_i18n::fl;
 
@@ -52,10 +52,11 @@ pub(super) fn EditorCalibrate(props: EditorCalibrateProps) -> Element {
     // Loaded once per mount rather than per render: this touches the disk.
     let store = use_signal(DisplayCalibrations::load);
 
-    // The display being calibrated. Unidentified until a platform query can name
-    // one — see `DisplayKey::unidentified`, which is a real key on purpose so a
-    // reader on a platform with no query still gets their measurement kept.
-    let key = use_hook(DisplayKey::unidentified);
+    // The display being calibrated, from the same derivation the restore path
+    // uses — a measurement saved under one key and looked up under another reads
+    // as the app forgetting. `current_display_key` names a real display where a
+    // platform query exists and `unidentified` where none does; see its docs.
+    let key = use_hook(crate::device_probe::current_display_key);
 
     rsx! {
         AtCalibrateDialog {

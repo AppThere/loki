@@ -298,45 +298,70 @@ wheelzoom)
   ;;
 
 highlight)
-  # T5.3: a highlight may be any colour. Both routes, in one run.
+  # T5.3: a highlight may be any colour. All three routes, in one run.
   #
-  # The named route and the custom route store different model properties
+  # The named and custom routes store different model properties
   # (`highlight_color` vs `background_color`) and reach the page by different
-  # paths, so exercising only one would leave half the feature unobserved — and
-  # the half nobody checks is the one that ships dead. That is not a guess: the
+  # paths, so exercising only one leaves half the feature unobserved — and the
+  # half nobody checks is the one that ships dead. That is not a guess: the
   # custom route's Apply button read the *typed* fields while its enabled state
   # read the square, so it looked live and did nothing (r89).
+  #
+  # **The order is load-bearing, not arbitrary.** Every pick adds a Recent
+  # swatch, and the Recent group shifts the custom column right — so a
+  # coordinate that is correct on a first open is wrong on the next one. The
+  # harness has told exactly this lie three times now (r80, r86, r90): a stale
+  # click lands beside the control and the run reads as "the feature does not
+  # work". The typed route therefore runs FIRST, while the panel is at its
+  # narrowest, and the custom route last, with the coordinates its own layout
+  # has. `push_recent` deduplicates, so the typed and clicked yellows leave one
+  # entry between them, not two.
   start_x || exit 1
   start_app env LOKI_DEVICE_PROFILE="${PROFILE:-pointer=fine}" || exit 1
   for i in $(seq 1 "${TABS:-7}"); do key Tab; done
   key Return
   sleep "${OPEN_SETTLE:-12}"
   shot n0-plain
-  # Select the heading, then Format -> Highlight.
-  xdotool mousemove "${TX:-375}" "${TY:-172}" click 1; sleep 1
-  xdotool key --clearmodifiers shift+End; sleep 1
-  xdotool mousemove "${FX:-98}" "${FY:-696}" click 1; sleep 1
-  xdotool mousemove "${HX:-108}" "${HY:-738}" click 1; sleep 2
+
+  select_and_open() {   # heading -> Format -> Highlight
+    xdotool mousemove "${TX:-375}" "${TY:-172}" click 1; sleep 1
+    xdotool key --clearmodifiers shift+End; sleep 1
+    xdotool mousemove "${FX:-98}" "${FY:-696}" click 1; sleep 1
+    xdotool mousemove "${HX:-108}" "${HY:-738}" click 1; sleep 2
+  }
+
+  # 1. A named colour, TYPED as a hex. First, so the panel has no Recent group.
+  select_and_open
   shot n1-panel
-  # 1. A named swatch (Yellow) — stored as `HighlightColor::Yellow`.
+  xdotool mousemove "${EX:-499}" "${EY:-623}" click 1; sleep 1
+  xdotool type --delay 120 "#FFFF00"; sleep 2
+  xdotool mousemove "${AX:-494}" "${AY:-655}" click 1; sleep 3
+  shot n2-typed
+
+  # 2. The SAME colour, CLICKED as a swatch. The swatch grid is left of the
+  #    Recent group, so its coordinate does not move.
+  select_and_open
   xdotool mousemove "${YX:-43}" "${YY:-473}" click 1; sleep 3
-  shot n2-named
-  # 2. A custom colour: drag the saturation/value square, then Apply.
-  #    Re-open the picker; the panel now carries a Recent group, which shifts
-  #    the custom column right — so the Apply coordinate is NOT the same as it
-  #    would be on a first open. Read it off n3 rather than reusing one.
-  xdotool mousemove "${TX:-375}" "${TY:-172}" click 1; sleep 1
-  xdotool key --clearmodifiers shift+End; sleep 1
-  xdotool mousemove "${HX:-108}" "${HY:-738}" click 1; sleep 2
+  shot n3-named
+
+  # 3. A colour that is NOT one of the sixteen: drag the square, then Apply.
+  #    One Recent entry now exists, so the custom column sits further right.
+  select_and_open
   xdotool mousemove "${SX:-616}" "${SY:-450}" mousedown 1; sleep 1
   xdotool mouseup 1; sleep 1
-  shot n3-picked
-  xdotool mousemove "${AX:-549}" "${AY:-655}" click 1; sleep 3
+  xdotool mousemove "${AX2:-549}" "${AY:-655}" click 1; sleep 3
   shot n4-custom
-  echo "== page diffs (0 = nothing painted) =="
-  echo "  named:  $(compare -metric AE "$SHOT_DIR/n0-plain.png" "$SHOT_DIR/n2-named.png" null: 2>&1)"
-  echo "  custom: $(compare -metric AE "$SHOT_DIR/n2-named.png" "$SHOT_DIR/n4-custom.png" null: 2>&1)"
-  ;;
 
+  for s in n2-typed n3-named n4-custom; do
+    convert "$SHOT_DIR/$s.png" -crop "${LCROP:-700x50+340+145}" +repage \
+      "$SHOT_DIR/$s-line.png" 2>/dev/null
+  done
+  echo "== page diffs (0 = nothing painted) =="
+  echo "  typed:  $(compare -metric AE "$SHOT_DIR/n0-plain.png" "$SHOT_DIR/n2-typed.png" null: 2>&1)"
+  echo "  custom: $(compare -metric AE "$SHOT_DIR/n3-named.png" "$SHOT_DIR/n4-custom.png" null: 2>&1)"
+  echo "== the routing claim (0 = a typed hex and a clicked swatch agree) =="
+  echo "  typed vs clicked: $(compare -metric AE "$SHOT_DIR/n2-typed-line.png" \
+    "$SHOT_DIR/n3-named-line.png" null: 2>&1)"
+  ;;
 esac
 echo "DONE: $1"

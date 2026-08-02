@@ -25,6 +25,22 @@
 //! platform with no query at all still gets their one calibration remembered,
 //! and the cost of the collision — two unidentifiable panels sharing an entry —
 //! is a wrong density they can re-calibrate, versus a prompt on every launch.
+//!
+//! # The paragraph above was a description, not a behaviour, until the Phase 5
+//! close audit
+//!
+//! Every read and every write used `unidentified`: [`DisplayKey::from_output`]
+//! existed, was tested, and was called by nothing. A map keyed by a constant is
+//! a map with one key, so the docked-laptop case this module opens with did not
+//! work — and it looked finished, because the key type and its tests were both
+//! correct. That is L08-050's shape: a decision with tests and no caller reads
+//! as more done than one with neither. The producer is now
+//! `loki_text::device_probe::current_display_key`, which both call sites use.
+//!
+//! Measured on X11, both directions: calibrating at 1280x900 stores
+//! `screen:1280x900` and a relaunch restores it; the same binary on a
+//! 1600x1000 display reports `screen:1600x1000` and restores **nothing** — which
+//! is the half that would have passed for a constant key.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
