@@ -12,7 +12,7 @@ use loki_doc_model::content::inline::{BookmarkKind, Inline, QuoteType, StyledRun
 use loki_doc_model::document::Document;
 use loki_doc_model::loro_bridge::{document_to_loro, loro_to_document};
 use loki_doc_model::style::props::char_props::CharProps;
-use loki_primitives::color::{CmykColor, DocumentColor, ThemeColorSlot};
+use loki_primitives::color::{CmykColor, DocumentColor, RgbColor, ThemeColorSlot};
 
 fn round_trip_inlines(inlines: Vec<Inline>) -> Vec<Inline> {
     let mut doc = Document::new();
@@ -158,4 +158,98 @@ fn quoted_span_nesting_order_is_preserved() {
     );
     let recovered = round_trip_inlines(vec![quoted_span.clone()]);
     assert_eq!(recovered, vec![quoted_span]);
+}
+
+// ── Character shading (Spec 08 T5.3) ──────────────────────────────────────────
+
+/// Character shading (`w:shd @fill` on a run) at the character level.
+fn recovered_background(inlines: &[Inline]) -> Option<DocumentColor> {
+    inlines.iter().find_map(|i| {
+        if let Inline::StyledRun(run) = i {
+            run.direct_props
+                .as_ref()
+                .and_then(|p| p.background_color.clone())
+        } else {
+            None
+        }
+    })
+}
+
+/// A colour whose channels are exactly representable in 8 bits, so the
+/// assertion is about the *mark* and not about hex quantisation.
+fn exact_rgb() -> DocumentColor {
+    DocumentColor::Rgb(RgbColor::new(64.0 / 255.0, 128.0 / 255.0, 191.0 / 255.0))
+}
+
+/// **Run-level `background_color` survives the bridge.** It did not before
+/// T5.3, and the gap was invisible from every direction that would normally
+/// catch it: the DOCX importer produced it, the exporter wrote it, and the
+/// layout painted it — so a shaded run rendered correctly on load and lost its
+/// shading the moment the document went through the CRDT, which is every edit.
+#[test]
+fn run_background_color_survives_the_bridge() {
+    let props = CharProps {
+        background_color: Some(exact_rgb()),
+        ..CharProps::default()
+    };
+    let recovered = round_trip_inlines(vec![styled_run("shaded", props)]);
+    assert_eq!(recovered_background(&recovered), Some(exact_rgb()));
+}
+
+/// **And it is independent of the named highlight**, which is the whole point
+/// of having two marks: a custom highlight is stored as shading with no named
+/// highlight, and a named one as a name with no shading. A test that set both
+/// would pass for an implementation that stored them in one slot.
+#[test]
+fn shading_and_named_highlight_do_not_collide() {
+    use loki_doc_model::style::props::char_props::HighlightColor;
+
+    let shaded = round_trip_inlines(vec![styled_run(
+        "custom",
+        CharProps {
+            background_color: Some(exact_rgb()),
+            ..CharProps::default()
+        },
+    )]);
+    let named = round_trip_inlines(vec![styled_run(
+        "named",
+        CharProps {
+            highlight_color: Some(HighlightColor::Yellow),
+            ..CharProps::default()
+        },
+    )]);
+
+    let highlight_of = |inlines: &[Inline]| {
+        inlines.iter().find_map(|i| match i {
+            Inline::StyledRun(run) => run.direct_props.as_ref().and_then(|p| p.highlight_color),
+            _ => None,
+        })
+    };
+
+    assert_eq!(recovered_background(&shaded), Some(exact_rgb()));
+    assert_eq!(highlight_of(&shaded), None, "custom must not become named");
+    assert_eq!(highlight_of(&named), Some(HighlightColor::Yellow));
+    assert_eq!(
+        recovered_background(&named),
+        None,
+        "named must not become shading"
+    );
+}
+
+/// A non-RGB shading colour survives too — the codec is `DocumentColor`'s, the
+/// same one the character *text* colour uses, so this is not a second encoding.
+#[test]
+fn shading_carries_a_theme_colour() {
+    let theme = DocumentColor::Theme {
+        slot: ThemeColorSlot::Accent1,
+        tint: 0.25,
+    };
+    let recovered = round_trip_inlines(vec![styled_run(
+        "themed",
+        CharProps {
+            background_color: Some(theme.clone()),
+            ..CharProps::default()
+        },
+    )]);
+    assert_eq!(recovered_background(&recovered), Some(theme));
 }

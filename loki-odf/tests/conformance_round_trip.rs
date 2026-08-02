@@ -121,6 +121,12 @@ fn odt_round_trip_preserves_core_content() {
 /// anchors — which ODT export documents as lossless — must round-trip too. The
 /// same content class regressed silently on DOCX export before the symmetric
 /// `emit_char_props` fix; this guards the ODF path against the analogue.
+///
+/// **Stability, not fidelity**, and the distinction is not academic: this
+/// compares first-import against re-import, so a property dropped on the *first*
+/// export is absent from both and the comparison agrees. It passed for years
+/// while `highlight_color` reached no ODT file at all (Spec 08 T5.3). The
+/// fidelity half is `a_named_highlight_survives_odt_export` below.
 #[test]
 fn odt_round_trip_preserves_secondary_formatting() {
     use loki_doc_model::style::props::char_props::HighlightColor;
@@ -163,4 +169,93 @@ fn odt_round_trip_preserves_secondary_formatting() {
             d.path, d.left, d.right
         );
     }
+}
+
+/// **A named highlight reaches the exported file.** ODF has one text-background
+/// attribute where OOXML has two, so a `w:highlight` colour has to travel as
+/// `fo:background-color` — and until Spec 08 T5.3 it travelled as nothing:
+/// `highlight_color` appeared nowhere in this crate's writer.
+///
+/// Asserted on the *imported* model rather than on the XML, so it is a statement
+/// about what survives rather than about how it is spelled.
+#[test]
+fn a_named_highlight_survives_odt_export() {
+    use loki_doc_model::style::props::char_props::HighlightColor;
+
+    let seed = doc(vec![Block::Para(vec![styled_run(
+        "highlighted",
+        CharProps {
+            highlight_color: Some(HighlightColor::Yellow),
+            ..Default::default()
+        },
+    )])]);
+
+    let back = import(export(&seed));
+    let background = effective_background(&back);
+
+    // Yellow, as a colour — **not** as `HighlightColor::Yellow`. ODF cannot
+    // distinguish a highlight from a character background, so the named variant
+    // becomes shading on the way back in. That is the format, not a loss: the
+    // colour the reader sees is preserved exactly, and a DOCX re-export puts it
+    // in Word's Shading control rather than its Highlight control.
+    let hex = background
+        .as_ref()
+        .and_then(loki_primitives::color::DocumentColor::to_hex);
+    assert_eq!(
+        hex.as_deref(),
+        Some("#FFFF00"),
+        "the highlight colour did not survive ODT export: {background:?}"
+    );
+}
+
+/// **And a run with no highlight gains no background** — otherwise the test
+/// above would pass for a writer that paints every run yellow.
+#[test]
+fn an_unhighlighted_run_gains_no_background() {
+    let seed = doc(vec![Block::Para(vec![styled_run(
+        "plain",
+        CharProps {
+            all_caps: Some(true),
+            ..Default::default()
+        },
+    )])]);
+
+    let back = import(export(&seed));
+    assert_eq!(effective_background(&back), None);
+}
+
+/// The first styled run's **effective** character background.
+///
+/// Resolved through the style catalog, not read off `direct_props`: the ODT
+/// writer emits run formatting as an automatic `style:family="text"` style and
+/// the reader returns it as a `StyleId` reference with no direct props, so a
+/// direct-props-only reader reports `None` for a colour that is plainly there.
+/// The first draft of this helper did exactly that and accused the reader of a
+/// loss the writer had just stopped causing.
+fn effective_background(d: &Document) -> Option<loki_primitives::color::DocumentColor> {
+    fn first_run(inlines: &[Inline]) -> Option<&StyledRun> {
+        inlines.iter().find_map(|i| match i {
+            Inline::StyledRun(run) => Some(run),
+            _ => None,
+        })
+    }
+    let run = d.sections.iter().find_map(|s| {
+        s.blocks.iter().find_map(|b| match b {
+            Block::Para(inlines) => first_run(inlines),
+            Block::StyledPara(sp) => first_run(&sp.inlines),
+            _ => None,
+        })
+    })?;
+    if let Some(direct) = run
+        .direct_props
+        .as_ref()
+        .and_then(|p| p.background_color.clone())
+    {
+        return Some(direct);
+    }
+    let id = run.style_id.as_ref()?;
+    d.styles
+        .character_styles
+        .get(id)
+        .and_then(|s| s.char_props.background_color.clone())
 }

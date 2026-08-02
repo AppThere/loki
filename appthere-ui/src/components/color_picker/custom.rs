@@ -11,77 +11,10 @@
 use dioxus::prelude::*;
 
 use super::area::AtColorArea;
-use super::convert::{cmyk_to_rgb, hsl_to_rgb, hsv_to_rgb, parse_hex, rgb_to_hex};
-use super::custom_source::{displayed_hsv, fields_from_rgb, FieldMode, Source};
+use super::convert::{hsv_to_rgb, rgb_to_hex};
+use super::custom_mode::{field_mode, fields_for, resolve, Mode, MODES};
+use super::custom_source::{displayed_hsv, fields_from_rgb, Source};
 use crate::tokens;
-
-/// The supported colour-entry models. Labels are technical abbreviations.
-#[derive(Clone, Copy, PartialEq)]
-enum Mode {
-    Hex,
-    Rgb,
-    Hsl,
-    Hsv,
-    Cmyk,
-}
-
-const MODES: &[(Mode, &str)] = &[
-    (Mode::Hex, "Hex"),
-    (Mode::Rgb, "RGB"),
-    (Mode::Hsl, "HSL"),
-    (Mode::Hsv, "HSV"),
-    (Mode::Cmyk, "CMYK"),
-];
-
-/// `(field labels, default values)` for a mode. At most four fields are used;
-/// unused entries are empty.
-fn fields_for(mode: Mode) -> &'static [&'static str] {
-    match mode {
-        Mode::Hex => &["#"],
-        Mode::Rgb => &["R", "G", "B"],
-        Mode::Hsl => &["H", "S", "L"],
-        Mode::Hsv => &["H", "S", "V"],
-        Mode::Cmyk => &["C", "M", "Y", "K"],
-    }
-}
-
-/// This module's `Mode` as the display module's [`FieldMode`].
-///
-/// Two enums with one mapping rather than one shared enum, because `Mode` is
-/// this module's private business and `FieldMode` is about what the controls
-/// render. The mapping is exhaustive, so adding a model here is a compile error
-/// there rather than a mode that silently shows nothing.
-fn field_mode(mode: Mode) -> FieldMode {
-    match mode {
-        Mode::Hex => FieldMode::Hex,
-        Mode::Rgb => FieldMode::Rgb,
-        Mode::Hsl => FieldMode::Hsl,
-        Mode::Hsv => FieldMode::Hsv,
-        Mode::Cmyk => FieldMode::Cmyk,
-    }
-}
-
-/// Parses the current field values under `mode` into RGB bytes.
-fn resolve(mode: Mode, f: &[String; 4]) -> Option<(u8, u8, u8)> {
-    let num = |s: &String| s.trim().parse::<f32>().ok().filter(|v| v.is_finite());
-    match mode {
-        Mode::Hex => parse_hex(&f[0]),
-        Mode::Rgb => {
-            let (r, g, b) = (num(&f[0])?, num(&f[1])?, num(&f[2])?);
-            let in_range = |v: f32| (0.0..=255.0).contains(&v);
-            (in_range(r) && in_range(g) && in_range(b))
-                .then(|| (r.round() as u8, g.round() as u8, b.round() as u8))
-        }
-        Mode::Hsl => Some(hsl_to_rgb(num(&f[0])?, num(&f[1])?, num(&f[2])?)),
-        Mode::Hsv => Some(hsv_to_rgb(num(&f[0])?, num(&f[1])?, num(&f[2])?)),
-        Mode::Cmyk => Some(cmyk_to_rgb(
-            num(&f[0])?,
-            num(&f[1])?,
-            num(&f[2])?,
-            num(&f[3])?,
-        )),
-    }
-}
 
 fn input_style(width_px: f32) -> String {
     format!(
@@ -280,9 +213,20 @@ pub(super) fn CustomColorSection(
                         fs = tokens::FONT_SIZE_LABEL,
                     ),
                     disabled: preview.is_none(),
-                    onclick: move |_| {
-                        if let Some((r, g, b)) = resolve(*mode.peek(), &fields.peek()) {
-                            on_apply.call(rgb_to_hex(r, g, b));
+                    // **The colour applied is the one on the swatch beside it** —
+                    // the same `preview` the line above gates on. It read
+                    // `resolve(mode, fields)` until T5.3, which is the *typed*
+                    // colour and empty while the square is the source, so the
+                    // button was enabled by one question and acted on another:
+                    // dragging and pressing Apply did nothing at all. Found by a
+                    // screen sitting; see `the_typed_fields_do_not_speak_for_a_
+                    // dragged_colour`.
+                    onclick: {
+                        let hex = preview.clone();
+                        move |_| {
+                            if let Some(hex) = hex.clone() {
+                                on_apply.call(hex);
+                            }
                         }
                     },
                     "{apply_label}"
@@ -291,7 +235,3 @@ pub(super) fn CustomColorSection(
         }
     }
 }
-
-#[cfg(test)]
-#[path = "custom_tests.rs"]
-mod tests;

@@ -90,7 +90,9 @@ pub(super) fn effective_run_char_props(
 //   font_name_complex    — complex-script font (BiDi)
 //   font_name_east_asian — East Asian font
 //   font_size_complex    — complex-script font size
-//   background_color     — per-run background (distinct from highlight)
+//   (background_color is NOT dropped — see the highlight mapping below, which
+//    falls back to it. It was listed here until T5.3 noticed the list and the
+//    code had disagreed since the fallback landed.)
 //   outline              — hollow text effect
 //   language_complex / language_east_asian — script-specific locale variants
 //   hyperlink            — URL (gap #11, P1 — handled at Inline level)
@@ -192,29 +194,16 @@ pub(super) fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -
 
 /// Convert a [`HighlightColor`] palette entry to a [`LayoutColor`].
 ///
-/// Returns `None` for [`HighlightColor::None`] (explicit highlight removal).
+/// Returns `None` for `HighlightColor::None` (explicit highlight removal).
+///
+/// The palette is `loki-doc-model`'s, not a copy of it. This function used to
+/// carry its own sixteen float triples beside `loki-text`'s sixteen hex strings,
+/// with a comment on each saying it mirrored the other — and offering a custom
+/// highlight colour needs a *third* reading (hex back to a variant), which is
+/// where two copies that agree become three that cannot (L08-029).
 fn map_highlight_color(
     hc: Option<loki_doc_model::style::props::char_props::HighlightColor>,
 ) -> Option<LayoutColor> {
-    use loki_doc_model::style::props::char_props::HighlightColor::*;
-    match hc? {
-        Yellow => Some(LayoutColor::new(1.000, 1.000, 0.000, 1.0)),
-        Green => Some(LayoutColor::new(0.000, 1.000, 0.000, 1.0)),
-        Cyan => Some(LayoutColor::new(0.000, 1.000, 1.000, 1.0)),
-        Magenta => Some(LayoutColor::new(1.000, 0.000, 1.000, 1.0)),
-        Blue => Some(LayoutColor::new(0.000, 0.000, 1.000, 1.0)),
-        Red => Some(LayoutColor::new(1.000, 0.000, 0.000, 1.0)),
-        DarkBlue => Some(LayoutColor::new(0.000, 0.000, 0.502, 1.0)),
-        DarkCyan => Some(LayoutColor::new(0.000, 0.502, 0.502, 1.0)),
-        DarkGreen => Some(LayoutColor::new(0.000, 0.502, 0.000, 1.0)),
-        DarkMagenta => Some(LayoutColor::new(0.502, 0.000, 0.502, 1.0)),
-        DarkRed => Some(LayoutColor::new(0.502, 0.000, 0.000, 1.0)),
-        DarkYellow => Some(LayoutColor::new(0.502, 0.502, 0.000, 1.0)),
-        DarkGray => Some(LayoutColor::new(0.502, 0.502, 0.502, 1.0)),
-        LightGray => Some(LayoutColor::new(0.753, 0.753, 0.753, 1.0)),
-        Black => Some(LayoutColor::BLACK),
-        White => Some(LayoutColor::WHITE),
-        None => Option::None,
-        _ => Option::None,
-    }
+    let rgb = hc?.to_rgb()?;
+    Some(LayoutColor::new(rgb.red(), rgb.green(), rgb.blue(), 1.0))
 }

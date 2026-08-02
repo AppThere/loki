@@ -26,6 +26,7 @@ CX=36 CY=740 scripts/sitting/run.sh picker   # the colour picker's SV square
 scripts/sitting/run.sh anchor         # zoom holds the middle of the page still
 ZX=1176 ZY=788 scripts/sitting/run.sh typed  # the typed zoom field
 scripts/sitting/run.sh wheelzoom      # Ctrl+wheel zooms, plain wheel scrolls
+scripts/sitting/run.sh highlight      # named and custom highlight, both routes
 ```
 
 Shots land in `target/sitting/`. `SETTLE` (default 10s) is how long to wait
@@ -80,6 +81,20 @@ too, and it affects the existing scroll path identically — do not "correct" fo
 it in app code, which would halve the step everywhere else.
 
 ## What the sittings have found
+
+**r89 — one, and it made a whole control dead.** The colour picker's custom
+saturation/value square looked entirely correct: drag a colour, the preview
+swatch fills, the hex field shows it, the Apply button is enabled. Pressing Apply
+did nothing. Its `onclick` resolved from the **typed fields**, which are empty
+while the square is the source — that is `custom_source`'s "last edited wins"
+rule working as designed — while its `disabled` flag gated on the *preview*. The
+enabled state and the action were answers to different questions, so the button
+advertised itself as live and was not.
+
+Nothing headless could see it: `resolve(mode, fields)` was correct,
+`displayed_hsv` was correct, and the defect was that the button called the first
+where it meant the second. It had been shipped one sitting earlier (r83) — that
+sitting fixed the *display* half of the same split and stopped one layer short.
 
 **r88 — three, and the third was in code four phases old.** Ctrl+wheel zoom was
 built, unit-tested, and wrong in two ways no test could see. `element_

@@ -102,7 +102,24 @@ fn text_properties_attrs(cp: &CharProps) -> String {
     if let Some(hex) = cp.color.as_ref().and_then(DocumentColor::to_hex) {
         attr(&mut s, "fo:color", &hex);
     }
-    if let Some(hex) = cp.background_color.as_ref().and_then(DocumentColor::to_hex) {
+    // ODF has **one** text background attribute; OOXML has two (`w:highlight`'s
+    // fixed enumeration and `w:shd @fill`). Both of ours land here, shading
+    // first because that is what the layout paints when both are set.
+    //
+    // Writing only `background_color` — as this did until Spec 08 T5.3 — dropped
+    // every named highlight from ODT export silently: `highlight_color` appeared
+    // nowhere in this crate. The existing round-trip test did not catch it
+    // because it compares first-import against re-import, and a property lost on
+    // the first export is equally absent from both.
+    let background = cp
+        .background_color
+        .as_ref()
+        .and_then(DocumentColor::to_hex)
+        .or_else(|| {
+            cp.highlight_color
+                .and_then(|h| h.to_hex().map(str::to_string))
+        });
+    if let Some(hex) = background {
         attr(&mut s, "fo:background-color", &hex);
     }
     if let Some(ls) = cp.letter_spacing {

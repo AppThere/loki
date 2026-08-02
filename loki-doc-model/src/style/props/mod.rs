@@ -14,6 +14,7 @@
 pub mod border;
 pub mod char_props;
 pub mod drop_cap;
+pub mod highlight_rgb;
 pub mod para_props;
 pub mod revision;
 pub mod shading;
@@ -22,6 +23,7 @@ pub mod tab_stop;
 pub use border::{Border, BorderStyle};
 pub use char_props::CharProps;
 pub use drop_cap::{DropCap, DropCapLength};
+pub use highlight_rgb::HIGHLIGHT_RGB;
 pub use para_props::ParaProps;
 pub use revision::{RevisionKind, RevisionMark};
 pub use shading::{HatchPattern, ShadingPattern};

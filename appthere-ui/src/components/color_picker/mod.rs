@@ -27,6 +27,7 @@ mod area;
 pub mod area_geom;
 pub mod convert;
 mod custom;
+mod custom_mode;
 mod custom_source;
 
 use custom::CustomColorSection;

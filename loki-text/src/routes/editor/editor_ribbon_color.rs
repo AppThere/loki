@@ -8,16 +8,17 @@
 //! content row is a scroll container, so the panel cannot be anchored inside
 //! it (see the `appthere_ui` colour-picker module docs).
 //!
-//! Highlight is constrained to the named `HighlightColor` palette because the
-//! document model (and DOCX `w:highlight`) only round-trips named variants.
-//! TODO(highlight-custom-color): offering arbitrary hex highlight needs a
-//! `HighlightColor` model extension plus OOXML (`w:shd`) / ODF export mapping.
+//! Highlight accepts **any** colour (Spec 08 T5.3). A colour that exactly
+//! matches one of the sixteen `w:highlight` names is stored as that name;
+//! anything else is stored as character shading. See `editor_highlight_color`
+//! for the routing and what it means in Word.
 
 use appthere_ui::{
     AtColorPickerTrigger, AtColorSwatch, AtIcon, LUCIDE_BASELINE, LUCIDE_HIGHLIGHTER,
     RibbonGroupSpec, estimate_group_metrics,
 };
 use dioxus::prelude::*;
+use loki_doc_model::style::props::HIGHLIGHT_RGB;
 use loki_i18n::fl;
 
 use super::editor_state::ColorPickerTarget;
@@ -36,38 +37,57 @@ pub(super) const FONT_COLOR_PALETTE: &[(&str, &str, &str)] = &[
     ("#8E44AD", "#8E44AD", "ribbon-color-purple-aria"),
 ];
 
-/// The full named highlight palette as `(variant name, fill, aria-key)`. The
-/// fills mirror `loki-layout`'s `map_highlight_color` so the swatch matches
-/// what the page paints.
-pub(super) const HIGHLIGHT_PALETTE: &[(&str, &str, &str)] = &[
-    ("Yellow", "#FFFF00", "ribbon-highlight-yellow-aria"),
-    ("Green", "#00FF00", "ribbon-highlight-green-aria"),
-    ("Cyan", "#00FFFF", "ribbon-highlight-cyan-aria"),
-    ("Magenta", "#FF00FF", "ribbon-highlight-magenta-aria"),
-    ("Blue", "#0000FF", "ribbon-highlight-blue-aria"),
-    ("Red", "#FF0000", "ribbon-highlight-red-aria"),
-    ("DarkBlue", "#000080", "ribbon-highlight-dark-blue-aria"),
-    ("DarkCyan", "#008080", "ribbon-highlight-dark-cyan-aria"),
-    ("DarkGreen", "#008000", "ribbon-highlight-dark-green-aria"),
-    (
-        "DarkMagenta",
-        "#800080",
-        "ribbon-highlight-dark-magenta-aria",
-    ),
-    ("DarkRed", "#800000", "ribbon-highlight-dark-red-aria"),
-    ("DarkYellow", "#808000", "ribbon-highlight-dark-yellow-aria"),
-    ("DarkGray", "#808080", "ribbon-highlight-dark-gray-aria"),
-    ("LightGray", "#C0C0C0", "ribbon-highlight-light-gray-aria"),
-    ("Black", "#000000", "ribbon-highlight-black-aria"),
-    ("White", "#FFFFFF", "ribbon-highlight-white-aria"),
+/// The aria key for each named highlight, **in `HIGHLIGHT_RGB`'s order**.
+///
+/// Only the labels are here. The colours are `loki-doc-model`'s
+/// [`HIGHLIGHT_RGB`], which is also what the layout paints and what the
+/// hex→variant lookup reads — one fact, one derivation (L08-029). This file
+/// used to carry its own sixteen hex strings with a comment saying they
+/// "mirror" the layout's sixteen float triples.
+///
+/// Paired by *position*, which `highlight_swatches` asserts rather than
+/// assumes: a table of `(variant, key)` pairs would be a second statement of
+/// which variants exist, and the one that drifts is always the second.
+const HIGHLIGHT_ARIA: &[&str] = &[
+    "ribbon-highlight-yellow-aria",
+    "ribbon-highlight-green-aria",
+    "ribbon-highlight-cyan-aria",
+    "ribbon-highlight-magenta-aria",
+    "ribbon-highlight-blue-aria",
+    "ribbon-highlight-red-aria",
+    "ribbon-highlight-dark-blue-aria",
+    "ribbon-highlight-dark-cyan-aria",
+    "ribbon-highlight-dark-green-aria",
+    "ribbon-highlight-dark-magenta-aria",
+    "ribbon-highlight-dark-red-aria",
+    "ribbon-highlight-dark-yellow-aria",
+    "ribbon-highlight-dark-gray-aria",
+    "ribbon-highlight-light-gray-aria",
+    "ribbon-highlight-black-aria",
+    "ribbon-highlight-white-aria",
 ];
 
-/// The display fill for a named highlight value, if known.
-pub(super) fn highlight_fill(name: &str) -> Option<&'static str> {
-    HIGHLIGHT_PALETTE
+/// The named highlights as picker swatches.
+///
+/// **The swatch value is the hex, not the variant name** (Spec 08 T5.3). It was
+/// the variant name while highlight was restricted to the palette; now that a
+/// custom colour is offered, a swatch carrying a name and a hex field carrying a
+/// hex would be two kinds of pick for the picker to tell apart — and telling
+/// them apart is exactly what makes the same yellow export two different ways.
+/// So there is one kind of pick, and `apply_highlight` resolves it.
+///
+/// Pairs by position with [`HIGHLIGHT_ARIA`]; a mismatch drops the tail rather
+/// than mislabelling a swatch, and `highlight_swatches_are_complete` fails on it.
+pub(super) fn highlight_swatches() -> Vec<AtColorSwatch> {
+    HIGHLIGHT_RGB
         .iter()
-        .find(|(value, _, _)| *value == name)
-        .map(|(_, fill, _)| *fill)
+        .zip(HIGHLIGHT_ARIA)
+        .map(|((_, hex), aria)| AtColorSwatch {
+            value: (*hex).to_string(),
+            fill: (*hex).to_string(),
+            aria_label: fl!(aria),
+        })
+        .collect()
 }
 
 /// A preset palette as picker swatches (aria labels resolved via `fl!`).
@@ -82,17 +102,18 @@ pub(super) fn preset_swatches(palette: &'static [(&str, &str, &str)]) -> Vec<AtC
         .collect()
 }
 
-/// Recent values → swatches. `fill_for` maps a stored value to its display
-/// fill (identity for hex text colours, the palette lookup for highlights).
-pub(super) fn recent_swatches(
-    values: &[String],
-    fill_for: fn(&str) -> String,
-) -> Vec<AtColorSwatch> {
+/// Stored colours → swatches.
+///
+/// The fill *is* the value: every colour on every route — text, highlight,
+/// recent, document — is a `#RRGGBB` since T5.3. The parameterised
+/// value-to-fill lookup this replaced is what made the Highlight picker's
+/// document group paint transparent swatches.
+pub(super) fn recent_swatches(values: &[String]) -> Vec<AtColorSwatch> {
     values
         .iter()
         .map(|v| AtColorSwatch {
             value: v.clone(),
-            fill: fill_for(v),
+            fill: v.clone(),
             // A colour value is data, not prose — announced as-is.
             aria_label: v.clone(),
         })
@@ -159,23 +180,25 @@ pub(super) fn font_color_group(
     )
 }
 
-/// The Highlight trigger group. `current` is the named highlight at the caret.
+/// The Highlight trigger group. `current` is the highlight **hex** at the caret
+/// (also the indicator fill) — `current_highlight` resolves a named highlight to
+/// its colour, so the indicator needs no lookup of its own.
 pub(super) fn highlight_group(
     current: Option<String>,
     open_picker: Signal<Option<ColorPickerTarget>>,
     priority: u8,
 ) -> RibbonGroupSpec {
-    let current_fill = current
-        .as_deref()
-        .and_then(highlight_fill)
-        .map(str::to_string);
     trigger_group(
         fl!("ribbon-group-highlight"),
         fl!("ribbon-highlight-picker-aria"),
         LUCIDE_HIGHLIGHTER,
-        current_fill,
+        current,
         ColorPickerTarget::Highlight,
         open_picker,
         priority,
     )
 }
+
+#[cfg(test)]
+#[path = "editor_ribbon_color_tests.rs"]
+mod tests;

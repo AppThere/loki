@@ -297,5 +297,46 @@ wheelzoom)
     "$SHOT_DIR/91-plain-scrolled.png" null: 2>&1)"
   ;;
 
+highlight)
+  # T5.3: a highlight may be any colour. Both routes, in one run.
+  #
+  # The named route and the custom route store different model properties
+  # (`highlight_color` vs `background_color`) and reach the page by different
+  # paths, so exercising only one would leave half the feature unobserved — and
+  # the half nobody checks is the one that ships dead. That is not a guess: the
+  # custom route's Apply button read the *typed* fields while its enabled state
+  # read the square, so it looked live and did nothing (r89).
+  start_x || exit 1
+  start_app env LOKI_DEVICE_PROFILE="${PROFILE:-pointer=fine}" || exit 1
+  for i in $(seq 1 "${TABS:-7}"); do key Tab; done
+  key Return
+  sleep "${OPEN_SETTLE:-12}"
+  shot n0-plain
+  # Select the heading, then Format -> Highlight.
+  xdotool mousemove "${TX:-375}" "${TY:-172}" click 1; sleep 1
+  xdotool key --clearmodifiers shift+End; sleep 1
+  xdotool mousemove "${FX:-98}" "${FY:-696}" click 1; sleep 1
+  xdotool mousemove "${HX:-108}" "${HY:-738}" click 1; sleep 2
+  shot n1-panel
+  # 1. A named swatch (Yellow) — stored as `HighlightColor::Yellow`.
+  xdotool mousemove "${YX:-43}" "${YY:-473}" click 1; sleep 3
+  shot n2-named
+  # 2. A custom colour: drag the saturation/value square, then Apply.
+  #    Re-open the picker; the panel now carries a Recent group, which shifts
+  #    the custom column right — so the Apply coordinate is NOT the same as it
+  #    would be on a first open. Read it off n3 rather than reusing one.
+  xdotool mousemove "${TX:-375}" "${TY:-172}" click 1; sleep 1
+  xdotool key --clearmodifiers shift+End; sleep 1
+  xdotool mousemove "${HX:-108}" "${HY:-738}" click 1; sleep 2
+  xdotool mousemove "${SX:-616}" "${SY:-450}" mousedown 1; sleep 1
+  xdotool mouseup 1; sleep 1
+  shot n3-picked
+  xdotool mousemove "${AX:-549}" "${AY:-655}" click 1; sleep 3
+  shot n4-custom
+  echo "== page diffs (0 = nothing painted) =="
+  echo "  named:  $(compare -metric AE "$SHOT_DIR/n0-plain.png" "$SHOT_DIR/n2-named.png" null: 2>&1)"
+  echo "  custom: $(compare -metric AE "$SHOT_DIR/n2-named.png" "$SHOT_DIR/n4-custom.png" null: 2>&1)"
+  ;;
+
 esac
 echo "DONE: $1"
