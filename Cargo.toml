@@ -72,6 +72,14 @@ base64 = "0.22"
 loki-file-access = { path = "patches/loki-file-access" }
 
 [patch.crates-io]
+# VENDORED (not a bug fix): `appthere-color` is AppThere's own crate, and the
+# colour work in Spec 08 Phase 5 needs to change it alongside its consumers.
+# Without this, every change is a crates.io release cycle before the picker can
+# use it. Unlike the entries below there is no upstream defect to remove — see
+# `patches/appthere-color/VENDORED.md` for the version, the compliance
+# measurement, and the un-vendoring condition.
+appthere-color = { path = "patches/appthere-color" }
+
 # PATCH: vendors dioxus-native-dom to avoid runtime unimplemented!() panics in
 # HtmlEventConverter (composition, touch, scroll, etc.) — remove when upstream
 # implements the converters Loki requires. See docs/patches.md.

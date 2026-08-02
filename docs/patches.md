@@ -42,6 +42,32 @@ which never re-creates, kept working). The patch:
 **Removal condition:** upstream `loki-file-access` ships the equivalent fix;
 then drop the `[patch]` entry and `patches/loki-file-access/`.
 
+### appthere-color — 0.1.1 (vendored, not patched)
+
+**Source:** `patches/appthere-color/`, copied unmodified from the crates.io
+`0.1.1` tarball. Full detail — the compliance measurement, what was deliberately
+*not* changed, and the re-vendoring procedure — is in
+[`patches/appthere-color/VENDORED.md`](../patches/appthere-color/VENDORED.md).
+
+**This entry is different in kind from every other one on this page.** The rest
+exist because upstream has a defect, and each names the upstream fix that would
+let it be deleted. This one has no defect: `appthere-color` is AppThere's own
+crate, and Spec 08 Phase 5's colour work changes it and its consumers together,
+so vendoring removes a crates.io release cycle from each iteration. It is a
+working copy, not a workaround.
+
+**Local modifications:** none as of the fork point.
+
+**Removal condition:** when Phase 5's colour work is finished and the API has
+settled, publish the accumulated changes as `0.1.2+` and delete the entry. An
+entry still present with no local modifications has outlived its reason — which
+is the check to make, because a vendoring that costs nothing to keep is also one
+nobody notices keeping.
+
+**Added:** 2026-08-02 (Spec 08 T5.1 / D-09).
+
+---
+
 ### dioxus-native-dom — 0.7.9
 
 **Version pin:** the whole dioxus family is pinned to `=0.7.9` in the root

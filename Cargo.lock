@@ -386,8 +386,6 @@ dependencies = [
 [[package]]
 name = "appthere-color"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1cb06c027508d9b5adc4951f2de74724271f0432bc30e0ae4b64349d2d89d43f"
 dependencies = [
  "moxcms",
  "serde",

@@ -1,0 +1,25 @@
+[package]
+name = "appthere-color"
+version = "0.1.1"
+edition = "2024"
+license = "Apache-2.0"
+description = "Document-aware color management for Rust — pure Rust ICC transforms, CMYK, soft proofing, and print-ready color policies"
+repository = "https://github.com/appthere/appthere-color"
+keywords = ["color", "icc", "cmyk", "color-management", "print"]
+categories = ["graphics", "multimedia"]
+
+[features]
+default = ["std"]
+std = []
+serde = ["dep:serde"]
+
+[dependencies]
+moxcms = "0.7"
+thiserror = "2"
+serde = { version = "1", features = ["derive"], optional = true }
+
+[dev-dependencies]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
