@@ -220,5 +220,28 @@ anchor)
   shot 71-zoomed
   ;;
 
+typed)
+  # T5.4: a digit typed at the open zoom menu starts the typed field; Enter
+  # applies it. This is the keyboard route to a control Tab cannot reach.
+  start_x || exit 1
+  start_app env LOKI_DEVICE_PROFILE="${PROFILE:-pointer=fine}" || exit 1
+  for i in $(seq 1 "${TABS:-7}"); do key Tab; done
+  key Return
+  sleep "${OPEN_SETTLE:-12}"
+  xdotool mousemove "${ZX:-1176}" "${ZY:-788}" click 1; sleep 2
+  shot 80-menu
+  key 3; sleep 1
+  shot 81-field
+  xdotool type --delay 120 "40"; sleep 1
+  shot 82-typed
+  # Backspace must reach the field — without it a typo can only be undone by
+  # starting over (Spec 08 T5.4, r86).
+  key BackSpace; sleep 1
+  shot 84-erased
+  key 0; sleep 1
+  key Return; sleep 2
+  shot 83-applied
+  ;;
+
 esac
 echo "DONE: $1"

@@ -18,6 +18,7 @@
 //! `AtPopoverHost` with [`Role::Menu`], which is also what gives it a keyboard
 //! for free (T4.5).
 
+mod field;
 mod menu;
 mod rows;
 
@@ -103,6 +104,8 @@ pub fn AtZoomControl(props: AtZoomControlProps) -> Element {
     let insets = use_safe_area();
     let mut open = use_signal(|| false);
     let active = use_signal(|| Option::<String>::None);
+    // The typed zoom, once the reader has started one. `None` = field hidden.
+    let typed = use_signal(|| Option::<String>::None);
     let mut anchor = use_signal(|| Option::<MountedEvent>::None);
     let mut anchor_rect = use_signal(|| Option::<Rect>::None);
 
@@ -135,6 +138,7 @@ pub fn AtZoomControl(props: AtZoomControlProps) -> Element {
                     anchor.peek().as_ref().map(|e: &MountedEvent| e.data()),
                     active,
                     open,
+                    typed,
                 ),
                 window,
                 insets,

@@ -104,3 +104,13 @@ fn something_maps_or_the_none_cases_prove_nothing() {
 fn an_unmodelled_key_is_none() {
     assert_eq!(press(DioxusKey::F5), None);
 }
+
+/// Backspace translates, so the zoom field's erase is reachable from a real
+/// keyboard rather than only from a hand-built `Key`.
+#[test]
+fn backspace_translates() {
+    assert_eq!(
+        key_from_parts(&DioxusKey::Backspace, Modifiers::empty()),
+        Some(Key::Backspace),
+    );
+}

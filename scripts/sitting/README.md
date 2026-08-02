@@ -24,6 +24,7 @@ ZX=1176 ZY=788 scripts/sitting/run.sh zoom   # the status-bar zoom control
 scripts/sitting/run.sh calibrate      # Actual Size -> measure-your-screen dialog
 CX=36 CY=740 scripts/sitting/run.sh picker   # the colour picker's SV square
 scripts/sitting/run.sh anchor         # zoom holds the middle of the page still
+ZX=1176 ZY=788 scripts/sitting/run.sh typed  # the typed zoom field
 ```
 
 Shots land in `target/sitting/`. `SETTLE` (default 10s) is how long to wait
@@ -78,6 +79,14 @@ subject):
 | Enter/Space never activated a focused control (WCAG 2.1.1) | `patches/blitz-dom` keyboard |
 | `tabindex="-1"` was not focusable, so `autofocus` never applied to an overlay | `patches/blitz-dom` element |
 | click-focus ran *after* the click handler, undoing that handler's `autofocus` | `patches/blitz-dom` mouse |
+
+**r86 — two, and a probe that stopped a guess.** A digit typed into the zoom
+menu's new field showed only the last character. Rather than fixing the
+rendering, one probe printed the *signal* beside the field — it held the last
+character too, so the bug was never in rendering: an `<input>` inside popover
+content has its text re-applied on every render, and `oninput` reports only the
+newest keystroke. And Backspace turned out not to be in the popover key
+vocabulary at all, so a typo could only be undone by starting over.
 
 **r83 — one:** a colour dragged in the saturation/value square filled the
 preview swatch and left the `#` field blank, so the reader had nowhere to read

@@ -45,6 +45,7 @@ pub fn key_from_parts(key: &DioxusKey, mods: Modifiers) -> Option<Key> {
         DioxusKey::End => Some(Key::End),
         DioxusKey::Enter => Some(Key::Activate),
         DioxusKey::Escape => Some(Key::Escape),
+        DioxusKey::Backspace => Some(Key::Backspace),
         DioxusKey::Tab if mods.shift() => Some(Key::ShiftTab),
         DioxusKey::Tab => Some(Key::Tab),
         // Space arrives as a one-character string rather than as a named key,

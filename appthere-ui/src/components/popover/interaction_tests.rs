@@ -741,3 +741,28 @@ fn a_passed_through_key_is_not_consumed() {
     assert!(!route_key(Role::Panel, Key::Down).consumes());
     assert!(route_key(Role::Panel, Key::Escape).consumes());
 }
+
+/// **Backspace, added when the zoom menu grew a typed field (T5.4).** A menu
+/// that accepts typed characters and cannot remove one lets a reader correct a
+/// typo only by starting over. All three roles are asserted because `route_key`
+/// is exhaustive per role: adding a `Key` is a compile error in each, and this
+/// is the test that says the answers chosen were the intended ones rather than
+/// whatever made it compile.
+#[test]
+fn backspace_erases_in_a_menu_and_passes_through_elsewhere() {
+    assert_eq!(route_key(Role::Menu, Key::Backspace), KeyAction::Erase);
+    assert!(route_key(Role::Menu, Key::Backspace).consumes());
+
+    assert_eq!(
+        route_key(Role::Panel, Key::Backspace),
+        KeyAction::PassThrough
+    );
+    assert!(
+        !route_key(Role::Panel, Key::Backspace).consumes(),
+        "a panel's own text field needs its Backspace",
+    );
+    assert_eq!(
+        route_key(Role::Tooltip, Key::Backspace),
+        KeyAction::PassThrough,
+    );
+}

@@ -117,6 +117,15 @@ pub enum Key {
     ShiftTab,
     /// A printable character.
     Char(char),
+    /// Backspace.
+    ///
+    /// Added when the zoom menu grew a typed field (Spec 08 T5.4): a menu that
+    /// accepts typed characters and has no way to remove one lets a reader
+    /// correct a typo only by starting again. It is in the vocabulary rather
+    /// than special-cased in that menu because `route_key` is exhaustive per
+    /// role — a new `Key` is a compile error in every role, which is how each
+    /// gets an answer instead of a default.
+    Backspace,
 }
 
 /// What the popover does with a key.
@@ -142,6 +151,8 @@ pub enum KeyAction {
     FocusPrevControl,
     /// Jump to the item beginning with this character.
     Typeahead(char),
+    /// Remove the last typed character, for a menu that accepts typed input.
+    Erase,
     /// Not ours — let the focused control have it.
     PassThrough,
 }
@@ -199,6 +210,7 @@ pub fn route_key(role: Role, key: Key) -> KeyAction {
         (Role::Menu, Key::Activate) => KeyAction::Activate,
         (Role::Menu, Key::Tab | Key::ShiftTab) => KeyAction::DismissAndAdvance,
         (Role::Menu, Key::Char(c)) => KeyAction::Typeahead(c),
+        (Role::Menu, Key::Backspace) => KeyAction::Erase,
 
         (Role::Panel, Key::Tab) => KeyAction::FocusNextControl,
         (Role::Panel, Key::ShiftTab) => KeyAction::FocusPrevControl,
@@ -216,6 +228,7 @@ pub fn route_key(role: Role, key: Key) -> KeyAction {
         (Role::Panel, Key::Down | Key::Up | Key::Home | Key::End) => KeyAction::PassThrough,
         (Role::Panel, Key::Activate) => KeyAction::PassThrough,
         (Role::Panel, Key::Char(_)) => KeyAction::PassThrough,
+        (Role::Panel, Key::Backspace) => KeyAction::PassThrough,
     }
 }
 
