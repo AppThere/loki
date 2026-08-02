@@ -9,7 +9,10 @@
 //! self-contained region of the tree, and everything it needs arrives as props
 //! rather than through `super::`.
 
+use appthere_ui::scroll::ZoomAnchor;
 use appthere_ui::{AtStatusBar, ZoomCommands};
+
+use super::editor_zoom::ZoomCommand;
 use dioxus::prelude::*;
 use loki_i18n::fl;
 use loki_renderer::ViewMode;
@@ -33,7 +36,9 @@ pub(super) struct EditorStatusBarProps {
     pub css_px_per_inch: Option<f32>,
     /// The capability cap in force, in permille.
     pub zoom_capability_limit_permille: Option<u16>,
-    pub zoom_percent: Signal<u32>,
+    /// The only way to change the zoom — anchoring is not optional, so the raw
+    /// signal is not handed out. See `editor_zoom::ZoomCommand`.
+    pub zoom: ZoomCommand,
     pub view_mode: Signal<ViewMode>,
     pub view_mode_user_set: Signal<bool>,
     pub font_panel_open: Signal<bool>,
@@ -45,7 +50,7 @@ pub(super) struct EditorStatusBarProps {
 /// The status bar.
 #[component]
 pub(super) fn EditorStatusBar(props: EditorStatusBarProps) -> Element {
-    let mut zoom_percent = props.zoom_percent;
+    let zoom = props.zoom;
     let mut view_mode = props.view_mode;
     let mut view_mode_user_set = props.view_mode_user_set;
     let mut font_panel_open = props.font_panel_open;
@@ -62,7 +67,7 @@ pub(super) fn EditorStatusBar(props: EditorStatusBarProps) -> Element {
             page_label:         page_label,
             word_count_label:   props.word_count_label.clone(),
             language_label:     fl!("editor-language"),
-            zoom_percent:       zoom_percent(),
+            zoom_percent:       zoom.percent(),
             zoom_capability_limit_permille: props.zoom_capability_limit_permille,
             // The fits follow a measurement that is *checked*, never assumed.
             //
@@ -80,15 +85,17 @@ pub(super) fn EditorStatusBar(props: EditorStatusBarProps) -> Element {
             zoom_labels:        loki_app_shell::zoom_labels::zoom_labels(),
             collaborator_count: 0,
             collaborator_label: String::new(),
-            on_zoom_change:     move |p: u32| zoom_percent.set(p),
+            // Centre-anchored: a reader pressing a control in the status bar is
+            // looking at the page, not at the control (Spec 08 T5.6).
+            on_zoom_change:     move |p: u32| zoom.set(p, ZoomAnchor::Centre),
             on_zoom_fit_width:  move |()| {
                 if let Some(p) = fit_inputs.and_then(fit_width_percent) {
-                    zoom_percent.set(p);
+                    zoom.set(p, ZoomAnchor::Centre);
                 }
             },
             on_zoom_fit_page:   move |()| {
                 if let Some(p) = fit_inputs.and_then(fit_page_percent) {
-                    zoom_percent.set(p);
+                    zoom.set(p, ZoomAnchor::Centre);
                 }
             },
             // Apply the known density, or ask for one. The prompt is D-04's
@@ -96,7 +103,7 @@ pub(super) fn EditorStatusBar(props: EditorStatusBarProps) -> Element {
             // nothing asks at launch, and a reader who never wants a physically
             // sized page is never asked to hold a ruler to their screen.
             on_zoom_actual_size: move |()| match actual_size_percent(css_px_per_inch) {
-                Some(p) => zoom_percent.set(p),
+                Some(p) => zoom.set(p, ZoomAnchor::Centre),
                 None => calibrating.set(true),
             },
             view_mode_label:    if view_mode() == ViewMode::Reflow {

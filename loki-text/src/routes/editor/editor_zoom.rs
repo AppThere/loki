@@ -22,8 +22,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use appthere_ui::scroll::ScrollMetrics;
+use appthere_ui::scroll::{ScrollMetrics, ViewportController, ZoomAnchor};
 use appthere_ui::{actual_size_zoom_percent, fit_page_zoom_percent, fit_width_zoom_percent};
+use dioxus::prelude::*;
 
 use crate::editing::state::DocumentState;
 
@@ -127,6 +128,82 @@ pub(super) fn capability_permille(doc_state: &Arc<Mutex<DocumentState>>) -> Opti
         crate::texture_budget::device_scale_factor(),
         crate::texture_budget::current(),
     )
+}
+
+/// The only way to change the zoom (Spec 08 T5.6).
+///
+/// # A capability, not a convention
+///
+/// Anchoring has to happen at **every** zoom change — the buttons, the presets,
+/// the three fits, Actual Size, and the calibration that completes it. A rule
+/// saying "remember to anchor" would be followed five times and forgotten once,
+/// and the one that was forgotten is invisible: the page still zooms, it just
+/// jumps somewhere else, which reads as the app being twitchy rather than as a
+/// missing call.
+///
+/// So the zoom signal is not handed out. A caller gets this, and the only thing
+/// it can do is set a zoom *with* an anchor (evidence rule 5: make the wrong
+/// thing unavailable rather than documented).
+///
+/// # It is a trigger, and subscribes to nothing
+///
+/// I-20 was a reveal keyed on a scroll-derived quantity, which made the wheel
+/// fight it. The tempting way to anchor is to widen the caret-follow effect so
+/// it also watches zoom; that reintroduces I-20 exactly. This runs *in the
+/// handler that changed the zoom*, reads the metrics with `metrics_now` (the
+/// non-subscribing read), and issues one `scroll_to`. No effect gains a
+/// dependency.
+/// `PartialEq` compares the zoom it carries, not the container it scrolls.
+///
+/// Props need it, and the honest answer is that two commands are the same when
+/// they would do the same thing — which is the zoom. Deriving it would compare
+/// `ViewportController`'s four signals, none of which change identity, so the
+/// derived answer would be "always equal" and a zoom change would not re-render
+/// the status bar that displays it.
+#[derive(Clone, Copy)]
+pub(super) struct ZoomCommand {
+    percent: Signal<u32>,
+    viewport: ViewportController,
+}
+
+impl PartialEq for ZoomCommand {
+    fn eq(&self, other: &Self) -> bool {
+        *self.percent.read() == *other.percent.read()
+    }
+}
+
+impl ZoomCommand {
+    /// Wraps the zoom signal and the scroll container it applies to.
+    pub(super) fn new(percent: Signal<u32>, viewport: ViewportController) -> Self {
+        Self { percent, viewport }
+    }
+
+    /// The zoom currently requested.
+    pub(super) fn percent(self) -> u32 {
+        (self.percent)()
+    }
+
+    /// Sets the zoom, holding `anchor` still.
+    ///
+    /// The ratio is computed from **percent**, which is the requested zoom on
+    /// both sides — so the two are the same quantity even when a capability cap
+    /// is in force. Anchoring against the *effective* zoom would be more
+    /// literally correct and is not available here: the cap is applied inside the
+    /// renderer, after this runs. The error it costs is bounded by the cap and
+    /// only appears on a device already reducing quality; mixing requested and
+    /// effective would be an unbounded error on every device.
+    /// TODO(t5.6-effective-anchor): anchor on the effective zoom once the
+    /// renderer can report the pair atomically.
+    pub(super) fn set(mut self, next_percent: u32, anchor: ZoomAnchor) {
+        let current = *self.percent.peek();
+        if next_percent == current {
+            return;
+        }
+        self.percent.set(next_percent);
+
+        self.viewport
+            .zoom_to(anchor, current as f32 / 100.0, next_percent as f32 / 100.0);
+    }
 }
 
 #[cfg(test)]

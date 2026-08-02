@@ -202,5 +202,23 @@ picker)
   shot 66-hue
   ;;
 
+anchor)
+  # T5.6: zooming from the control must hold the middle of the page still.
+  # Scroll into the document first, so there is something to hold.
+  start_x || exit 1
+  start_app env LOKI_DEVICE_PROFILE="${PROFILE:-pointer=fine}" || exit 1
+  for i in $(seq 1 "${TABS:-7}"); do key Tab; done
+  key Return
+  sleep "${OPEN_SETTLE:-12}"
+  # Put the pointer over the canvas and wheel down a few notches.
+  xdotool mousemove 640 400
+  for _ in 1 2 3 4 5 6; do xdotool click 5; done
+  sleep 2
+  shot 70-scrolled
+  # Zoom in one preset from the control.
+  xdotool mousemove "${PLUSX:-1225}" "${PLUSY:-788}" click 1; sleep 3
+  shot 71-zoomed
+  ;;
+
 esac
 echo "DONE: $1"

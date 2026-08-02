@@ -16,6 +16,7 @@
 //! notes it on the profile as **calibrated** — which is what stops the platform
 //! probe from overwriting it on the next observation.
 
+use appthere_ui::scroll::ZoomAnchor;
 use appthere_ui::{
     AtCalibrateDialog, AtCalibrateLabels, REFERENCE_MM, actual_size_zoom_percent,
     note_display_density,
@@ -24,6 +25,8 @@ use dioxus::prelude::*;
 use loki_app_shell::display_calibration::{DisplayCalibrations, DisplayKey};
 use loki_app_shell::display_density::calibrated_css_ppi;
 use loki_i18n::fl;
+
+use super::editor_zoom::ZoomCommand;
 
 /// The density the reference line is drawn at when nothing is known.
 ///
@@ -37,15 +40,15 @@ const ASSUMED_CSS_PPI: f32 = 96.0;
 pub(super) struct EditorCalibrateProps {
     /// Cleared when the dialog closes, either way.
     pub open: Signal<bool>,
-    /// The requested zoom, set to Actual Size once a measurement lands.
-    pub zoom_percent: Signal<u32>,
+    /// The zoom command, used to apply Actual Size once a measurement lands.
+    pub zoom: ZoomCommand,
 }
 
 /// Hosts the calibration dialog and stores its result.
 #[component]
 pub(super) fn EditorCalibrate(props: EditorCalibrateProps) -> Element {
     let mut open = props.open;
-    let mut zoom_percent = props.zoom_percent;
+    let zoom = props.zoom;
     // Loaded once per mount rather than per render: this touches the disk.
     let store = use_signal(DisplayCalibrations::load);
 
@@ -89,7 +92,7 @@ pub(super) fn EditorCalibrate(props: EditorCalibrateProps) -> Element {
                 // asked them to fetch a ruler — and they would have to choose
                 // Actual Size a second time to see any effect.
                 if let Some(p) = actual_size_zoom_percent(Some(density.css_px_per_inch)) {
-                    zoom_percent.set(p);
+                    zoom.set(p, ZoomAnchor::Centre);
                 }
                 open.set(false);
             },

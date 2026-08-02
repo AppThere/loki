@@ -44,8 +44,10 @@ mod animate;
 mod controller;
 mod metrics;
 mod reveal;
+mod zoom_anchor;
 
 pub use animate::{animation_step, ease_out_cubic, MotionPreference};
 pub use controller::{use_viewport_controller, ContentRect, ViewportController};
 pub use metrics::ScrollMetrics;
 pub use reveal::{reveal_offset, RevealMargin, CARET_LEADING_LINES, CARET_TRAILING_LINES};
+pub use zoom_anchor::{anchored_scroll, ZoomAnchor};

@@ -21,7 +21,7 @@
 
 use std::sync::Arc;
 
-use appthere_ui::{AtRibbon, tokens, use_breakpoint, use_device_profile};
+use appthere_ui::{AtRibbon, tokens, use_breakpoint, use_device_profile, use_viewport_controller};
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_doc_model::get_mark_at;
@@ -531,6 +531,12 @@ pub(super) fn EditorInner(path: String) -> Element {
     let zoom_fit_inputs = move || super::editor_zoom::fit_inputs(&doc_state_zoom, scroll_metrics());
     let display_ppi = move || use_device_profile().display.and_then(|d| d.css_px_per_inch);
     let zoom_cap_permille = move || super::editor_zoom::capability_permille(&doc_state_cap);
+    // The one way the zoom changes, so anchoring cannot be forgotten at one of
+    // the six call sites (Spec 08 T5.6).
+    let zoom_command = super::editor_zoom::ZoomCommand::new(
+        zoom_percent,
+        use_viewport_controller(scroll_metrics, canvas_mounted),
+    );
 
     // Font substitutions reported by the layout engine (requested → substitute):
     // the status-bar chip is the indicator; the detail panel opens from it.
@@ -768,7 +774,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 fit_inputs:         zoom_fit_inputs(),
                 css_px_per_inch:    display_ppi(),
                 zoom_capability_limit_permille: zoom_cap_permille(),
-                zoom_percent:       zoom_percent,
+                zoom:               zoom_command,
                 view_mode:          view_mode,
                 view_mode_user_set: view_mode_user_set,
                 font_panel_open:    font_panel_open,
@@ -780,7 +786,7 @@ pub(super) fn EditorInner(path: String) -> Element {
             // as a component, per ADR-0013 — it owns hook scope of its own and
             // must not be a function called inside an `if`.
             {calibrating().then(|| rsx! {
-                super::editor_calibrate::EditorCalibrate { open: calibrating, zoom_percent }
+                super::editor_calibrate::EditorCalibrate { open: calibrating, zoom: zoom_command }
             })}
         }
     }

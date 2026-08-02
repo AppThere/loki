@@ -23,6 +23,7 @@ scripts/sitting/run.sh editor         # open a document, click, type
 ZX=1176 ZY=788 scripts/sitting/run.sh zoom   # the status-bar zoom control
 scripts/sitting/run.sh calibrate      # Actual Size -> measure-your-screen dialog
 CX=36 CY=740 scripts/sitting/run.sh picker   # the colour picker's SV square
+scripts/sitting/run.sh anchor         # zoom holds the middle of the page still
 ```
 
 Shots land in `target/sitting/`. `SETTLE` (default 10s) is how long to wait
@@ -31,6 +32,11 @@ poll, so a short settle photographs a black screen.
 
 Host packages: `xvfb`, `x11-apps` (xwd), `imagemagick` (convert/compare),
 `xdotool`, `mesa-vulkan-drivers` (lavapipe), `libxkbcommon-x11-0`.
+
+Some checks are measurements rather than looks. The `anchor` scenario is one:
+a landmark 210 px above the viewport centre must sit 210×z px above it after
+zooming by z. Reading that off two screenshots is the check — an eyeball
+"it still looks about right" would pass for a formula that is merely close.
 
 ## Reading the results
 

@@ -11,6 +11,7 @@ use dioxus::prelude::*;
 use super::animate::{animation_step, MotionPreference, SMOOTH_DURATION_MS, TICK_MS};
 use super::metrics::ScrollMetrics;
 use super::reveal::{reveal_offset, RevealMargin};
+use super::zoom_anchor::{anchored_scroll, ZoomAnchor};
 
 /// A target rect in **content** coordinates: `(x, y, width, height)`.
 pub type ContentRect = (f32, f32, f32, f32);
@@ -150,6 +151,45 @@ impl ViewportController {
                 true
             }
         }
+    }
+
+    /// Scrolls to an absolute offset.
+    ///
+    /// `Instant` applies immediately. `Smooth` animates unless the motion
+    /// preference is [`MotionPreference::Reduced`], in which case it degrades
+    /// to instant — the scroll still happens, it just does not animate.
+    /// Scrolls so that `anchor` keeps showing the same content across a zoom
+    /// change from `from_zoom` to `to_zoom` (Spec 08 T5.6).
+    ///
+    /// # Here rather than at the caller, so the non-subscribing read stays here
+    ///
+    /// The arithmetic is `zoom_anchor`'s and is tested there. What this adds is
+    /// the *reading* of the live geometry, which must go through
+    /// [`Self::metrics_now`] — the accessor that does not subscribe (L08-019).
+    /// Exposing `metrics_now` so a caller could do this itself would hand out
+    /// the one thing the type exists to keep private, and the failure it guards
+    /// against is a command path that re-runs on every scroll event.
+    ///
+    /// Instant, not eased: the content is re-laid-out at the new zoom in the same
+    /// frame, so an animated scroll would glide across geometry that has already
+    /// changed underneath it.
+    ///
+    /// Returns `false` when the container is not measured yet, in which case
+    /// nothing moved — there is no anchor to hold without a viewport.
+    pub fn zoom_to(&mut self, anchor: ZoomAnchor, from_zoom: f32, to_zoom: f32) -> bool {
+        let m = self.metrics_now();
+        if !m.is_measured() {
+            return false;
+        }
+        let (x, y) = anchored_scroll(
+            (m.scroll_left, m.scroll_top),
+            (m.client_width, m.client_height),
+            anchor,
+            from_zoom,
+            to_zoom,
+        );
+        self.scroll_to(x, y, ScrollBehavior::Instant);
+        true
     }
 
     /// Scrolls to an absolute offset.
