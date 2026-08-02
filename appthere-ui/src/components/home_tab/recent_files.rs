@@ -8,6 +8,8 @@
 //! list's `for` loop and `if` arms, making this component's hook count depend
 //! on its props (audit F6a / ADR-0013).
 
+use std::rc::Rc;
+
 use dioxus::prelude::*;
 
 use super::recent_menu::{key_for_path, RecentMenuActions, RecentMenuPopover, RecentMenuTarget};
@@ -45,6 +47,10 @@ pub(crate) fn AtRecentFileList(props: AtRecentFileListProps) -> Element {
     // path-derived key, and `RecentMenuPopover` checks it before anything can
     // fire.
     let mut menu_open: Signal<Option<RecentMenuTarget>> = use_signal(|| None);
+    // The ⋮ button of whichever row last opened a menu, for focus restoration
+    // (T4.5). One slot rather than one per row, because the singleton rule
+    // means only one menu is open at a time — see `RecentRowProps::anchor_el`.
+    let anchor_el: Signal<Option<Rc<MountedData>>> = use_signal(|| None);
     // The paths currently displayed, in order — the identity check's input.
     // Derived from the same `take(..)` the rows use, so "position 3" means the
     // same thing on both sides (L08-029).
@@ -101,6 +107,7 @@ pub(crate) fn AtRecentFileList(props: AtRecentFileListProps) -> Element {
                         .is_some_and(|t| t.index == idx),
                     menu_aria_label: props.menu_aria_label.clone(),
                     on_select: props.on_select,
+                    anchor_el,
                     on_toggle_menu: {
                         let path = doc.path.clone();
                         move |(i, rect): (usize, Option<Rect>)| {
@@ -131,6 +138,7 @@ pub(crate) fn AtRecentFileList(props: AtRecentFileListProps) -> Element {
             if let Some(target) = menu_open.read().clone() {
                 RecentMenuPopover {
                     target,
+                    anchor_el,
                     paths: visible_paths.clone(),
                     actions: RecentMenuActions {
                         remove_label: props.remove_label.clone(),

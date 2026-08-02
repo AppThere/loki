@@ -33,7 +33,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::components::popover::{
-    OverlayKind, PopoverId, PopoverRequest, use_popover_anchor,
+    KeyAction, OverlayKind, PopoverId, PopoverRequest, Role, use_popover_anchor,
 };
 use appthere_ui::{use_safe_area, use_window_size, window_size_signal};
 use dioxus::prelude::*;
@@ -43,6 +43,9 @@ use crate::editing::state::DocumentState;
 use crate::routes::editor::editor_spell::{SpellMenu, SpellSync};
 use crate::routes::editor::editor_spell_panel::spell_menu_content;
 use crate::routes::editor::editor_spell_place::spell_menu_placement;
+use crate::routes::editor::editor_spell_rows::{
+    SpellRowCtx, activate_spell_row, next_spell_row, prev_spell_row, spell_rows,
+};
 
 /// Identifies the spelling menu to the popover singleton rule.
 ///
@@ -124,6 +127,13 @@ pub(super) fn SpellPopover(props: SpellPopoverProps) -> Element {
         // baseline each time — which is the I-20 shape (a command subscribing to
         // the state it acts on) in a different module.
         opened_at_scroll.set(*scroll_offset.peek());
+        // A second set of handles for the key path: `doc_state` and `service`
+        // above are moved into `content`.
+        let key_ctx = SpellRowCtx {
+            doc_state: Arc::clone(&props.doc_state),
+            sync,
+            service: props.service.clone(),
+        };
         anchor.open(
             PopoverRequest {
                 // Stamped by the anchor with the id passed to
@@ -156,6 +166,53 @@ pub(super) fn SpellPopover(props: SpellPopoverProps) -> Element {
                     }
                 })),
                 kind: OverlayKind::Dismissible,
+                role: Role::Menu,
+                // **No anchor element.** This menu is anchored to a *point* —
+                // the right-click — not to a control, so there is nothing to
+                // return focus to and `dismiss_sequence` takes the branch that
+                // moves none. Focus stays in the editor, which is where the
+                // user was.
+                anchor: None,
+                on_key: Some(Rc::new(move |action: KeyAction| {
+                    let mut hover = spell_hover;
+                    let Some(menu) = spell_menu.peek().clone() else {
+                        return;
+                    };
+                    let rows = spell_rows(&menu);
+                    let current = hover.peek().clone();
+                    let current = current.as_deref();
+                    let moved = match action {
+                        KeyAction::Next => next_spell_row(&rows, current),
+                        KeyAction::Prev => prev_spell_row(&rows, current),
+                        KeyAction::First => rows.first().copied(),
+                        KeyAction::Last => rows.last().copied(),
+                        KeyAction::Activate => {
+                            // Only a row the *keyboard* can name is activated:
+                            // `index_of` rejects a stale hover key, so Enter
+                            // with nothing selected does nothing rather than
+                            // guessing at the first row.
+                            if let Some(key) = current
+                                && let Some(row) = rows.iter().find(|r| r.key() == key)
+                            {
+                                activate_spell_row(
+                                    *row,
+                                    &menu,
+                                    &key_ctx,
+                                    spell_menu,
+                                    is_language_panel_open,
+                                );
+                            }
+                            None
+                        }
+                        // Typeahead over suggestions would compete with the
+                        // suggestions themselves being words; left unhandled
+                        // rather than half-implemented.
+                        _ => None,
+                    };
+                    if let Some(row) = moved {
+                        hover.set(Some(row.key()));
+                    }
+                })),
                 content: Rc::new(move || {
                     spell_menu_content(
                         Arc::clone(&doc_state),

@@ -101,14 +101,48 @@ fn a_menu_navigates_with_arrows_and_leaves_on_tab() {
     );
 }
 
-/// Escape is the one key with no per-role behaviour, and it must close both —
-/// a panel that could only be closed by clicking away would trap a keyboard
-/// user inside it.
+/// Escape closes both **interactive** roles — a panel that could only be closed
+/// by clicking away would trap a keyboard user inside it.
 #[test]
-fn escape_closes_both_roles() {
+fn escape_closes_both_interactive_roles() {
     for role in [Role::Menu, Role::Panel] {
         assert_eq!(route_key(role, Key::Escape), KeyAction::Dismiss, "{role:?}");
     }
+}
+
+/// **A tooltip consumes nothing at all, Escape included (r78).** It is dismissed
+/// by the pointer leaving its anchor, so an Escape it swallowed would be one the
+/// editor beneath never saw — a keypress that cancels nothing, for as long as a
+/// pointer happens to rest on an icon.
+#[test]
+fn a_tooltip_passes_every_key_through_including_escape() {
+    for key in [
+        Key::Escape,
+        Key::Tab,
+        Key::ShiftTab,
+        Key::Down,
+        Key::Up,
+        Key::Home,
+        Key::End,
+        Key::Activate,
+        Key::Char('r'),
+    ] {
+        let action = route_key(Role::Tooltip, key);
+        assert_eq!(action, KeyAction::PassThrough, "{key:?}");
+        assert!(
+            !action.consumes(),
+            "{key:?} consumed by a tooltip stops propagating to what the user              is actually working in",
+        );
+    }
+}
+
+/// **The polarity that keeps the test above from meaning "nothing routes"
+/// (L08-045).** If `route_key` returned `PassThrough` for everything, the
+/// tooltip assertions would all pass while both menus went deaf.
+#[test]
+fn the_interactive_roles_still_consume_their_own_keys() {
+    assert!(route_key(Role::Menu, Key::Down).consumes());
+    assert!(route_key(Role::Panel, Key::Tab).consumes());
 }
 
 /// The trap follows the role rather than being set beside it, so "a menu that
@@ -117,6 +151,25 @@ fn escape_closes_both_roles() {
 fn the_focus_trap_is_derived_from_the_role() {
     assert!(!Role::Menu.traps_focus(), "Tab is a menu's exit");
     assert!(Role::Panel.traps_focus(), "Tab cycles within a panel");
+    assert!(
+        !Role::Tooltip.traps_focus(),
+        "a tooltip has nothing to trap"
+    );
+}
+
+/// **Whether the overlay takes focus on open is the same kind of derived
+/// property — and it is the half that bites (r78).** A tooltip appears because a
+/// pointer came to rest; the host's `autofocus` would then pull focus out of
+/// whatever the user was typing in, which no amount of correct key routing
+/// undoes.
+#[test]
+fn only_the_roles_the_user_navigated_to_take_focus() {
+    assert!(Role::Menu.takes_focus());
+    assert!(Role::Panel.takes_focus());
+    assert!(
+        !Role::Tooltip.takes_focus(),
+        "focusing a tooltip steals the caret from the document",
+    );
 }
 
 /// **The most common accessibility defect in this component class:** Escape

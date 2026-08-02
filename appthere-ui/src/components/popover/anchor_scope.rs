@@ -38,7 +38,10 @@
 use dioxus::prelude::*;
 
 use super::component::{use_popover, AtPopoverContext, PopoverRequest};
-use super::interaction::{note_event, on_anchor_change, AnchorResponse};
+use super::dismiss_order::dismiss_sequence;
+use super::interaction::{
+    focus_after_dismiss, note_event, on_anchor_change, AnchorResponse, DismissCause,
+};
 use super::wiring::{dismiss_on_unmount, PopoverId};
 
 impl AtPopoverContext {
@@ -67,6 +70,47 @@ impl AtPopoverContext {
         }
         if let Ok(mut slot) = self.resolved.try_write() {
             *slot = None;
+        }
+    }
+
+    /// Closes `id` **with a reason**, running the focus sequence that reason
+    /// calls for (T4.5).
+    ///
+    /// # Every dismissal that moves focus goes through here
+    ///
+    /// [`Self::dismiss_if_open`] is the unmount path and answers
+    /// [`DismissCause::AnchorUnmounted`], whose focus target is `Unchanged` — so
+    /// it needs none of this. Every *other* cause does, and giving each of them
+    /// its own restore call would be four consumers × five causes of chances to
+    /// order it wrong. The order is the thing [`dismiss_sequence`] exists to fix,
+    /// and it is only fixed if there is one performer.
+    ///
+    /// The consumer's own `on_dismiss` is what actually removes the popover — it
+    /// clears the state the consumer is mounted behind — so it is called for the
+    /// [`super::DismissStep::Unmount`] step, **after** the focus steps. That is
+    /// the ordering `dismiss_order` was written for: restoring focus to a node
+    /// that has already been removed leaves focus on the document body, and a
+    /// screen reader announces the document title between Escape and arriving
+    /// back at the control.
+    pub(crate) fn dismiss_with(self, id: PopoverId, cause: DismissCause) {
+        let Ok(open) = self.open.try_peek() else {
+            return;
+        };
+        // Keyed, for the same reason `dismiss_if_open` is: the singleton rule
+        // means another popover may have replaced this one since the event that
+        // is now closing it was scheduled.
+        let Some(request) = open.as_ref().filter(|r| r.id == id).cloned() else {
+            return;
+        };
+        drop(open);
+        let target = focus_after_dismiss(cause);
+        // "Can focus land on the anchor" is, at this layer, "did the trigger
+        // ever report a mounted handle". The document-side check — the node may
+        // have been removed since — is in the patch's own handler, which is the
+        // only place that can see it.
+        let steps = dismiss_sequence(target, request.anchor.is_some());
+        if super::focus::perform(&steps, request.anchor.as_ref()) {
+            (request.on_dismiss)();
         }
     }
 }
@@ -177,7 +221,7 @@ impl PopoverAnchor {
             // The whole idempotence obligation, in one arm: nothing moved, so
             // nothing is written and the host does not re-render.
             AnchorResponse::Ignore => {}
-            AnchorResponse::Dismiss => self.dismiss(),
+            AnchorResponse::Dismiss => self.dismiss_with(DismissCause::AnchorScrolledAway),
             AnchorResponse::Reposition(placement) => {
                 if previous.placement == current.placement {
                     return;
@@ -199,6 +243,15 @@ impl PopoverAnchor {
     /// rather than closing the replacement.
     pub fn dismiss(self) {
         self.ctx.dismiss_if_open(self.id);
+    }
+
+    /// Closes this popover **for a stated reason**, restoring focus accordingly.
+    ///
+    /// This is the dismissal a user performs — Escape, Tab, choosing an item.
+    /// [`Self::dismiss`] is the one the *machinery* performs, where there is no
+    /// keyboard user to return focus to.
+    pub fn dismiss_with(self, cause: DismissCause) {
+        self.ctx.dismiss_with(self.id, cause);
     }
 }
 

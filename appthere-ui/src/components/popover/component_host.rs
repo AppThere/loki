@@ -7,12 +7,11 @@
 //! [`OverlayKind`] gave the host its first branch. The request type and the
 //! context stay next door; this is the one component.
 
-use std::rc::Rc;
-
 use dioxus::prelude::*;
 
 use super::{AtPopoverContext, OverlayKind};
 use crate::components::popover::geometry::Placement;
+use crate::components::popover::{key_from_parts, route_key, DismissCause, KeyAction};
 
 /// Renders the open popover at the app root.
 ///
@@ -38,9 +37,18 @@ pub fn AtPopoverHost() -> Element {
     let Some(Placement { rect, .. }) = *ctx.resolved.read() else {
         return rsx! {};
     };
-    let dismiss = Rc::clone(&request.on_dismiss);
     let outside_move = request.on_outside_move.clone();
     let dismissible = request.kind == OverlayKind::Dismissible;
+    let role = request.role;
+    let takes_focus = role.takes_focus();
+    let on_key = request.on_key.clone();
+    let id = request.id;
+    // Every dismissal the host initiates goes through `dismiss_with`, so the
+    // focus sequence runs once, in `anchor_scope`, rather than three times here.
+    // `OutsideClick` and the two key causes differ only in the `FocusTarget`
+    // they resolve to — which is a decision, and decisions are not the host's.
+    let dismiss_outside = move || ctx.dismiss_with(id, DismissCause::OutsideClick);
+    let dismiss_key = move |cause: DismissCause| ctx.dismiss_with(id, cause);
     rsx! {
         // Backdrop first: DOM order is what orders two children of the same
         // positioned root, since `z-index` cannot arbitrate between them.
@@ -54,7 +62,7 @@ pub fn AtPopoverHost() -> Element {
                  z-index: {z};",
                 z = crate::components::overlay::BACKDROP_Z_INDEX,
             ),
-            onclick: move |_| dismiss(),
+            onclick: move |_| dismiss_outside(),
             onmousemove: move |_| {
                 if let Some(f) = outside_move.as_ref() {
                     f();
@@ -63,6 +71,45 @@ pub fn AtPopoverHost() -> Element {
         }
         }
         div {
+            // **Focus arrives at mount, and leaves through `focus::perform`.**
+            // `autofocus` is honoured by blitz-dom's mutator at mount time, and
+            // a popover's content mounts exactly when it opens — so the way in
+            // needs no programmatic move. The way *out* did, and had no
+            // mechanism at all until the `set_focus` patch (r78); see
+            // `super::focus`. `tabindex` is what makes this div focusable.
+            //
+            // **Not for every role.** A tooltip appears under a resting pointer,
+            // so focusing it would take focus away from whatever its owner was
+            // typing in — the decision is `Role::takes_focus`, not a condition
+            // spelled out here.
+            tabindex: "-1",
+            autofocus: if takes_focus { "true" },
+            onkeydown: move |evt: KeyboardEvent| {
+                let Some(key) = key_from_parts(&evt.key(), evt.modifiers()) else {
+                    return;
+                };
+                let action = route_key(role, key);
+                if action.consumes() {
+                    // Derived from the action rather than decided here — see
+                    // `KeyAction::consumes`. Escape closing a menu must not also
+                    // reach the editor beneath and cancel an edit.
+                    evt.stop_propagation();
+                }
+                match action {
+                    // The two the host owns, because closing is its business —
+                    // and they carry *different* causes, which is the whole
+                    // reason `focus_after_dismiss` distinguishes them: Escape
+                    // returns focus to the trigger, Tab asks to continue past it.
+                    KeyAction::Dismiss => dismiss_key(DismissCause::Escape),
+                    KeyAction::DismissAndAdvance => dismiss_key(DismissCause::TabOut),
+                    // Everything else needs to know what the items are.
+                    other => {
+                        if let Some(f) = on_key.as_ref() {
+                            f(other);
+                        }
+                    }
+                }
+            },
             style: format!(
                 "position: absolute; left: {left}px; top: {top}px; \
                  width: {width}px; max-height: {height}px; overflow-y: auto; \

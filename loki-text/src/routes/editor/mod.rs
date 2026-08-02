@@ -82,6 +82,7 @@ mod editor_spell;
 mod editor_spell_panel;
 mod editor_spell_place;
 mod editor_spell_popover;
+mod editor_spell_rows;
 mod editor_state;
 mod editor_style;
 mod editor_style_catalog;

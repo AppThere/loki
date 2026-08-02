@@ -54,6 +54,24 @@ pub enum Role {
     /// A container of controls: Tab cycles within, arrows belong to the focused
     /// control, Escape closes. T5.2's colour picker, T5.4's zoom popover.
     Panel,
+    /// A non-interactive overlay: no controls, no focus, no keys. T4.3's
+    /// Open-button tooltip.
+    ///
+    /// # The variant the first real dispatcher forced (r78)
+    ///
+    /// There were two roles while `route_key` had no caller, and the tooltip was
+    /// filed under `Panel` on the reasoning that it "handles nothing itself".
+    /// Wiring the dispatch made that false in the one way that matters:
+    /// `route_key(Panel, Tab)` is `FocusNextControl`, which **consumes** the key
+    /// and hands it to an `on_key` the tooltip does not supply — so Tab while a
+    /// tooltip is showing would go nowhere at all. A tooltip is a keyboard trap
+    /// the moment it is treated as a container of controls.
+    ///
+    /// It is also the role that must **not** take focus on mount: a tooltip
+    /// appears because the pointer rested on a button, and stealing focus from
+    /// whatever the user was typing in is a defect no amount of key routing
+    /// fixes. See [`Self::takes_focus`].
+    Tooltip,
 }
 
 impl Role {
@@ -63,6 +81,18 @@ impl Role {
     #[must_use]
     pub fn traps_focus(self) -> bool {
         matches!(self, Self::Panel)
+    }
+
+    /// Whether the overlay should take focus when it opens.
+    ///
+    /// A menu and a panel are things the user went to, so focus follows; a
+    /// tooltip appeared under a resting pointer, so it must not. Derived rather
+    /// than configured, on the same rule as [`Self::traps_focus`]: "an overlay
+    /// that grabs focus and routes no keys" is not a state anyone wants, so it
+    /// should not be expressible.
+    #[must_use]
+    pub fn takes_focus(self) -> bool {
+        !matches!(self, Self::Tooltip)
     }
 }
 
@@ -143,18 +173,24 @@ impl KeyAction {
 ///
 /// The two rows that matter, and the reason [`Role`] exists:
 ///
-/// | key | `Menu` | `Panel` |
-/// | --- | --- | --- |
-/// | arrows | move the active item | **pass through** to the focused control |
-/// | `Tab` | close, focus moves on | **cycle** within the popover |
+/// | key | `Menu` | `Panel` | `Tooltip` |
+/// | --- | --- | --- | --- |
+/// | arrows | move the active item | **pass through** to the focused control | pass through |
+/// | `Tab` | close, focus moves on | **cycle** within the popover | pass through |
+/// | `Escape` | close | close | **pass through** |
 ///
 /// Arrows passed through is what stops a colour picker's slider from being
 /// stolen; Tab cycling is what stops it from being dismissed mid-edit.
 #[must_use]
 pub fn route_key(role: Role, key: Key) -> KeyAction {
     match (role, key) {
-        // Escape closes both, always. The one key with no per-role behaviour.
-        (_, Key::Escape) => KeyAction::Dismiss,
+        // A tooltip handles nothing and **consumes** nothing — including Escape,
+        // which belongs to whatever the user is actually working in. First,
+        // because the Escape row below is otherwise role-blind.
+        (Role::Tooltip, _) => KeyAction::PassThrough,
+
+        // Escape closes the two interactive roles, always.
+        (Role::Menu | Role::Panel, Key::Escape) => KeyAction::Dismiss,
 
         (Role::Menu, Key::Down) => KeyAction::Next,
         (Role::Menu, Key::Up) => KeyAction::Prev,

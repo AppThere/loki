@@ -19,6 +19,7 @@ mod host_impl;
 pub use host_impl::AtPopoverHost;
 
 use super::geometry::{Placement, PlacementRequest};
+use super::interaction::{KeyAction, Role};
 use super::wiring::PopoverId;
 
 /// What a consumer hands the host: the content, where it belongs, and who owns
@@ -72,6 +73,42 @@ pub struct PopoverRequest {
     /// call site reads as "backdrop: false" — a rendering detail — rather than as
     /// "this is not dismissed by clicking", which is the decision.
     pub kind: OverlayKind,
+    /// Which interaction model this overlay follows, for [`super::route_key`].
+    ///
+    /// A menu takes the arrows to move its active item; a panel passes them to
+    /// whatever control has focus. Carried on the request rather than inferred,
+    /// because the primitive cannot see what the content is.
+    pub role: Role,
+    /// What to do with a key the popover **consumed but did not handle itself**.
+    ///
+    /// # The host cannot move a selection it cannot see
+    ///
+    /// `content` is an opaque closure, so `Next`/`Prev`/`First`/`Last`/
+    /// `Activate`/`Typeahead` are decisions the host can *route* and cannot
+    /// *perform* — only the consumer knows what its items are. `Dismiss` and
+    /// `DismissAndAdvance` are the host's, because closing is the one action it
+    /// owns.
+    ///
+    /// So the split is: [`super::route_key`] decides, the host performs what it
+    /// can, and this receives the rest. A consumer that ignores it gets a menu
+    /// that closes on Escape and does not arrow — which is a smaller failure
+    /// than a host guessing at content it does not understand.
+    pub on_key: Option<Rc<dyn Fn(KeyAction)>>,
+    /// The element focus returns to when this popover closes (T4.5).
+    ///
+    /// # Held by the host, not by the consumer, because the consumer unmounts
+    ///
+    /// Restoring focus is the *last* thing a dismissal does, and by then the
+    /// consumer that owns the trigger may already be gone — the r66 failure in
+    /// miniature. The host outlives every consumer, so the handle lives on the
+    /// request it already holds.
+    ///
+    /// `None` when the trigger has not reported a mounted handle yet, which is
+    /// a real state: `onmounted` fires after the first render. It is what
+    /// [`super::dismiss_sequence`]'s `anchor_focusable` reads, so a popover
+    /// opened without one takes the fallback branch rather than silently
+    /// skipping the restore.
+    pub anchor: Option<Rc<MountedData>>,
     /// What to render, as a **closure invoked during the host's render**.
     ///
     /// # Why not an `Element`

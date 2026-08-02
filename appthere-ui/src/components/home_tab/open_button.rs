@@ -11,13 +11,18 @@
 //! to find it. It is now an icon button at the **top of the section**, beside the
 //! heading, where it is visible whatever the list is doing.
 //!
-//! # The tooltip is not a `Role`, and it does not get a backdrop
+//! # The tooltip has its own `Role`, and it does not get a backdrop
 //!
-//! `popover::host` settles the first: a tooltip never takes focus, so giving it
-//! an [`crate::components::popover::Role`] would put an arm in `route_key` that
-//! can never run. It shares the *host* — because the Recent section is
-//! `overflow-y: auto` and an out-of-flow child is clipped by it, exactly as
-//! T4.2's menu was.
+//! **Corrected r78.** This said a tooltip "is not a `Role`" — that giving it one
+//! would put an arm in `route_key` that can never run. Wiring the first
+//! dispatcher showed the opposite: every overlay the host renders reaches
+//! `route_key`, so a tooltip filed under `Panel` had Tab *consumed* and routed to
+//! an `on_key` it does not supply, and `autofocus` pulled focus out of whatever
+//! the user was typing in. Both are live defects of the missing variant, and
+//! [`crate::components::popover::Role::Tooltip`] is the fix.
+//!
+//! It shares the *host* — because the Recent section is `overflow-y: auto` and an
+//! out-of-flow child is clipped by it, exactly as T4.2's menu was.
 //!
 //! The second is [`OverlayKind::PointerDriven`]: the host's backdrop is a
 //! window-sized click-catcher, correct for a menu and catastrophic for a tooltip,
@@ -47,7 +52,7 @@ use std::rc::Rc;
 use dioxus::prelude::*;
 
 use crate::components::popover::{
-    use_popover_anchor, OverlayKind, PopoverId, PopoverRequest, Rect,
+    use_popover_anchor, OverlayKind, PopoverId, PopoverRequest, Rect, Role,
 };
 
 #[path = "open_button_place.rs"]
@@ -127,6 +132,22 @@ pub(super) fn AtOpenAction(props: AtOpenActionProps) -> Element {
                 on_dismiss: Rc::new(|| {}),
                 on_outside_move: None,
                 kind: OverlayKind::PointerDriven,
+                // **Its own role, since r78.** It was `Panel` while `route_key`
+                // had no caller; the first dispatcher showed that a `Panel`
+                // consumes Tab and hands it to an `on_key` this does not
+                // supply — a tooltip that swallows Tab — and that `autofocus`
+                // would steal focus from whatever the pointer's owner was
+                // typing in. See `Role::Tooltip`.
+                role: Role::Tooltip,
+                on_key: None,
+                // **No anchor, on purpose.** A tooltip never took focus, so
+                // there is nothing to give back: every one of its dismissals is
+                // the pointer leaving, and moving focus to the button the
+                // pointer just left would steal it from wherever the user
+                // actually is. `None` here means `dismiss_sequence` takes the
+                // fallback branch, which for `FocusTarget::Unchanged` is no
+                // focus step at all.
+                anchor: None,
                 content: Rc::new(move || tooltip_content(label.clone())),
             },
             window,

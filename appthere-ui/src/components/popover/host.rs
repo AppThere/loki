@@ -12,13 +12,27 @@
 //! place is clipped exactly as the spelling menu is today — a third instance of
 //! the defect, shipped in the phase that fixed the first two.
 //!
-//! **Decision: a tooltip is not a [`super::Role`], it is a separate component
-//! that shares the host.** Its keyboard model is degenerate — it never takes
-//! focus, so "what does Down do" has no answer — and giving it a `Role` would
-//! put an arm in `route_key` that can never run. What it *does* share is
-//! placement, the anchor-change response, and this host. The failure mode is
-//! neither of those choices; it is implementing it separately **without** the
-//! host, which is why the host is stated here rather than at T4.3.
+//! **Decision, and its retraction (r78).** This read: *a tooltip is not a
+//! [`super::Role`] — its keyboard model is degenerate, it never takes focus, so
+//! "what does Down do" has no answer, and giving it a `Role` would put an arm in
+//! `route_key` that can never run.*
+//!
+//! The premise was right and the conclusion was backwards, and it took the first
+//! real dispatcher (T4.5) to show which. A tooltip does not *want* a keyboard —
+//! but it still **reaches** `route_key`, because the host routes every overlay it
+//! renders and the request must name some role. Filed under `Panel`, the
+//! degenerate model became an active one: `Tab` routed to `FocusNextControl`,
+//! which *consumes* the key and hands it to an `on_key` a tooltip does not
+//! supply, so Tab went nowhere while a tooltip was showing. The host's
+//! `autofocus` compounded it by pulling focus out of whatever the pointer's owner
+//! was typing in.
+//!
+//! So the arm that "can never run" was the one running, and
+//! [`super::Role::Tooltip`] exists to say *pass everything through, take no
+//! focus* in the one place both the router and the host read. What the tooltip
+//! shares is unchanged: placement, the anchor-change response, and this host. The
+//! failure mode is still implementing it **without** the host, which is why the
+//! host is stated here rather than at T4.3.
 //!
 //! # The two root layers must be ordered, and only DOM order can order them
 //!

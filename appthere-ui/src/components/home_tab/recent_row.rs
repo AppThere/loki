@@ -17,6 +17,8 @@
 //! the parent's hook count depend on the document count (audit F6a /
 //! ADR-0013).
 
+use std::rc::Rc;
+
 use dioxus::prelude::*;
 
 use crate::components::popover::Rect;
@@ -40,6 +42,15 @@ pub(super) struct RecentRowProps {
     /// Toggle, carrying the button's **window** rect so the parent can anchor a
     /// popover to it. `None` when the rect could not be read.
     pub on_toggle_menu: EventHandler<(usize, Option<Rect>)>,
+    /// Where the row publishes its ⋮ button's mounted handle, so focus can
+    /// return to it when the menu closes (T4.5).
+    ///
+    /// A shared `Signal` owned by the list rather than a value on
+    /// [`Self::on_toggle_menu`]: `MountedData` is not `PartialEq`, so it cannot
+    /// ride in a props struct or in the parent's `RecentMenuTarget`. One slot is
+    /// also the honest shape — the singleton rule means exactly one row's button
+    /// is the open menu's anchor at a time.
+    pub anchor_el: Signal<Option<Rc<MountedData>>>,
 }
 
 /// A recent-document row with its inline context menu.
@@ -124,6 +135,7 @@ pub(super) fn RecentRow(props: RecentRowProps) -> Element {
                     onmounted: move |evt: MountedEvent| { trigger.set(Some(evt)); },
                     onclick: move |_| {
                         let on_toggle = props.on_toggle_menu;
+                        let mut anchor_el = props.anchor_el;
                         let Some(evt) = trigger.peek().clone() else {
                             // No mounted handle: report the toggle with no rect
                             // rather than swallowing the click. The parent
@@ -133,6 +145,10 @@ pub(super) fn RecentRow(props: RecentRowProps) -> Element {
                             on_toggle.call((idx, None));
                             return;
                         };
+                        // Published *before* the await: the rect round-trips to
+                        // the event loop, and a dismissal that arrives in
+                        // between must still find an anchor to return focus to.
+                        anchor_el.set(Some(evt.data()));
                         spawn(async move {
                             // Async because `get_client_rect` round-trips to the
                             // event loop; the rect is read here rather than kept

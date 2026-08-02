@@ -97,9 +97,11 @@
 pub mod anchor_scope;
 pub mod component;
 pub mod dismiss_order;
+pub mod focus;
 pub mod geometry;
 pub mod host;
 pub mod interaction;
+pub mod key_event;
 pub mod presentation;
 pub mod wiring;
 
@@ -114,6 +116,7 @@ pub use interaction::{
     anchor_is_anchorable, events, focus_after_dismiss, note_event, on_anchor_change, repositions,
     reset_repositions, route_key, AnchorResponse, DismissCause, FocusTarget, Key, KeyAction, Role,
 };
+pub use key_event::key_from_parts;
 pub use presentation::{present, MENU_ROW_HEIGHT_PX, MIN_ANCHORED_HEIGHT_PX, MIN_ANCHORED_MENU_PX};
 pub use wiring::{
     dismiss_on_unmount, is_outside_dismiss, on_anchor_identity, open_response, AnchorKey,

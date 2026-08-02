@@ -39,15 +39,15 @@ use std::rc::Rc;
 use dioxus::prelude::*;
 
 use crate::components::popover::{
-    use_popover_anchor, Align, AnchorKey, OverlayKind, PlacementRequest, PopoverId, PopoverRequest,
-    Rect, Side, MIN_ANCHORED_MENU_PX,
+    use_popover_anchor, Align, AnchorKey, DismissCause, KeyAction, OverlayKind, PlacementRequest,
+    PopoverId, PopoverRequest, Rect, Role, Side, MIN_ANCHORED_MENU_PX,
 };
-use crate::tokens::colors::{
-    COLOR_BORDER_CHROME, COLOR_STATUS_ERROR_TEXT, COLOR_SURFACE_PAGE, COLOR_TEXT_PRIMARY,
-};
-use crate::tokens::spacing::{RADIUS_MD, RADIUS_SM, SPACE_1, SPACE_2, SPACE_3, TOUCH_MIN};
-use crate::tokens::typography::FONT_SIZE_BODY;
+use crate::tokens::spacing::{SPACE_2, TOUCH_MIN};
 use crate::{use_safe_area, use_window_size};
+
+#[path = "recent_menu_rows.rs"]
+pub(super) mod rows;
+use rows::{activate_row, menu_content, next_row, prev_row, ROW_COUNT};
 
 /// Identifies the Recent Documents menu to the popover singleton rule.
 const RECENT_POPOVER_ID: PopoverId = PopoverId(0x8_EC0D);
@@ -154,6 +154,9 @@ pub(super) struct RecentMenuPopoverProps {
     pub actions: RecentMenuActions,
     /// Clears the parent's open-menu state.
     pub on_dismiss: EventHandler<()>,
+    /// The ⋮ button focus returns to on dismissal — see
+    /// [`super::recent_row::RecentRowProps::anchor_el`].
+    pub anchor_el: Signal<Option<Rc<MountedData>>>,
 }
 
 /// Hands the Recent Documents menu to the popover host.
@@ -171,6 +174,10 @@ pub(super) fn RecentMenuPopover(props: RecentMenuPopoverProps) -> Element {
     let popover = use_popover_anchor(RECENT_POPOVER_ID);
     let window = use_window_size();
     let insets = use_safe_area();
+    // Which row the keyboard is on. `None` until a key arrives, so opening with
+    // the pointer does not paint a selection nobody asked for — and the first
+    // Down lands on row 0 rather than on row 1.
+    let active = use_signal(|| Option::<usize>::None);
 
     use_effect(move || {
         let Some(anchor) = popover else {
@@ -178,6 +185,7 @@ pub(super) fn RecentMenuPopover(props: RecentMenuPopoverProps) -> Element {
         };
         let target = props.target.clone();
         let actions = props.actions.clone();
+        let key_actions = props.actions.clone();
         let on_dismiss = props.on_dismiss;
         // The identity check, before geometry and before any action can fire.
         // `IdentityCheck::Recycled` is the case that matters: the list reordered
@@ -189,18 +197,67 @@ pub(super) fn RecentMenuPopover(props: RecentMenuPopoverProps) -> Element {
             return;
         }
         let index = target.index;
+        // **One activation path for the pointer and the keyboard.** The
+        // acceptance criterion is that both menus behave identically, and two
+        // implementations of "choose this row" is how they stop doing so — a
+        // click running the action while a keypress forgets to restore focus
+        // reads as the keyboard being second-class, which it is.
+        let dismiss_activated: Rc<dyn Fn()> =
+            Rc::new(move || anchor.dismiss_with(DismissCause::Activated));
+        let key_dismiss = Rc::clone(&dismiss_activated);
         anchor.open(
             PopoverRequest {
                 id: RECENT_POPOVER_ID,
                 placement: recent_menu_placement(target.anchor),
                 on_dismiss: Rc::new(move || on_dismiss.call(())),
+                // Read at open time: `onmounted` has fired by now — the trigger
+                // reported its rect, which is what opened this menu at all — so
+                // `None` here means the row never mounted a handle, not that the
+                // handle has not arrived yet.
+                anchor: props.anchor_el.peek().clone(),
                 // No hover tinting in this menu — the rows use a static
                 // background — so the outside-move signal has no consumer here.
                 // Left `None` rather than wired to a no-op: an empty callback is
                 // indistinguishable from a forgotten one.
                 on_outside_move: None,
                 kind: OverlayKind::Dismissible,
-                content: Rc::new(move || menu_content(actions.clone(), index, on_dismiss)),
+                role: Role::Menu,
+                // The first consumer of `route_key` (T4.5). The host routes and
+                // owns `Dismiss`; moving the active row needs to know what the
+                // rows are, which only this does.
+                on_key: Some(Rc::new(move |action: KeyAction| {
+                    // `Signal` is `Copy`, so the `Fn` closure's captured copy is
+                    // re-bound mutably here; writing through the capture itself
+                    // would need `FnMut`, which the host cannot hold.
+                    let mut active = active;
+                    // `peek`, not `read`: this runs from an event handler, and a
+                    // subscription taken here would tie whatever is rendering to
+                    // the row the keyboard last touched.
+                    let current = *active.peek();
+                    match action {
+                        KeyAction::Next => active.set(Some(next_row(current))),
+                        KeyAction::Prev => active.set(Some(prev_row(current))),
+                        KeyAction::First => active.set(Some(0)),
+                        KeyAction::Last => active.set(Some(ROW_COUNT - 1)),
+                        KeyAction::Activate => {
+                            if let Some(row) = current {
+                                activate_row(row, &key_actions, index, &key_dismiss);
+                            }
+                        }
+                        // Typeahead over three fixed labels buys nothing a user
+                        // would reach for, and a partial implementation reads as
+                        // a broken one. Left unhandled deliberately.
+                        _ => {}
+                    }
+                })),
+                // `active` is read **inside** the closure, not captured by value:
+                // the closure runs during the host's render, so the read
+                // subscribes the host and an arrow key re-paints the menu. Read
+                // outside, the highlight would be frozen at open time — the
+                // stale-`Element` failure `content` is a closure to avoid.
+                content: Rc::new(move || {
+                    menu_content(actions.clone(), index, &dismiss_activated, *active.read())
+                }),
             },
             window,
             insets,
@@ -208,64 +265,6 @@ pub(super) fn RecentMenuPopover(props: RecentMenuPopoverProps) -> Element {
     });
 
     rsx! {}
-}
-
-/// The menu's rows.
-///
-/// Each action closes the menu *before* calling its handler, because two of the
-/// three change the list the menu is anchored inside — removing an entry moves
-/// every row below it, and a menu left open would then be attached to a
-/// different document by the identity check's own definition.
-fn menu_content(actions: RecentMenuActions, index: usize, on_dismiss: EventHandler<()>) -> Element {
-    let row_style = |fg: &'static str| {
-        format!(
-            "background: transparent; border: none; text-align: left; width: 100%; \
-             padding: {p}px {ph}px; min-height: {touch}px; cursor: pointer; \
-             font-size: {size}px; color: {fg}; border-radius: {r}px; \
-             box-sizing: border-box;",
-            p = SPACE_2,
-            ph = SPACE_3,
-            touch = TOUCH_MIN,
-            size = FONT_SIZE_BODY,
-            r = RADIUS_SM,
-        )
-    };
-    let close_then = move |handler: EventHandler<usize>| {
-        move |_| {
-            on_dismiss.call(());
-            handler.call(index);
-        }
-    };
-    rsx! {
-        div {
-            style: format!(
-                "display: flex; flex-direction: column; gap: {gap}px; \
-                 width: 100%; box-sizing: border-box; padding: {p}px; \
-                 background: {bg}; border: 1px solid {border}; \
-                 border-radius: {r}px;",
-                gap = SPACE_1,
-                p = SPACE_2,
-                bg = COLOR_SURFACE_PAGE,
-                border = COLOR_BORDER_CHROME,
-                r = RADIUS_MD,
-            ),
-            button {
-                style: row_style(COLOR_TEXT_PRIMARY),
-                onclick: close_then(actions.on_remove),
-                "{actions.remove_label}"
-            }
-            button {
-                style: row_style(COLOR_STATUS_ERROR_TEXT),
-                onclick: close_then(actions.on_delete),
-                "{actions.delete_label}"
-            }
-            button {
-                style: row_style(COLOR_TEXT_PRIMARY),
-                onclick: close_then(actions.on_open_copy),
-                "{actions.open_copy_label}"
-            }
-        }
-    }
 }
 
 #[cfg(test)]

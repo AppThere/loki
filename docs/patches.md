@@ -88,6 +88,39 @@ for the embedder to fire. `mounted.rs` provides the `MountedElement`
 actually touches the live document, implemented in `dioxus-native` so this crate
 stays free of any winit/shell dependency.
 
+**Programmatic focus (PATCH(loki), 2026-08-02).**
+`RenderedElementBacking::set_focus` is a trait method with a `NotSupported`
+default, and the vendored backing did not override it — so **no component in
+this workspace could move focus at all**. That is disqualifying for any overlay:
+returning focus to the control that opened a menu is the single most-relied-on
+behaviour of the class, and losing it to the document root on close is the
+commonest accessibility defect there is. It surfaced in Spec 08 T4.5, where
+`focus_after_dismiss` and `dismiss_sequence` turned out to be decisions with no
+*possible* caller rather than ones with a forgotten caller.
+
+`MountedElement::set_focus` now routes to a new `MountedBackend::focus_node`,
+implemented in `dioxus-native` as a `DioxusNativeEvent::FocusNode` posted to the
+event loop — exactly the shape `scroll` already used for `scroll_node_to`. On
+the event-loop side it calls `BaseDocument::set_focus_to` / `clear_focus`, both
+of which already existed and are already driven by the mouse path; the handler
+checks `get_node` first, because focus restoration on dismissal races the
+unmount that caused it and a stale node id must not reach `set_focus_to`.
+
+Fire-and-forget, like `scroll`: the document lives on the event-loop side, so a
+round trip would make focus restoration await a frame it is racing. Callers
+therefore get `Ok(())` meaning *posted*, not *focused*.
+
+If this patch is dropped, every popover stops returning focus on dismissal and
+`appthere_ui::components::popover::focus_tests::restoring_focus_to_the_anchor_is_a_real_action`
+fails — deliberately, so the loss is a test failure rather than a silent
+regression in behaviour nothing asserts.
+
+**Not covered:** "focus the node *after* this one", which
+`DismissStep::AdvanceFocusPastAnchor` (Tab out of a menu) needs.
+`set_focus` takes a `bool`, and blitz-dom's `focus_next_node` — which would
+serve it — is reachable only by depending on the renderer crate from
+`appthere-ui`. Tracked in `scripts/pending-questions.txt`.
+
 Vendoring the crate locally means Loki can build against a known snapshot and
 apply targeted fixes without being blocked by an upstream release. See
 `docs/editing/input-event-audit.md` — the **Blockers** section — for a
@@ -370,6 +403,14 @@ events through the event-loop proxy. `flush_mounted` drains
 `DioxusDocument::take_pending_mounted` after each poll and dispatches the
 `mounted` event with a `MountedElement` backing, so `onmounted` fires. This is
 what enables the editor's draggable scrollbar thumb.
+
+**`FocusNode` (PATCH(loki), 2026-08-02).** A third `DioxusNativeEvent` variant,
+backing `MountedData::set_focus` — see the dioxus-native-dom entry for why
+programmatic focus did not exist at all before this. `ProxyMountedBackend::focus_node`
+posts it; the handler calls `BaseDocument::set_focus_to` (or `clear_focus`) after
+checking `get_node`, then polls and requests a redraw so the focus ring and any
+`onfocus` handler land in the same frame. Same shape as `ScrollNode`, deliberately:
+one transport, one place a node id is validated.
 
 **`autofocus` enabled by default (PATCH(loki), 2026-06-20).** `autofocus` is
 added to the `default` feature set in `patches/dioxus-native/Cargo.toml` (it
