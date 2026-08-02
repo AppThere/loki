@@ -36,6 +36,7 @@ use appthere_ui::{
     GpuClass, note_device_scale_factor, note_display_density, note_gpu_class, use_memory_resampling,
 };
 use dioxus::prelude::*;
+use loki_app_shell::display_calibration::{DisplayCalibrations, DisplayKey};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -119,6 +120,22 @@ pub fn DeviceProbeSensor() -> Element {
     //
     // It is bounded and self-terminating: it stops as soon as both are known, so
     // the steady state is no thread at all rather than a timer nobody notices.
+    // A calibration the reader already made outranks anything the platform will
+    // report, so it is applied **before** the probe runs rather than after: the
+    // precedence rule in `note_display_density` then keeps it, and the reader is
+    // never asked twice for the same display. Needs no scale factor — a stored
+    // calibration is already in CSS pixels per inch.
+    use_hook(|| {
+        let store = DisplayCalibrations::load();
+        if let Some(d) = store.get(&DisplayKey::unidentified()) {
+            tracing::info!(
+                css_px_per_inch = d.css_px_per_inch,
+                "restored the reader's display calibration",
+            );
+            note_display_density(d.css_px_per_inch, true);
+        }
+    });
+
     use_paint_observation_lifting();
 
     rsx! {}

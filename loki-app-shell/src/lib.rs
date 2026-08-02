@@ -23,6 +23,7 @@
 mod android;
 
 pub mod app_data;
+pub mod display_calibration;
 pub mod display_density;
 #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
 pub mod display_probe_x11;

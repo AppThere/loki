@@ -70,6 +70,8 @@ pub(super) fn EditorInner(path: String) -> Element {
     // Closed by default; the status-bar chip (shown whenever substitutions
     // exist) toggles it.
     let font_panel_open = use_signal(|| false);
+    // Raised by Actual Size on a display whose density is not yet known.
+    let calibrating = use_signal(|| false);
 
     // ── Ribbon collapse state ────────────────────────────────────────────────
     let mut ribbon_collapsed = use_signal(|| false);
@@ -771,7 +773,15 @@ pub(super) fn EditorInner(path: String) -> Element {
                 view_mode_user_set: view_mode_user_set,
                 font_panel_open:    font_panel_open,
                 save_message:       save_message,
+                calibrating:        calibrating,
             }
+
+            // Display calibration (Spec 08 T5.5 / D-04). Mounted at a boundary
+            // as a component, per ADR-0013 — it owns hook scope of its own and
+            // must not be a function called inside an `if`.
+            {calibrating().then(|| rsx! {
+                super::editor_calibrate::EditorCalibrate { open: calibrating, zoom_percent }
+            })}
         }
     }
 }

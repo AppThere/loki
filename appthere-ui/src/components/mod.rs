@@ -5,6 +5,7 @@
 //! All components are application-agnostic — they must not reference any
 //! application-specific route enum, document model, or business logic.
 
+mod calibrate_dialog;
 pub mod color_picker;
 pub mod confirm_dialog;
 pub mod document_tab;
@@ -24,6 +25,7 @@ pub mod title_bar;
 pub mod zoom;
 pub(crate) mod zoom_control;
 
+pub use calibrate_dialog::{AtCalibrateDialog, AtCalibrateLabels, REFERENCE_MM};
 pub use color_picker::{
     AtColorPickerLabels, AtColorPickerPanel, AtColorPickerTrigger, AtColorSwatch,
 };

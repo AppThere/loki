@@ -9,6 +9,7 @@
 //!
 //! All editing logic lives in [`editor_inner::EditorInner`].
 
+mod editor_calibrate;
 mod editor_canvas;
 mod editor_canvas_click;
 mod editor_canvas_loading;

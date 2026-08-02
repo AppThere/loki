@@ -21,6 +21,7 @@ scripts/sitting/run.sh keyboard   # Tab walk, one shot per stop
 TABS=12 scripts/sitting/run.sh menu   # open a row menu, walk it, Escape
 scripts/sitting/run.sh editor         # open a document, click, type
 ZX=1176 ZY=788 scripts/sitting/run.sh zoom   # the status-bar zoom control
+scripts/sitting/run.sh calibrate      # Actual Size -> measure-your-screen dialog
 ```
 
 Shots land in `target/sitting/`. `SETTLE` (default 10s) is how long to wait
@@ -70,6 +71,12 @@ subject):
 | Enter/Space never activated a focused control (WCAG 2.1.1) | `patches/blitz-dom` keyboard |
 | `tabindex="-1"` was not focusable, so `autofocus` never applied to an overlay | `patches/blitz-dom` element |
 | click-focus ran *after* the click handler, undoing that handler's `autofocus` | `patches/blitz-dom` mouse |
+
+**r82 — three, all in one dialog:** the instructions read "85.5999984741211 mm"
+(`f64::from(85.6f32)` — correct arithmetic, unreadable prose); the text field was
+not focused, so typing went nowhere; and calibrating did not apply the Actual
+Size the reader had asked for, so the page did not move after they fetched a
+ruler. Every unit test passed for all three.
 
 **r80 — one:** the new zoom control's buttons carried `min-height: TOUCH_MIN`
 (44 px) in a 24 px status bar, so they overflowed **upward and painted over the

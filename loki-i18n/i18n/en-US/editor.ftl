@@ -23,6 +23,14 @@ editor-zoom-fit-page = Fit page
 editor-zoom-actual-size = Actual size
 editor-zoom-reduced = Reduced to fit this device's memory
 
+# Display calibration for Actual Size — shown on first use, never at first run.
+editor-calibrate-title = Measure your screen
+editor-calibrate-instructions = Hold a bank card or a ruler against the blue bar. It should be { $mm } mm wide — type what it really measures.
+editor-calibrate-field = Measured width (mm)
+editor-calibrate-apply = Use this
+editor-calibrate-cancel = Cancel
+editor-calibrate-rejected = That doesn't look like a measurement of this bar. Check you're using millimetres and try again.
+
 # Document title for unsaved blank documents
 editor-untitled = Untitled
 editor-untitled-n = Untitled { $n }

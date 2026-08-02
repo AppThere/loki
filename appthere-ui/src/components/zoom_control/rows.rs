@@ -77,7 +77,17 @@ pub struct ZoomCommands {
     pub fit_width: bool,
     /// The app can compute a fit-page zoom.
     pub fit_page: bool,
-    /// The platform reported a physical display density (T5.5).
+    /// This app supports Actual Size at all.
+    ///
+    /// # Not "a density is known" — that was the r81 mistake
+    ///
+    /// The row was gated on the platform having reported a density, which reads
+    /// as the careful choice and makes T5.5's own fallback **unreachable**: the
+    /// calibration prompt is specified to appear "on first use of Actual Size",
+    /// so hiding the row until a density exists means there is no first use to
+    /// prompt from, on precisely the displays that need it. The capability is
+    /// "this app can do Actual Size, given a density it can obtain"; obtaining
+    /// one is the handler's problem.
     pub actual_size: bool,
 }
 

@@ -4543,6 +4543,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sys-locale",
+ "tracing",
  "x11rb",
 ]
 

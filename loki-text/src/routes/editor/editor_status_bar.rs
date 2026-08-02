@@ -38,6 +38,8 @@ pub(super) struct EditorStatusBarProps {
     pub view_mode_user_set: Signal<bool>,
     pub font_panel_open: Signal<bool>,
     pub save_message: Signal<Option<SaveStatus>>,
+    /// Raised when Actual Size is chosen on a display with no density yet.
+    pub calibrating: Signal<bool>,
 }
 
 /// The status bar.
@@ -48,6 +50,7 @@ pub(super) fn EditorStatusBar(props: EditorStatusBarProps) -> Element {
     let mut view_mode_user_set = props.view_mode_user_set;
     let mut font_panel_open = props.font_panel_open;
     let save_message = props.save_message;
+    let mut calibrating = props.calibrating;
     let font_sub_count = props.font_sub_count;
     let page_label = props.page_label.clone();
     let fit_inputs = props.fit_inputs;
@@ -61,15 +64,18 @@ pub(super) fn EditorStatusBar(props: EditorStatusBarProps) -> Element {
             language_label:     fl!("editor-language"),
             zoom_percent:       zoom_percent(),
             zoom_capability_limit_permille: props.zoom_capability_limit_permille,
-            // Every row follows a capability that is *checked*, never assumed.
-            // Actual Size in particular is wired to the platform probe rather
-            // than hardcoded `false`: the row appears the moment the probe
-            // reports, and the alternative is a capability that lands and stays
-            // invisible (L08-028).
+            // The fits follow a measurement that is *checked*, never assumed.
+            //
+            // Actual Size is **always offered** — it was gated on the platform
+            // having reported a density at r81, which made T5.5's calibration
+            // fallback unreachable: the prompt is specified to appear on first
+            // use, so there was no first use to prompt from on exactly the
+            // displays that needed it. Obtaining a density is `on_zoom_actual_size`'s
+            // job now, by calibration if the platform did not answer.
             zoom_commands:      ZoomCommands {
                 fit_width:   fit_inputs.is_some(),
                 fit_page:    fit_inputs.is_some(),
-                actual_size: actual_size_percent(css_px_per_inch).is_some(),
+                actual_size: true,
             },
             zoom_labels:        loki_app_shell::zoom_labels::zoom_labels(),
             collaborator_count: 0,
@@ -85,10 +91,13 @@ pub(super) fn EditorStatusBar(props: EditorStatusBarProps) -> Element {
                     zoom_percent.set(p);
                 }
             },
-            on_zoom_actual_size: move |()| {
-                if let Some(p) = actual_size_percent(css_px_per_inch) {
-                    zoom_percent.set(p);
-                }
+            // Apply the known density, or ask for one. The prompt is D-04's
+            // "first use of Actual Size", which is this branch and nowhere else:
+            // nothing asks at launch, and a reader who never wants a physically
+            // sized page is never asked to hold a ruler to their screen.
+            on_zoom_actual_size: move |()| match actual_size_percent(css_px_per_inch) {
+                Some(p) => zoom_percent.set(p),
+                None => calibrating.set(true),
             },
             view_mode_label:    if view_mode() == ViewMode::Reflow {
                 fl!("editor-view-reflowed")

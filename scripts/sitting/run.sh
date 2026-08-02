@@ -153,5 +153,27 @@ zoom)
   shot 47-zoom-actual
   ;;
 
+calibrate)
+  # T5.5: Actual Size on an uncalibrated display must OFFER calibration, not
+  # hide itself. Opens the zoom menu, picks the last row, and measures.
+  start_x || exit 1
+  start_app env LOKI_DEVICE_PROFILE="${PROFILE:-pointer=fine}" || exit 1
+  shot 50-home
+  for i in $(seq 1 "${TABS:-7}"); do key Tab; done
+  key Return
+  sleep "${OPEN_SETTLE:-12}"
+  shot 51-opened
+  xdotool mousemove "${ZX:-1176}" "${ZY:-788}" click 1; sleep 2
+  shot 52-menu
+  key End;    shot 53-on-actual
+  key Return; sleep 2
+  shot 54-dialog
+  xdotool type --delay 120 "${MEASURED:-80}"; sleep 1
+  shot 55-typed
+  # Apply: the density becomes 96 * 85.6 / measured, and Actual Size follows.
+  xdotool mousemove 784 517 click 1; sleep 3
+  shot 56-applied
+  ;;
+
 esac
 echo "DONE: $1"
