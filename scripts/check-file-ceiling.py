@@ -11,10 +11,18 @@ violations are frozen in `scripts/file-ceiling-baseline.txt` as a **ratchet**:
     (debt can only shrink);
   * when a baselined file drops to <= 300 it must be removed from the baseline
     (no stale grants);
-  * a baseline entry for a missing/renamed file fails (keeps the list honest).
+  * a baseline entry for a missing/renamed file fails (keeps the list honest);
+  * `CLAUDE.md`'s convenience table must list exactly the baselined paths.
 
 So new files can't be born over-ceiling, the known over-ceiling files can't
 grow, and the backlog monotonically shrinks toward empty.
+
+The `CLAUDE.md` check exists because that copy drifted: it claimed 29 entries and
+seven paths that had all been split, and `CLAUDE.md` is the file that loads
+automatically, so the wrong number was the one every session read first. Telling
+the reader "believe the baseline" is the documented fix and would have drifted
+again — this makes it unavailable instead (L08-043). Paths only, not counts: the
+counts are the ratchet's business and would fail this gate on every split.
 
 Scope: first-party production `.rs`. Excluded (CLAUDE.md exempts test files):
 `tests/`, `*_tests.rs`, `*/tests.rs`, `benches/`, `examples/`, and `patches/*`.
@@ -33,6 +41,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 BASELINE_FILE = REPO / "scripts" / "file-ceiling-baseline.txt"
+CLAUDE_MD = REPO / "CLAUDE.md"
 CEILING = 300
 
 
@@ -88,6 +97,47 @@ def write_baseline(counts: dict[str, int]) -> None:
     print(f"Wrote {len(over)} entries to {BASELINE_FILE.relative_to(REPO)}")
 
 
+def claude_md_drift(baseline: dict[str, int]) -> list[str]:
+    """Paths the `CLAUDE.md` backlog table and the baseline disagree about.
+
+    Membership only. A path in one and not the other is drift; the *numbers* in
+    that table are prose and go stale between splits by design, so checking them
+    would fail the gate on every split and train everyone to run `--update`
+    without reading it.
+    """
+    try:
+        text = CLAUDE_MD.read_text(encoding="utf-8")
+    except OSError:
+        return ["CLAUDE.md is unreadable — cannot check the backlog table"]
+
+    # The table's own rows, and only those. Scoping matters in BOTH directions:
+    # the split-technique narrative above the table names most of the files ever
+    # split, so a whole-file substring search finds a path that the table itself
+    # dropped. The first draft did exactly that, and a mutation removing a row
+    # passed the gate — the half of the check that reports "you are understating
+    # the debt" was dead, which is the half that matters.
+    listed = set()
+    for line in text.splitlines():
+        if not line.startswith("| `") or "|---" in line:
+            continue
+        rel = line.split("`")[1]
+        if rel.endswith(".rs"):
+            listed.add(rel)
+
+    out = []
+    for rel in sorted(set(baseline) - listed):
+        out.append(
+            f"{rel}: baselined but absent from CLAUDE.md's backlog table — "
+            f"add it, or the auto-loading file understates the debt"
+        )
+    for rel in sorted(listed - set(baseline)):
+        out.append(
+            f"{rel}: named in CLAUDE.md's backlog table but not baselined "
+            f"— it was split; remove the row"
+        )
+    return out
+
+
 def main() -> int:
     counts = production_files()
     if "--update" in sys.argv:
@@ -121,6 +171,8 @@ def main() -> int:
                 f"{rel}: in the baseline but no longer a tracked production file "
                 f"— remove the stale entry"
             )
+
+    failures.extend(claude_md_drift(baseline))
 
     if failures:
         print(f"File-ceiling gate: {len(failures)} violation(s):\n")

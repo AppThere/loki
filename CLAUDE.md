@@ -240,11 +240,12 @@ may not grow, and a file split to ≤300 must be removed from the baseline. So t
 backlog can only shrink. When you split a file below the ceiling, drop its line
 with `scripts/check-file-ceiling.py --update` (review the diff).
 
-The split pass is **in progress** — current backlog is the **29** entries in the
-baseline file (a 2026-07-08 pass cut ~20 files: −3600 lines across eleven new
-production submodules + seven inline-test extractions, driving `doc-model`
-`document.rs` and `docx/mapper/props.rs` fully under the ceiling and off the
-baseline). Three techniques (the third added 2026-07-08):
+The split pass is **in progress** — current backlog is the **4** entries in the
+baseline file, which is the authority; the table below is a convenience copy and
+has been wrong before (it claimed 29 entries and seven sizes that matched
+nothing, corrected 2026-08-02 during the Phase 5 close). **When the two
+disagree, believe `scripts/file-ceiling-baseline.txt`** — the gate reads it, this
+file does not. Three techniques (the third added 2026-07-08):
 1. *Inline-test extraction* (safest, no production-code change): move a file's
    `#[cfg(test)] mod tests { … }` into a sibling `<name>_tests.rs` referenced via
    `#[cfg(test)] #[path = "<name>_tests.rs"] mod tests;`. Done 2026-06-21 for
@@ -295,18 +296,15 @@ baseline). Three techniques (the third added 2026-07-08):
 
 | File | Current lines | Priority |
 |---|---|---|
-| `loki-layout/src/para.rs` | 1401 | High |
-| `loki-layout/src/flow.rs` | 1202 | High |
-| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1014 | High |
-| `loki-ooxml/src/docx/write/document.rs` | 902 | High |
-| `loki-layout/src/resolve.rs` | 858 | Med |
-| `loki-text/src/routes/editor/editor_inner.rs` | 800 | Med |
-| `loki-odf/src/odt/reader/styles.rs` | 764 | Med |
-| … 22 more — see `scripts/file-ceiling-baseline.txt` (29 entries) | | |
+| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1013 | High |
+| `loki-text/src/routes/editor/editor_inner.rs` | 800 | High |
+| `loki-layout/src/para.rs` | 767 | Med |
+| `loki-text/src/routes/editor/editor_canvas.rs` | 432 | Low |
 
-*(Sizes above are from `scripts/file-ceiling-baseline.txt`, refreshed 2026-07-11;
-the deferred-features tail pass also ratcheted `loki-vello/src/scene.rs`
-727 → 613 by splitting caret painting into `scene_cursor.rs`.)*
+*(The whole baseline, not the worst of it — there are four entries. Refreshed
+2026-08-02 by reading `scripts/file-ceiling-baseline.txt`; `flow.rs`,
+`docx/write/document.rs`, `resolve.rs` and `odt/reader/styles.rs` all came off it
+between 2026-07-11 and now, which is why the previous table matched nothing.)*
 
 (`odt/mapper/document.rs` (1094 lines) was split into the `odt/mapper/document/`
 directory on 2026-06-26 — each module is now under the ceiling.)
