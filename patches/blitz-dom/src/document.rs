@@ -905,7 +905,9 @@ impl BaseDocument {
 
     pub fn focus_next_node(&mut self) -> Option<usize> {
         let focussed_node_id = self.get_focussed_node_id()?;
-        let id = self.next_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
+        // PATCH(loki): the tab order, not mere focusability — a `tabindex="-1"`
+        // overlay is focusable on purpose and must not be a Tab stop.
+        let id = self.next_node(&self.nodes[focussed_node_id], |node| node.is_tab_focussable())?;
         self.set_focus_to(id);
         Some(id)
     }

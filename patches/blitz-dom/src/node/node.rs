@@ -211,10 +211,22 @@ impl Node {
         }
     }
 
+    /// Whether this node may hold focus at all — see
+    /// [`ElementData::is_focussable`].
     pub fn is_focussable(&self) -> bool {
         self.data
             .downcast_element()
             .map(|el| el.is_focussable)
+            .unwrap_or(false)
+    }
+
+    /// PATCH(loki): whether Tab stops here — see
+    /// [`ElementData::is_tab_focussable`]. Used by sequential navigation only;
+    /// everything else wants [`Self::is_focussable`].
+    pub fn is_tab_focussable(&self) -> bool {
+        self.data
+            .downcast_element()
+            .map(|el| el.is_tab_focussable)
             .unwrap_or(false)
     }
 

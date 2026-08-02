@@ -32,7 +32,13 @@ pub struct ElementData {
     pub attrs: Attributes,
 
     /// Whether the element is focussable
+    /// Whether this element may hold focus at all — by a click, by `autofocus`,
+    /// or by an embedder's programmatic focus call. PATCH(loki): `tabindex="-1"`
+    /// sets this **true** and [`Self::is_tab_focussable`] false.
     pub is_focussable: bool,
+    /// PATCH(loki): whether Tab stops here. Strictly narrower than
+    /// [`Self::is_focussable`].
+    pub is_tab_focussable: bool,
 
     /// The element's parsed style attribute (used by stylo)
     pub style_attribute: Option<ServoArc<Locked<PropertyDeclarationBlock>>>,
@@ -115,6 +121,7 @@ impl ElementData {
             id: id_attr_atom,
             attrs: Attributes::new(attrs),
             is_focussable: false,
+            is_tab_focussable: false,
             style_attribute: Default::default(),
             inline_layout_data: None,
             list_item_data: None,
@@ -240,11 +247,33 @@ impl ElementData {
         }
     }
 
+    /// PATCH(loki): recomputes both focusability flags.
+    ///
+    /// # `tabindex="-1"` is focusable; it is just not *tabbable*
+    ///
+    /// These were one flag, and it answered the tab-order question — so
+    /// `tabindex="-1"` came out `is_focussable: false`, and every consumer that
+    /// meant "can this be focused at all" got the wrong answer. That is the
+    /// exact combination HTML defines for a programmatically-focused container:
+    /// an overlay, a dialog, a menu — focus it on open, never land on it while
+    /// Tabbing past. With one flag it was unreachable both ways, so `autofocus`
+    /// silently did nothing on any such element and the overlay's own key
+    /// handler never saw a key.
+    ///
+    /// Two flags now, because they are two questions:
+    /// [`is_focussable`](Self::is_focussable) for "may hold focus" and
+    /// [`is_tab_focussable`](Self::is_tab_focussable) for "is in the sequential
+    /// navigation order". Everything tabbable is focusable; the converse is
+    /// what `-1` exists to express.
     pub fn flush_is_focussable(&mut self) {
         let disabled: bool = self.attr_parsed(local_name!("disabled")).unwrap_or(false);
         let tabindex: Option<i32> = self.attr_parsed(local_name!("tabindex"));
 
-        self.is_focussable = !disabled
+        // A negative tabindex is focusable but skipped by Tab; any other
+        // tabindex, and the natively-focusable elements, are both.
+        self.is_focussable = !disabled && (tabindex.is_some() || self.is_natively_focussable());
+
+        self.is_tab_focussable = !disabled
             && match tabindex {
                 Some(index) => index >= 0,
                 None => {
@@ -254,21 +283,31 @@ impl ElementData {
                     //   - <button>, <frame>, <iframe>, <input>, <object>, <select>, <textarea>, and SVG <a> element
                     //   - <summary> element that provides summary for a <details> element.
 
-                    if [local_name!("a"), local_name!("area")].contains(&self.name.local) {
-                        self.attr(local_name!("href")).is_some()
-                    } else {
-                        const DEFAULT_FOCUSSABLE_ELEMENTS: [LocalName; 6] = [
-                            local_name!("button"),
-                            local_name!("input"),
-                            local_name!("select"),
-                            local_name!("textarea"),
-                            local_name!("frame"),
-                            local_name!("iframe"),
-                        ];
-                        DEFAULT_FOCUSSABLE_ELEMENTS.contains(&self.name.local)
-                    }
+                    self.is_natively_focussable()
                 }
             }
+    }
+
+    /// PATCH(loki): the elements the user agent puts in the tab order with no
+    /// `tabindex` attribute at all.
+    ///
+    /// Split out of `flush_is_focussable` because both flags need it and a
+    /// second copy would drift — the list is the sort of thing that gets an
+    /// element added to it once.
+    fn is_natively_focussable(&self) -> bool {
+        if [local_name!("a"), local_name!("area")].contains(&self.name.local) {
+            self.attr(local_name!("href")).is_some()
+        } else {
+            const DEFAULT_FOCUSSABLE_ELEMENTS: [LocalName; 6] = [
+                local_name!("button"),
+                local_name!("input"),
+                local_name!("select"),
+                local_name!("textarea"),
+                local_name!("frame"),
+                local_name!("iframe"),
+            ];
+            DEFAULT_FOCUSSABLE_ELEMENTS.contains(&self.name.local)
+        }
     }
 
     pub fn flush_style_attribute(&mut self, guard: &SharedRwLock, url_extra_data: &UrlExtraData) {

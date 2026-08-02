@@ -30,6 +30,7 @@ pub mod device_probe;
 pub mod device_probe_memory;
 pub mod device_profile;
 pub mod device_profile_override;
+pub mod focus_ring;
 pub mod responsive;
 pub mod safe_area;
 pub mod scroll;
@@ -80,6 +81,7 @@ pub use device_profile_override::{
     current as device_profile_override, describe as describe_device_profile_override,
     ProfileOverride, OVERRIDE_ENV as DEVICE_PROFILE_OVERRIDE_ENV,
 };
+pub use focus_ring::focus_ring_css;
 pub use responsive::{
     estimate_group_metrics, group_layout, page_fits, required_page_width, resolve_cascade,
     resolve_page_fit, use_breakpoint, use_provide_responsive, use_provide_window_size,

@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# Phase 4 screen sitting harness (Spec 08 r79).
+#
+# Brings up loki-text on a virtual X display with a software Vulkan adapter,
+# drives it with synthetic key/pointer events, and captures the framebuffer at
+# each step. This is the instrument the phase's remaining acceptance rows were
+# waiting on: "does autofocus land" and "is the focus ring visible" are questions
+# no headless unit test can reach.
+#
+# Usage: .sitting/run.sh <scenario>
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SHOT_DIR="${SHOT_DIR:-$ROOT/target/sitting}"
+BIN="${BIN:-$ROOT/target/debug/loki-text-desktop}"
+DISPLAY_NUM=99
+export DISPLAY=":${DISPLAY_NUM}"
+# lavapipe: software Vulkan, so wgpu gets a real adapter with no GPU present.
+export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
+export WGPU_BACKEND=vulkan
+export LIBGL_ALWAYS_SOFTWARE=1
+export RUST_LOG="${RUST_LOG:-warn,appthere_ui=debug,loki_text=debug}"
+
+mkdir -p "$SHOT_DIR"
+
+shot() { # shot <name>
+  xwd -root -silent 2>/dev/null | convert xwd:- -depth 8 "$SHOT_DIR/$1.png" 2>/dev/null
+  echo "  [shot] $1"
+}
+
+start_x() {
+  pkill -f "Xvfb :${DISPLAY_NUM}" 2>/dev/null
+  rm -f "/tmp/.X${DISPLAY_NUM}-lock"
+  Xvfb ":${DISPLAY_NUM}" -screen 0 1280x900x24 -nolisten tcp >/dev/null 2>&1 &
+  XVFB_PID=$!
+  for _ in $(seq 1 40); do xdpyinfo >/dev/null 2>&1 && return 0; sleep 0.25; done
+  echo "Xvfb did not come up"; return 1
+}
+
+start_app() { # start_app [env assignments...]
+  "$@" "$BIN" > "$SHOT_DIR/app.log" 2>&1 &
+  APP_PID=$!
+  # Wait for a mapped, non-root window rather than sleeping a fixed time.
+  for _ in $(seq 1 120); do
+    WIN=$(xdotool search --onlyvisible --name "." 2>/dev/null | tail -1)
+    if [ -n "${WIN:-}" ]; then
+      # No window manager on Xvfb, so nothing assigns the X input focus and
+      # `xdotool key` would go to no client at all. Set it explicitly — this is
+      # the harness's own precondition, not the app's behaviour.
+      xdotool windowactivate "$WIN" 2>/dev/null
+      xdotool windowfocus --sync "$WIN" 2>/dev/null
+      xdotool windowraise "$WIN" 2>/dev/null
+      sleep "${SETTLE:-10}"   # first frame: lavapipe is slow, and CSS lands on the second poll
+      xdotool search --onlyvisible --name "." getwindowname %@ 2>/dev/null | sed "s/^/  [win] /"
+      return 0
+    fi
+    kill -0 "$APP_PID" 2>/dev/null || { echo "app exited early"; tail -20 "$SHOT_DIR/app.log"; return 1; }
+    sleep 0.5
+  done
+  echo "no window appeared"; tail -20 "$SHOT_DIR/app.log"; return 1
+}
+
+stop() {
+  kill "$APP_PID" 2>/dev/null; wait "$APP_PID" 2>/dev/null
+  kill "$XVFB_PID" 2>/dev/null
+}
+trap stop EXIT
+
+key() { xdotool key --clearmodifiers "$1"; sleep 0.6; }
+
+# ---------------------------------------------------------------------------
+case "${1:-smoke}" in
+
+smoke)
+  start_x || exit 1
+  start_app env LOKI_DEVICE_PROFILE=pointer=fine || exit 1
+  shot 01-home-fine
+  echo "  window: $(xdotool getactivewindow getwindowgeometry 2>/dev/null | tr '\n' ' ')"
+  ;;
+
+coarse)
+  start_x || exit 1
+  start_app env LOKI_DEVICE_PROFILE=pointer=coarse || exit 1
+  shot 01-home-coarse
+  ;;
+
+keyboard)
+  # The Phase 4 sitting proper: open the row menu with the keyboard, walk it,
+  # Escape out, and check where focus went.
+  start_x || exit 1
+  start_app env LOKI_DEVICE_PROFILE=pointer=fine || exit 1
+  shot 10-home
+  echo "== Tab to the first focusable =="
+  for i in $(seq 1 "${TABS:-8}"); do key Tab; shot "11-tab-$i"; done
+  ;;
+
+menu)
+  # Tab to a row's ⋮ (TABS stops), open it, walk it, Escape, and see where
+  # focus lands. This is the row Phase 4 could not close on.
+  start_x || exit 1
+  start_app env LOKI_DEVICE_PROFILE=pointer=fine || exit 1
+  shot 20-home
+  for i in $(seq 1 "${TABS:-11}"); do key Tab; done
+  shot "21-on-trigger"
+  key Return;        shot 22-menu-open
+  key Down;          shot 23-down-1
+  key Down;          shot 24-down-2
+  key Escape;        shot 25-after-escape
+  ;;
+
+editor)
+  # Regression cover for the mousedown focus move (r79): open a document, click
+  # into the canvas, type, and check the glyphs land. Nothing here is about
+  # overlays — it is the path the focus change could most easily have broken.
+  start_x || exit 1
+  start_app env LOKI_DEVICE_PROFILE=pointer=fine || exit 1
+  shot 30-home
+  key Tab; key Tab; key Tab; key Tab; key Tab; key Tab; key Tab
+  key Return
+  sleep "${OPEN_SETTLE:-12}"
+  shot 31-opened
+  xdotool mousemove 640 500 click 1; sleep 1
+  shot 32-clicked
+  xdotool type --delay 120 "ZZQQ"; sleep 2
+  shot 33-typed
+  ;;
+
+esac
+echo "DONE: $1"

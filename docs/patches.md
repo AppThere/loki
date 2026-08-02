@@ -115,6 +115,22 @@ If this patch is dropped, every popover stops returning focus on dismissal and
 fails — deliberately, so the loss is a test failure rather than a silent
 regression in behaviour nothing asserts.
 
+**Focus preservation must not overrule a deliberate move (PATCH(loki),
+2026-08-02).** `DioxusDocument::poll` captures the focused node's Dioxus
+`ElementId` before `render_immediate` and restores it after, so focus survives a
+re-render that rebuilds the focused node. The mutation flush is also where
+`autofocus` fires — so a render that *deliberately* moved focus (mounting an
+`autofocus` overlay) had it handed straight back to whatever held it before.
+Combined with the click-focus ordering above, an overlay could be focused twice
+and lose it twice, and the symptom was identical either way: a menu opens and
+every key still goes to the trigger.
+
+The restoration is now skipped when focus changed during the render *to a node
+that still exists*. Focus that is merely stale — its node removed, or its id
+reused — is the case this restoration exists for, and it is exactly the case
+where the current focus does not name a live node, so the discriminator is a
+before/after pair rather than a smarter element lookup.
+
 **Not covered:** "focus the node *after* this one", which
 `DismissStep::AdvanceFocusPastAnchor` (Tab out of a menu) needs.
 `set_focus` takes a `bool`, and blitz-dom's `focus_next_node` — which would
@@ -461,7 +477,49 @@ is made synchronous (the `todo(jon)` comment in the original acknowledges this).
    nearest `tabindex="0"` ancestor, preventing `onkeydown` from firing. The
    patch checks `is_focussable()` and calls `set_focus_to()` instead.
 
-2. **Scroll-change collection (PATCH(loki), 2026-06-10).**
+   **Moved to mousedown 2026-08-02 (r79).** The focus assignment itself now
+   happens in `handle_mousedown` (`focus_from_pointer`), not in `handle_click`.
+   The driver runs the embedder's handler *before* blitz's default action, so
+   focus assigned during `handle_click` lands **after** anything that handler
+   did — including mounting an `autofocus` element. Every "click a button, a
+   menu opens" interaction was therefore broken in the same way: the menu did
+   receive focus, and the trigger took it straight back, leaving a raised
+   overlay whose every key went to the button behind it. Browsers focus on
+   mousedown for precisely this ordering reason, so this is the platform
+   behaviour rather than a workaround for it. `handle_click` keeps the ancestor
+   walk (it still decides where a default action applies) and the `label`
+   branch focuses its bound input explicitly, since mousedown hit the label.
+
+2. **Enter and Space activate a focused control (PATCH(loki), 2026-08-02).**
+   `handle_keypress` did nothing at all for anything that was not a text input,
+   so a `button` could be reached by Tab and never pressed — **every control in
+   an embedder's UI was pointer-only**, WCAG 2.1.1. Tab traversal already
+   worked, which is what made the gap hard to see: focus visibly moves, and then
+   the keyboard stops.
+
+   The patch dispatches a synthetic click `DomEvent` for Enter and Space on a
+   focused non-text element, so the handler written for the pointer is the
+   handler the keyboard runs. It goes through `dispatch_event`, **not** through
+   `handle_click`: the latter is the *default action* for a click the embedder
+   has already been told about, so calling it directly runs the built-in
+   behaviour while the embedder's own `onclick` never fires — which is the whole
+   point in a Dioxus app, where every button's behaviour lives in an `onclick`.
+
+3. **`tabindex="-1"` is focusable but not tabbable (PATCH(loki), 2026-08-02).**
+   `is_focussable` answered the tab-order question — `Some(index) => index >= 0`
+   — so `tabindex="-1"` came out `false` and every consumer that meant "can this
+   hold focus at all" got the wrong answer. That is exactly the combination HTML
+   defines for a programmatically-focused container (an overlay, a dialog, a
+   menu: focus it on open, never land on it while Tabbing past), so `autofocus`
+   silently did nothing on any such element and the overlay's own key handler
+   never saw a key.
+
+   Split into two flags, because they are two questions: `is_focussable` for
+   "may hold focus" and `is_tab_focussable` for "is in the sequential navigation
+   order". `focus_next_node` takes the narrower one; `autofocus`, click-focus
+   and the embedder's programmatic focus take the wider one.
+
+4. **Scroll-change collection (PATCH(loki), 2026-06-10).**
    `scroll_node_by_collect` records each node whose scroll offset changed
    during a scroll gesture (including bubbling), and the `Document` trait
    gains a default-no-op `handle_scroll_changes` hook. blitz-shell calls the
@@ -471,19 +529,19 @@ is made synchronous (the `todo(jon)` comment in the original acknowledges this).
    Routed through the `Document` trait because blitz-traits 0.2 has no
    scroll `DomEventData` variant.
 
-3. **Absolute scroll (PATCH(loki), 2026-06-11).** `scroll_node_to_collect`
+5. **Absolute scroll (PATCH(loki), 2026-06-11).** `scroll_node_to_collect`
    scrolls a node to an absolute `(x, y)` offset (clamped, change-collecting),
    implemented on top of `scroll_node_by_collect`. Backs `MountedData::scroll`
    in the dioxus-native patch (draggable scrollbar thumb, scroll-to-cursor).
 
-4. **Scroll-container enumeration (PATCH(loki), 2026-06-12).**
+6. **Scroll-container enumeration (PATCH(loki), 2026-06-12).**
    `collect_scroll_containers` returns every node whose computed overflow is
    `scroll`/`auto`. blitz-shell calls it after a viewport resize (and after a
    scroll container mounts) and feeds the result to `handle_scroll_changes`, so
    the embedder re-receives `onscroll` with the new client size — letting the
    reflow view relayout to the window width without a user scroll.
 
-5. **Non-viewport-bubbling scroll (PATCH(loki), 2026-06-20).**
+7. **Non-viewport-bubbling scroll (PATCH(loki), 2026-06-20).**
    `scroll_node_within_collect` mirrors `scroll_node_by_collect` but drops any
    scroll that bubbles past the root element instead of moving the viewport
    (both delegate to a shared `scroll_node_by_collect_inner` taking a
@@ -492,7 +550,7 @@ is made synchronous (the `todo(jon)` comment in the original acknowledges this).
    overruns the document, or starts over the ribbon, does nothing rather than
    jiggling the UI by the sub-pixel root/window slack.
 
-6. **Static canvases don't force a per-frame redraw (PATCH(loki), 2026-06-21).**
+8. **Static canvases don't force a per-frame redraw (PATCH(loki), 2026-06-21).**
    `is_animating()` returns `has_canvas | has_active_animations`, and the shell's
    redraw loop re-requests a redraw every frame while it is true. Loki paints
    every document page as a `<canvas src>` custom-paint tile, so `has_canvas` is
@@ -508,7 +566,7 @@ is made synchronous (the `todo(jon)` comment in the original acknowledges this).
    updates correct while idle frames stop. (`is_animating()` is left intact for
    any other consumer.)
 
-7. **Embedder-supplied font blobs (PATCH(loki), 2026-06-27).** `DocumentConfig`
+9. **Embedder-supplied font blobs (PATCH(loki), 2026-06-27).** `DocumentConfig`
    gains `extra_fonts: Vec<Vec<u8>>`; `BaseDocument::new` registers each blob into
    the parley `FontContext` (on top of the system fonts and the default bullet
    font) at construction. This lets an app bundle its UI/fallback fonts and have
@@ -809,7 +867,7 @@ Let `OLD` be the current pin and `NEW` the target (e.g. `OLD=0.7.4`,
    `cargo clippy --workspace -- -D warnings` must all pass. Finally, run the app
    and confirm scroll-wheel moves the thumb and thumb-drag scrolls the page.
 
-8. **Update docs:** the two patch section headers and re-vendor dates here, and
+10. **Update docs:** the two patch section headers and re-vendor dates here, and
    the Dioxus pin note in `CLAUDE.md`.
 
 ## Removing a patch

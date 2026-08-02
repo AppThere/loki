@@ -19,7 +19,7 @@
 
 use appthere_ui::tokens;
 use appthere_ui::{
-    AtBackdropHost, AtPopoverHost, AtThemeContext, use_provide_backdrop,
+    AtBackdropHost, AtPopoverHost, AtThemeContext, focus_ring_css, use_provide_backdrop,
     use_provide_device_profile, use_provide_popover, use_provide_responsive, use_safe_area,
 };
 use dioxus::prelude::*;
@@ -189,6 +189,13 @@ pub fn App() -> Element {
             }}
             "
         }
+
+        // The keyboard focus indicator (WCAG 2.4.7). Injected as its own sheet
+        // because it belongs to the design system rather than to this app's
+        // reset — see `appthere_ui::focus_ring`. Before r79 nothing styled
+        // `:focus` anywhere in the suite, so Tab moved focus and the screen never
+        // changed.
+        document::Style { "{focus_ring_css()}" }
 
         // The UI typeface (Atkinson Hyperlegible Next) and the bundled
         // metric-compatible fallback families (Carlito/Caladea/Arimo/Cousine/

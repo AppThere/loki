@@ -44,6 +44,22 @@ pub const COLOR_ACCENT_PRIMARY: &str = "#3D7EFF";
 /// Darker accent shown on hover over primary accent elements.
 pub const COLOR_ACCENT_PRIMARY_HOVER: &str = "#3771E6";
 
+/// The keyboard focus ring (WCAG 2.4.7 Focus Visible).
+///
+/// # Not the accent
+///
+/// The obvious choice is [`COLOR_ACCENT_PRIMARY`], and it is wrong here: the
+/// accent is also the fill of every primary button, so a focused primary button
+/// would have an accent ring on an accent background and the one control the
+/// user most often reaches first would be the one with no visible focus at all.
+/// A ring has to contrast with *whatever it lands on*, which is a different job
+/// from an accent colour and therefore a different token.
+///
+/// Amber clears 3:1 against all four surfaces a ring can appear over — the
+/// chrome (`#1E1E1E`), the page (`#FFFFFF`), the editor's mid-grey backdrop, and
+/// the accent fill — which is the contrast the success criterion asks for.
+pub const COLOR_FOCUS_RING: &str = "#FFB020";
+
 // ── Text ──────────────────────────────────────────────────────────────────────
 
 /// Primary text — headings and body copy (light surfaces).
@@ -166,6 +182,7 @@ mod tests {
             ("COLOR_BORDER_CHROME", COLOR_BORDER_CHROME),
             ("COLOR_ACCENT_PRIMARY", COLOR_ACCENT_PRIMARY),
             ("COLOR_ACCENT_PRIMARY_HOVER", COLOR_ACCENT_PRIMARY_HOVER),
+            ("COLOR_FOCUS_RING", COLOR_FOCUS_RING),
             ("COLOR_TEXT_PRIMARY", COLOR_TEXT_PRIMARY),
             ("COLOR_TEXT_SECONDARY", COLOR_TEXT_SECONDARY),
             ("COLOR_TEXT_ON_CHROME", COLOR_TEXT_ON_CHROME),

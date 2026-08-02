@@ -213,7 +213,8 @@ impl Document for DioxusDocument {
 
         // Preserve focus across re-renders: capture the focused node's Dioxus ElementId
         // (stable across re-renders) before render_immediate may rebuild the DOM tree.
-        let focus_dioxus_id = self.inner.focus_node_id
+        let focus_before = self.inner.focus_node_id;
+        let focus_dioxus_id = focus_before
             .and_then(|id| self.inner.get_node(id))
             .and_then(get_dioxus_id);
 
@@ -224,10 +225,33 @@ impl Document for DioxusDocument {
 
         // Re-apply focus if render_immediate replaced the focused blitz node with a new one
         // (same Dioxus ElementId, different blitz node ID) or cleared focus entirely.
-        if let Some(dxid) = focus_dioxus_id {
-            if let Some(new_node_id) = self.vdom_state.try_element_to_node_id(dxid) {
-                if self.inner.focus_node_id != Some(new_node_id) {
-                    self.inner.set_focus_to(new_node_id);
+        //
+        // PATCH(loki): **unless the render itself moved focus on purpose.** The
+        // mutation flush is where `autofocus` fires, so a render that mounts an
+        // `autofocus` element focuses it *inside* the block above — and restoring
+        // unconditionally then handed focus straight back to whatever had it
+        // before. The visible result: a menu opens, and every subsequent key goes
+        // to the button that opened it. Focus preservation cannot tell "the DOM
+        // moved my node" from "the DOM deliberately moved focus" by looking at
+        // the element id alone, which is why this needs the before/after pair
+        // rather than a smarter lookup.
+        //
+        // The discriminator is *changed to something live*: a focus that is
+        // merely stale (its node was removed, or its id was reused) is the case
+        // this restoration exists for, and it is exactly the case where the
+        // current focus does not name a node that still exists.
+        let moved_deliberately = self.inner.focus_node_id != focus_before
+            && self
+                .inner
+                .focus_node_id
+                .is_some_and(|id| self.inner.get_node(id).is_some());
+
+        if !moved_deliberately {
+            if let Some(dxid) = focus_dioxus_id {
+                if let Some(new_node_id) = self.vdom_state.try_element_to_node_id(dxid) {
+                    if self.inner.focus_node_id != Some(new_node_id) {
+                        self.inner.set_focus_to(new_node_id);
+                    }
                 }
             }
         }
