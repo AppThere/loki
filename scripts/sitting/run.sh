@@ -31,13 +31,25 @@ shot() { # shot <name>
 start_x() {
   pkill -f "Xvfb :${DISPLAY_NUM}" 2>/dev/null
   rm -f "/tmp/.X${DISPLAY_NUM}-lock"
-  Xvfb ":${DISPLAY_NUM}" -screen 0 1280x900x24 -nolisten tcp >/dev/null 2>&1 &
+  # SCREEN is a parameter because some scenarios are *about* a narrow window —
+  # the ribbon overflow menu only exists when the strip does not fit.
+  Xvfb ":${DISPLAY_NUM}" -screen 0 "${SCREEN:-1280x900}x24" -nolisten tcp >/dev/null 2>&1 &
   XVFB_PID=$!
   for _ in $(seq 1 40); do xdpyinfo >/dev/null 2>&1 && return 0; sleep 0.25; done
   echo "Xvfb did not come up"; return 1
 }
 
+# loki-text persists its window geometry, so one WINSIZE run leaves every later
+# run at that size — a leak between runs that are supposed to be independent,
+# and one no scenario can see: the app is behaving correctly. It cost two
+# scenarios' results before it was spotted, and both looked like regressions in
+# the code under test. Cleared here so each run starts from the app's default.
+reset_window_state() {
+  rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/AppThere/Loki/window.json" 2>/dev/null
+}
+
 start_app() { # start_app [env assignments...]
+  reset_window_state
   "$@" "$BIN" > "$SHOT_DIR/app.log" 2>&1 &
   APP_PID=$!
   # Wait for a mapped, non-root window rather than sleeping a fixed time.
@@ -50,6 +62,18 @@ start_app() { # start_app [env assignments...]
       xdotool windowactivate "$WIN" 2>/dev/null
       xdotool windowfocus --sync "$WIN" 2>/dev/null
       xdotool windowraise "$WIN" 2>/dev/null
+      # **A smaller screen does not make a smaller window.** There is no window
+      # manager on Xvfb, so the app keeps whatever size it asked for and simply
+      # extends past the screen edge — which photographs as a clipped ribbon and
+      # reads as "the strip overflows", while the app still measures its
+      # original width. Measured: `SCREEN=560x900` with the collapse cascade
+      # still reading 1268. A scenario that is *about* a narrow window sets
+      # WINSIZE; everything else keeps the app's own default geometry, which is
+      # what every scenario's coordinates were calibrated against.
+      if [ -n "${WINSIZE:-}" ]; then
+        xdotool windowsize --sync "$WIN" "${WINSIZE%x*}" "${WINSIZE#*x}" 2>/dev/null
+        sleep 1
+      fi
       sleep "${SETTLE:-10}"   # first frame: lavapipe is slow, and CSS lands on the second poll
       xdotool search --onlyvisible --name "." getwindowname %@ 2>/dev/null | sed "s/^/  [win] /"
       return 0
@@ -363,5 +387,56 @@ highlight)
   echo "  typed vs clicked: $(compare -metric AE "$SHOT_DIR/n2-typed-line.png" \
     "$SHOT_DIR/n3-named-line.png" null: 2>&1)"
   ;;
+ribbonoverflow)
+  # I-28: the ribbon overflow ("More") menu. Its controls were dead while it was
+  # raised — the menu rendered in place inside `Router`, the dismiss backdrop was
+  # a root sibling, and Blitz hit-tests siblings only, so the backdrop won.
+  #
+  # A narrow window is the whole precondition: the menu does not exist until the
+  # strip cannot fit its groups. 720 px overflows the Write tab.
+  #
+  # The assertion is **clicking a control inside the menu does something**, which
+  # is exactly what the defect prevented. A menu that merely appears would have
+  # looked identical before the fix.
+  export WINSIZE="${WINSIZE:-560x900}"
+  SCREEN="${SCREEN:-560x900}" start_x || exit 1
+  start_app env LOKI_DEVICE_PROFILE="${PROFILE:-pointer=fine}" || exit 1
+  for i in $(seq 1 "${TABS:-7}"); do key Tab; done
+  key Return
+  sleep "${OPEN_SETTLE:-12}"
+  shot r0-opened
+  # Put the caret in the document so a formatting control has something to act on.
+  xdotool mousemove "${TX:-360}" "${TY:-172}" click 1; sleep 1
+  xdotool key --clearmodifiers shift+End; sleep 1
+  shot r1-selected
+  # The More button is the last thing in the ribbon strip.
+  xdotool mousemove "${MX:-512}" "${MY:-845}" click 1; sleep 2
+  shot r2-menu
+  # Click a control INSIDE the menu — the Document group's Save. This is the
+  # assertion: the defect was that the root backdrop was hit-tested before a
+  # menu rendered inside `Router`, so every control in here was dead. A menu
+  # that merely appears looked identical before the fix.
+  xdotool mousemove "${CX:-394}" "${CY:-618}" click 1; sleep 3
+  shot r3-clicked
+  # **The assertion is the focus ring landing on that button.** The patched
+  # shell focuses whatever the pointer hit, so a ring on a control inside the
+  # menu is proof the hit test reached it — and reaching it is precisely what
+  # the root backdrop used to prevent. The menu stays open, so this is not the
+  # menu closing under a click that missed.
+  #
+  # Not "the document changed": the Write tab's Save does not clear the tab's
+  # dirty dot from the *normal* ribbon either (measured — see the control run),
+  # so an assertion on that would fail here for a reason that has nothing to do
+  # with this menu.
+  for s in r2-menu r3-clicked; do
+    convert "$SHOT_DIR/$s.png" -crop "${BTNCROP:-60x60+364+588}" +repage \
+      "$SHOT_DIR/$s-btn.png" 2>/dev/null
+  done
+  echo "== diffs =="
+  echo "  menu opened:      $(compare -metric AE "$SHOT_DIR/r1-selected.png" "$SHOT_DIR/r2-menu.png" null: 2>&1)"
+  echo "  control was hit:  $(compare -metric AE "$SHOT_DIR/r2-menu-btn.png" \
+    "$SHOT_DIR/r3-clicked-btn.png" null: 2>&1)"
+  ;;
+
 esac
 echo "DONE: $1"

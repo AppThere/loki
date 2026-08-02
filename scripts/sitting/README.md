@@ -27,6 +27,7 @@ scripts/sitting/run.sh anchor         # zoom holds the middle of the page still
 ZX=1176 ZY=788 scripts/sitting/run.sh typed  # the typed zoom field
 scripts/sitting/run.sh wheelzoom      # Ctrl+wheel zooms, plain wheel scrolls
 scripts/sitting/run.sh highlight      # highlight: typed, clicked and custom
+scripts/sitting/run.sh ribbonoverflow # the More menu's controls are clickable
 ```
 
 Shots land in `target/sitting/`. `SETTLE` (default 10s) is how long to wait
@@ -81,6 +82,29 @@ too, and it affects the existing scroll path identically — do not "correct" fo
 it in app code, which would halve the step everywhere else.
 
 ## What the sittings have found
+
+**r91 — I-28, and two more harness lies in one session.** The ribbon overflow
+menu is hosted now and its controls are reachable; the assertion is the focus
+ring landing on a control *inside* the menu, because the patched shell focuses
+whatever the pointer hit, so a ring there is proof the hit test got past the
+backdrop that used to eat it.
+
+Getting there cost two false readings, both the harness's:
+
+**A smaller screen is not a smaller window.** There is no window manager on
+Xvfb, so `SCREEN=560x900` left the app at its own 1280 width, simply extending
+past the screen edge. That photographs as a clipped ribbon and reads as "the
+strip overflows" — while the collapse cascade was still measuring 1268, which is
+what the log said when I stopped guessing and printed it. Scenarios about a
+narrow window must resize the *window*.
+
+**And the app remembers its size.** One `WINSIZE` run left `window.json` at
+560x900, so every later scenario ran narrow. Two unrelated sittings came back
+with wrong numbers and both looked like regressions in the code under test. The
+first fix — forcing 1280x900 on every run — was worse: the app's own default is
+1280x**800**, so it moved the status bar 99 px and broke every coordinate the
+existing scenarios were calibrated against. The leak is cleared at its source
+now: `window.json` is removed before each run.
 
 **r90 — the Phase 5 close audit, and a feature that was inert.** The mechanical
 "decisions with no consumer" count — the same check that stopped the Phase 4

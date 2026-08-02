@@ -19,8 +19,8 @@
 
 use appthere_ui::tokens;
 use appthere_ui::{
-    AtBackdropHost, AtPopoverHost, AtThemeContext, focus_ring_css, use_provide_backdrop,
-    use_provide_device_profile, use_provide_popover, use_provide_responsive, use_safe_area,
+    AtPopoverHost, AtThemeContext, focus_ring_css, use_provide_device_profile, use_provide_popover,
+    use_provide_responsive, use_safe_area,
 };
 use dioxus::prelude::*;
 
@@ -109,10 +109,6 @@ pub fn App() -> Element {
     // derived breakpoint via `appthere_ui::use_breakpoint`.
     use_provide_responsive();
 
-    // Window-level dismiss-backdrop context (outside-click-to-close for the
-    // ribbon overflow menu and future anchored popups); AtBackdropHost below
-    // renders the active backdrop inside this positioned root.
-    use_provide_backdrop();
     // Anchored-overlay state, read by `AtPopoverHost` below (Spec 08 T4.1).
     let _popover = use_provide_popover();
     let mut window_size = appthere_ui::use_provide_window_size();
@@ -260,11 +256,7 @@ pub fn App() -> Element {
 
             Router::<Route> {}
 
-            // Window-level dismiss backdrop (e.g. the ribbon overflow menu's
-            // outside-click-to-close). Renders nothing while no popup is open.
-            AtBackdropHost {}
-
-            // Anchored overlays (Spec 08 T4.1). **Must follow AtBackdropHost.**
+            // Anchored overlays (Spec 08 T4.1).
             //
             // `position: fixed` collapses to `absolute` and there is no top
             // layer, so `z-index` cannot arbitrate between two children of the
