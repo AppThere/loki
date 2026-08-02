@@ -179,6 +179,25 @@ impl AtPopoverContext {
         window: Option<(f64, f64)>,
         insets: crate::SafeAreaInsets,
     ) {
+        // **The singleton rule, wired (r77).** `open_response` decided this and
+        // had no caller, and the gap was live: opening a second popover replaced
+        // the first in `open` without telling the first's *consumer*, so that
+        // consumer kept its own state set. Concretely — open a Recent row's menu,
+        // then hover the Open button: the tooltip replaces the menu on screen
+        // while `menu_open` stays `Some`, and the next click on ⋮ toggles that
+        // stale state off instead of opening. **The button reads as dead for one
+        // click**, which is the defect class this primitive exists to remove.
+        //
+        // `AlreadyOpen` deliberately does *not* dismiss: re-opening the same
+        // popover for a different word is that popover moving, and running the
+        // dismiss would fire the consumer's own close handler mid-open.
+        let previous = self.open.peek().clone();
+        let response = super::wiring::open_response(previous.as_ref().map(|r| r.id), request.id);
+        if let super::wiring::OpenResponse::DismissThenOpen(_) = response {
+            if let Some(previous) = previous {
+                (previous.on_dismiss)();
+            }
+        }
         let mut filled = request.clone();
         filled.placement.viewport =
             super::geometry::usable_viewport(window, insets, request.placement.viewport);
