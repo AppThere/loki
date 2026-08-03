@@ -150,7 +150,7 @@ all exist. And the task list below over-states what remains:
 | Task | Spec says | Tree says |
 | --- | --- | --- |
 | T6.1 `style:page-usage` | remaining | **Was remaining — done, r96.** |
-| T6.2 page-size catalogue | remaining | **Remaining.** `PageSize` has exactly two constructors, `a4()` and `letter()`; the inspector can name those two and renders everything else as `612 × 792 pt`. |
+| T6.2 page-size catalogue | remaining | **Done, r98.** 28 papers, plus user-defined. See below. |
 | T6.3 app-scoped defaults | remaining | **Remaining.** Only `default_page_size_for_locale` (A4 vs Letter off `LC_PAPER`) exists. |
 | T6.4 unit resolution | remaining | **Remaining.** No measurement-unit type anywhere in the tree. |
 | T6.5 advisory DOCX part | remaining | **Remaining.** No custom-part writer. |
@@ -162,6 +162,57 @@ all exist. And the task list below over-states what remains:
 `w:mirrorMargins` → `DocumentSettings` → `LayoutOptions` → `mirrored_margins()`
 swapping left/right on even pages, with a Loro round-trip and tests. What did
 *not* exist was any ODF spelling of it.
+
+### T6.2 — the paper catalogue (done, r98)
+
+`loki_doc_model::layout::paper_catalog` holds the 28 papers T6.2 listed — ISO
+A0–A6, ISO B4–B6, JIS B4–B6, C5/C6/DL, US Letter, Legal, Tabloid, Executive,
+Statement, Folio, Quarto, #10, Monarch, and the three index cards — plus a
+user-defined width × height entry in the page-style panel.
+
+**A paper name is derived, never stored.** Neither format carries one: ODF writes
+`fo:page-width`/`fo:page-height`, OOXML writes `w:pgSz/@w:w` and `@w:h`. (OOXML's
+`@w:code` is a Windows `DEVMODE` printer paper code, which Loki neither reads nor
+writes.) So `PageSize` gains **no name field** — one fact, the dimensions, and
+one derivation from it. A size the catalogue cannot name is a user-defined size,
+which is a normal state rather than an error.
+
+**Three copies of one predicate collapsed into it.** "Is this page that paper?"
+— orientation-independent, ±1 pt — was written out three times, in the style
+inspector, the page form's active-preset check, and the Layout ribbon, each
+alongside its own dimension literals. All three now call `Paper::matches`, and
+`PageSize::a4()`/`letter()` are defined *by* the catalogue rows that name them,
+so the dimensions a page is set to and the dimensions it is recognised by cannot
+drift apart. The ribbon's `PAGE_SIZE_PRESETS` in particular held a second copy of
+595.28 × 841.89.
+
+**The two-size cap was structural, not a UI limit.** `PagePreset` had one variant
+per paper (`SizeA4`, `SizeLetter`), each carrying its own literals and its own
+comparison — so a third size meant a third variant. One `Size(&'static Paper)`
+variant makes the whole catalogue reachable through the applier that already
+existed.
+
+**The tolerance is now defended by an inversion.** `MATCH_TOLERANCE_PT` is 1 pt,
+and matching requires *both* axes within it — so what bounds the constant is each
+pair's **better**-separated axis, minimised over the catalogue, which is 12.47 pt
+(A6 vs Index card 4×6). Several pairs share one edge exactly (Folio and Legal are
+both 612 pt wide) and are still never confusable, so the closest single edge is
+the wrong number to reason from. `paper_entries_are_mutually_distinguishable`
+computes the right one and asserts the tolerance stays under it: rather than
+checking each paper matches itself — which passes for any tolerance, however
+wide — it checks that no paper matches another. Widening the tolerance to 20 pt,
+or changing `matches` from AND to OR, each kill it.
+
+**Custom sizes are rejected, not clamped**, outside 36 pt … 14400 pt, and the Set
+button is withheld while the entry is unusable rather than shown inert.
+
+**Not established:** no screen sitting, again — the style panel still has no
+harness scenario, so the 28-button grid has not been seen rendered, and its
+wrapping behaviour in the Compact posture is unverified. The catalogue's display
+names are `&'static str` constants, not Fluent keys: correct for the proper nouns
+(A4, DL, Tabloid), wrong for "US Letter", "Legal", "Executive", "Statement" and
+the index cards — `TODO(paper-i18n)`. A searchable dropdown (T6.7's "catalogue
+with search") still wants the panel hosted in `AtPopoverHost`.
 
 ### T6.7 — the manager verbs (done, r97), and a correction to the r96 row
 

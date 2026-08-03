@@ -2,8 +2,9 @@
 
 //! Tests for the pure `apply_preset` page-geometry transform.
 
-use super::{PagePreset, apply_preset};
+use super::{PagePreset, apply_preset, is_active};
 use loki_doc_model::layout::page::{PageLayout, PageOrientation, PageSize};
+use loki_doc_model::layout::paper_catalog::{self, PAPERS, paper_for};
 
 #[test]
 fn landscape_swaps_the_axes_and_sets_the_flag() {
@@ -26,14 +27,54 @@ fn size_preserves_orientation() {
         },
         PagePreset::Landscape,
     );
-    let a4 = apply_preset(&landscape_letter, PagePreset::SizeA4);
+    let a4 = apply_preset(&landscape_letter, PagePreset::Size(&paper_catalog::A4));
     assert!(a4.page_size.width.value() > a4.page_size.height.value());
-    let (short, long) = (
-        a4.page_size.width.value().min(a4.page_size.height.value()),
-        a4.page_size.width.value().max(a4.page_size.height.value()),
-    );
-    assert!((short - PageSize::a4().width.value()).abs() < 1.0);
-    assert!((long - PageSize::a4().height.value()).abs() < 1.0);
+    assert_eq!(paper_for(&a4.page_size).map(|p| p.id), Some("a4"));
+}
+
+/// **Every** catalogued paper is applicable, in both orientations — the whole
+/// point of collapsing `SizeA4`/`SizeLetter` into one `Size(paper)` variant.
+/// Two hardcoded variants would pass a test that only ever names two papers.
+#[test]
+fn every_catalogued_paper_can_be_applied_and_is_then_active() {
+    let portrait = PageLayout::default();
+    let landscape = apply_preset(&portrait, PagePreset::Landscape);
+    for paper in PAPERS {
+        for (base, want_landscape) in [(&portrait, false), (&landscape, true)] {
+            let preset = PagePreset::Size(paper);
+            let next = apply_preset(base, preset);
+            assert_eq!(
+                paper_for(&next.page_size).map(|p| p.id),
+                Some(paper.id),
+                "applying {} did not produce {}",
+                paper.id,
+                paper.id
+            );
+            assert_eq!(
+                next.page_size.width.value() > next.page_size.height.value(),
+                want_landscape,
+                "applying {} changed the page orientation",
+                paper.id
+            );
+            assert!(
+                is_active(&next, preset),
+                "{} is not reported active on the page it just produced",
+                paper.id
+            );
+        }
+    }
+}
+
+/// Applying one paper must clear every other paper's active state, or the form
+/// would light up several size buttons at once.
+#[test]
+fn only_the_applied_paper_reads_as_active() {
+    let a4 = apply_preset(&PageLayout::default(), PagePreset::Size(&paper_catalog::A4));
+    let others = PAPERS
+        .iter()
+        .filter(|p| is_active(&a4, PagePreset::Size(p)))
+        .count();
+    assert_eq!(others, 1, "more than one size button would show as active");
 }
 
 #[test]

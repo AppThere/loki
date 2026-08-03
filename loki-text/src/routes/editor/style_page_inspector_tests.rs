@@ -33,6 +33,48 @@ fn recognises_named_sizes_and_orientation() {
     assert_eq!(value_for(&letter, "style-page-size"), "US Letter");
 }
 
+/// The inspector names **every** catalogued paper, not the two it once held
+/// literals for. Before T6.2 all of these rendered as `W × H pt`, so a test
+/// asserting only A4 and US Letter could not tell the two implementations
+/// apart.
+#[test]
+fn every_catalogued_paper_is_named_not_measured() {
+    for paper in loki_doc_model::layout::paper_catalog::PAPERS {
+        let layout = PageLayout {
+            page_size: paper.portrait(),
+            ..Default::default()
+        };
+        let shown = value_for(&layout, "style-page-size");
+        assert_eq!(
+            shown, paper.display_name,
+            "{} rendered as {shown:?} instead of its name",
+            paper.id
+        );
+        assert!(
+            !shown.contains("pt"),
+            "{} fell through to dimensions: {shown:?}",
+            paper.id
+        );
+    }
+}
+
+/// A landscape page keeps its paper's name — the size row reports the paper,
+/// and the orientation row reports the rotation.
+#[test]
+fn a_rotated_page_keeps_its_paper_name() {
+    let a3 = loki_doc_model::layout::paper_catalog::paper_by_id("a3").expect("a3");
+    let p = a3.portrait();
+    let layout = PageLayout {
+        page_size: PageSize {
+            width: p.height,
+            height: p.width,
+        },
+        orientation: PageOrientation::Landscape,
+        ..Default::default()
+    };
+    assert_eq!(value_for(&layout, "style-page-size"), "A3");
+}
+
 #[test]
 fn custom_size_shows_dimensions() {
     let layout = PageLayout {

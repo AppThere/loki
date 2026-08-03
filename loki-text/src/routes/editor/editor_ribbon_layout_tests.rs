@@ -2,7 +2,13 @@
 
 //! Tests for the Layout tab's pure margin- and page-size-preset matching.
 
-use super::{MARGIN_PRESETS, margin_matches, page_size_matches};
+use super::{MARGIN_PRESETS, PAGE_SIZE_PRESETS, margin_matches, page_size_matches};
+use loki_doc_model::layout::paper_catalog::{self, Paper};
+
+/// A page's `(width, height)` in points, as the ribbon receives it.
+fn dims(p: &Paper) -> (f64, f64) {
+    (p.width_pt, p.height_pt)
+}
 
 #[test]
 fn no_margins_matches_no_preset() {
@@ -60,8 +66,8 @@ fn the_presets_are_distinct() {
     }
 }
 
-const A4: (f64, f64) = (595.28, 841.89);
-const LETTER: (f64, f64) = (612.0, 792.0);
+const A4: &Paper = &paper_catalog::A4;
+const LETTER: &Paper = &paper_catalog::US_LETTER;
 
 #[test]
 fn no_page_size_matches_no_preset() {
@@ -71,21 +77,40 @@ fn no_page_size_matches_no_preset() {
 #[test]
 fn page_size_matches_regardless_of_orientation() {
     // Portrait A4 and landscape A4 (swapped) both read as A4.
-    assert!(page_size_matches(Some(A4), A4));
-    assert!(
-        page_size_matches(Some((A4.1, A4.0)), A4),
-        "landscape A4 still A4"
-    );
+    let (w, h) = dims(A4);
+    assert!(page_size_matches(Some((w, h)), A4));
+    assert!(page_size_matches(Some((h, w)), A4), "landscape A4 still A4");
 }
 
 #[test]
 fn a4_and_letter_do_not_cross_match() {
-    assert!(!page_size_matches(Some(LETTER), A4));
-    assert!(!page_size_matches(Some(A4), LETTER));
-    assert!(page_size_matches(Some(LETTER), LETTER));
+    assert!(!page_size_matches(Some(dims(LETTER)), A4));
+    assert!(!page_size_matches(Some(dims(A4)), LETTER));
+    assert!(page_size_matches(Some(dims(LETTER)), LETTER));
 }
 
 #[test]
 fn sub_point_drift_still_matches() {
+    // Import rounding leaves sub-point drift; the page still reads as A4.
     assert!(page_size_matches(Some((595.0, 842.0)), A4));
+    // A whole 2 pt off is a different (user-defined) size.
+    assert!(!page_size_matches(Some((597.28, 841.89)), A4));
+}
+
+/// The ribbon's quick presets are catalogue rows, not literals — so a preset
+/// button can never point at a size the catalogue would decline to name, which
+/// is what a private copy of the dimensions allowed.
+#[test]
+fn every_ribbon_preset_is_the_paper_it_claims() {
+    for (aria, paper, _icon) in PAGE_SIZE_PRESETS.iter().copied() {
+        assert!(
+            page_size_matches(Some(dims(paper)), paper),
+            "{aria} does not match its own paper"
+        );
+        assert_eq!(
+            paper_catalog::paper_for(&paper.portrait()).map(|p| p.id),
+            Some(paper.id),
+            "{aria} points at a paper the catalogue does not name"
+        );
+    }
 }

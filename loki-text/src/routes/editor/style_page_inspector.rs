@@ -48,22 +48,19 @@ pub fn page_inspector_rows(layout: &PageLayout) -> Vec<PagePropRow> {
     ]
 }
 
-/// A named paper size when the dimensions match A4 / US Letter (orientation-
-/// independent, ±1 pt), else `W × H pt`.
+/// The catalogued paper's name (orientation-independent), else `W × H pt` for a
+/// user-defined size.
+///
+/// The naming rule and the dimensions both come from
+/// [`loki_doc_model::layout::paper_catalog`] — this used to carry its own copy
+/// of both, and could name only the two sizes it had literals for.
 fn size_display(size: &PageSize) -> String {
-    let (w, h) = (size.width.value(), size.height.value());
-    let (short, long) = (w.min(h), w.max(h));
-    let matches = |a: &PageSize| {
-        let (aw, ah) = (a.width.value(), a.height.value());
-        let (as_, al) = (aw.min(ah), aw.max(ah));
-        (short - as_).abs() < 1.0 && (long - al).abs() < 1.0
-    };
-    if matches(&PageSize::a4()) {
-        "A4".to_string()
-    } else if matches(&PageSize::letter()) {
-        "US Letter".to_string()
-    } else {
-        format!("{w:.0} × {h:.0} pt")
+    match size.paper() {
+        Some(paper) => paper.display_name.to_string(),
+        None => {
+            let (w, h) = (size.width.value(), size.height.value());
+            format!("{w:.0} × {h:.0} pt")
+        }
     }
 }
 

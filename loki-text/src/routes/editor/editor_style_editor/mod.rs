@@ -28,10 +28,12 @@ mod page_browser;
 mod page_form;
 mod page_presets;
 mod page_rename;
+mod page_size_picker;
 mod panel_data;
 mod panel_data_page;
 mod posture;
 mod provenance;
+mod sync;
 mod table_browser;
 mod table_form;
 mod tree_nav;
@@ -39,7 +41,6 @@ mod tree_nav;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use super::editor_state::SaveStatus;
 use appthere_ui::responsive::Breakpoint;
 use appthere_ui::tokens;
 use dioxus::prelude::*;
@@ -48,34 +49,15 @@ use loki_i18n::fl;
 use super::editor_keydown_ctrl::post_mutation_sync;
 use super::editor_state::StyleDraft;
 use super::editor_style_catalog::{catalog_style_tree, get_catalog_style, reset_style_property};
-use crate::editing::cursor::CursorState;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 use posture::StylePanelPosture;
 use provenance::StyleProvenanceList;
 
 pub(super) use draft::style_to_draft;
+pub(super) use sync::StyleEditorSync;
 
 /// Height of the open style editor panel in CSS pixels.
 pub(super) const STYLE_EDITOR_HEIGHT_PX: f32 = 360.0;
-
-/// Signals the style editor needs to persist edits through Loro and refresh the
-/// undo/redo state. Grouped to keep the function signature manageable (mirrors
-/// `editor_metadata_panel::MetaPanelSync`).
-#[derive(Clone, Copy)]
-pub(super) struct StyleEditorSync {
-    /// The document's Loro CRDT handle.
-    pub loro_doc: Signal<Option<loro::LoroDoc>>,
-    /// Cursor state (mirrors the document generation for dirty tracking).
-    pub cursor_state: Signal<CursorState>,
-    /// Undo manager, refreshed after the style mutation.
-    pub undo_manager: Signal<Option<loro::UndoManager>>,
-    /// Whether undo is available.
-    pub can_undo: Signal<bool>,
-    /// Whether redo is available.
-    pub can_redo: Signal<bool>,
-    /// Status-banner sink for feedback (e.g. a rejected cyclic re-parent).
-    pub save_message: Signal<Option<SaveStatus>>,
-}
 
 /// Renders the inline style catalog editor panel.
 ///

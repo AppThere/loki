@@ -5,6 +5,7 @@
 //! ceiling and the transform stays unit-testable without a Dioxus scope.
 
 use loki_doc_model::layout::page::{PageLayout, PageOrientation, PageSize, SectionColumns};
+use loki_doc_model::layout::paper_catalog::Paper;
 use loki_doc_model::loki_primitives::units::Points;
 
 /// A page-geometry preset the form can apply to a page style.
@@ -12,8 +13,13 @@ use loki_doc_model::loki_primitives::units::Points;
 pub(super) enum PagePreset {
     Portrait,
     Landscape,
-    SizeA4,
-    SizeLetter,
+    /// Set the page to a catalogued paper, keeping the current orientation.
+    ///
+    /// One variant over the whole catalogue rather than a variant per paper:
+    /// the two that existed (`SizeA4`/`SizeLetter`) each carried their own
+    /// dimension literals *and* their own "is this that paper" comparison, which
+    /// is why only two sizes were reachable.
+    Size(&'static Paper),
     MarginsNormal,
     MarginsNarrow,
     MarginsWide,
@@ -68,20 +74,8 @@ pub(super) fn apply_preset(current: &PageLayout, preset: PagePreset) -> PageLayo
                 };
             }
         }
-        PagePreset::SizeA4 | PagePreset::SizeLetter => {
-            let base = if preset == PagePreset::SizeA4 {
-                PageSize::a4()
-            } else {
-                PageSize::letter()
-            };
-            l.page_size = if is_landscape {
-                PageSize {
-                    width: base.height,
-                    height: base.width,
-                }
-            } else {
-                base
-            };
+        PagePreset::Size(paper) => {
+            l.page_size = paper.oriented_like(&l.page_size);
         }
         PagePreset::MarginsNormal | PagePreset::MarginsNarrow | PagePreset::MarginsWide => {
             let (tb, lr) = match preset {
@@ -144,15 +138,6 @@ pub(super) fn apply_preset(current: &PageLayout, preset: PagePreset) -> PageLayo
 /// Whether `layout` already matches `preset` (drives the active-button styling).
 pub(super) fn is_active(layout: &PageLayout, preset: PagePreset) -> bool {
     let landscape = layout.page_size.width.value() > layout.page_size.height.value();
-    let (w, h) = (
-        layout.page_size.width.value(),
-        layout.page_size.height.value(),
-    );
-    let (short, long) = (w.min(h), w.max(h));
-    let size_is = |p: &PageSize| {
-        let (pw, ph) = (p.width.value(), p.height.value());
-        (short - pw.min(ph)).abs() < 1.0 && (long - pw.max(ph)).abs() < 1.0
-    };
     let m = &layout.margins;
     let all = |v: f64| (m.top.value() - v).abs() < 0.5 && (m.bottom.value() - v).abs() < 0.5;
     let lr = |v: f64| (m.left.value() - v).abs() < 0.5 && (m.right.value() - v).abs() < 0.5;
@@ -160,8 +145,7 @@ pub(super) fn is_active(layout: &PageLayout, preset: PagePreset) -> bool {
     match preset {
         PagePreset::Portrait => !landscape,
         PagePreset::Landscape => landscape,
-        PagePreset::SizeA4 => size_is(&PageSize::a4()),
-        PagePreset::SizeLetter => size_is(&PageSize::letter()),
+        PagePreset::Size(paper) => paper.matches(&layout.page_size),
         PagePreset::MarginsNormal => all(72.0),
         PagePreset::MarginsNarrow => all(36.0),
         PagePreset::MarginsWide => all(72.0) && lr(144.0),

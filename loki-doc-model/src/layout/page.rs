@@ -109,21 +109,27 @@ pub struct PageSize {
 
 impl PageSize {
     /// ISO 216 A4 page size (595 × 842 pt).
+    ///
+    /// Defined by the catalogue entry that also *names* it, so the dimensions
+    /// this returns and the dimensions a page is recognised by are one fact.
     #[must_use]
     pub fn a4() -> Self {
-        Self {
-            width: Points::new(595.28),
-            height: Points::new(841.89),
-        }
+        crate::layout::paper_catalog::A4.portrait()
     }
 
-    /// US Letter page size (612 × 792 pt).
+    /// US Letter page size (612 × 792 pt) — likewise from the catalogue.
     #[must_use]
     pub fn letter() -> Self {
-        Self {
-            width: Points::new(612.0),
-            height: Points::new(792.0),
-        }
+        crate::layout::paper_catalog::US_LETTER.portrait()
+    }
+
+    /// The catalogued paper this size is, or `None` for a user-defined size.
+    /// Orientation-independent; see [`paper_for`].
+    ///
+    /// [`paper_for`]: crate::layout::paper_catalog::paper_for
+    #[must_use]
+    pub fn paper(&self) -> Option<&'static crate::layout::paper_catalog::Paper> {
+        crate::layout::paper_catalog::paper_for(self)
     }
 }
 

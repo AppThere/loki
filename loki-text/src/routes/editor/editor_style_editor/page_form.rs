@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 
 use appthere_ui::tokens;
 use dioxus::prelude::*;
-use loki_doc_model::layout::page::PageLayout;
+use loki_doc_model::layout::page::{PageLayout, PageSize};
 use loki_doc_model::{rename_page_style, set_page_style_geometry, set_section_page_style};
 use loki_i18n::fl;
 
@@ -28,6 +28,7 @@ use super::super::editor_keydown_ctrl::post_mutation_sync;
 use super::StyleEditorSync;
 use super::page_presets::{PagePreset, apply_preset, column_count, is_active};
 use super::page_rename::PageRenameField;
+use super::page_size_picker::size_section;
 use super::panel_data_page::{caret_section_index, page_edit_target};
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
@@ -208,6 +209,30 @@ pub(super) fn page_style_form(
             editing_page_style.set(Some(new));
         }
     };
+    // A user-defined size goes through the same geometry mutation as a preset;
+    // only the way the size was chosen differs.
+    let ds_size = Arc::clone(doc_state);
+    let size_name = name.clone();
+    let on_custom_size = move |size: PageSize| {
+        let Some(mut next) = page_edit_target(&ds_size, &size_name) else {
+            return;
+        };
+        next.page_size = size;
+        let guard = sync.loro_doc.read();
+        let Some(ldoc) = guard.as_ref() else { return };
+        if set_page_style_geometry(ldoc, &size_name, &next).is_ok() {
+            apply_mutation_and_relayout(&ds_size, ldoc);
+            drop(guard);
+            post_mutation_sync(
+                &ds_size,
+                sync.loro_doc,
+                sync.cursor_state,
+                sync.undo_manager,
+                sync.can_undo,
+                sync.can_redo,
+            );
+        }
+    };
     let count = column_count(&layout);
     rsx! {
         div {
@@ -219,10 +244,7 @@ pub(super) fn page_style_form(
                 { btn(fl!("ribbon-orientation-portrait-aria"), PagePreset::Portrait) }
                 { btn(fl!("ribbon-orientation-landscape-aria"), PagePreset::Landscape) }
             }) }
-            { preset_row(fl!("style-page-size"), rsx! {
-                { btn(fl!("ribbon-page-a4-aria"), PagePreset::SizeA4) }
-                { btn(fl!("ribbon-page-letter-aria"), PagePreset::SizeLetter) }
-            }) }
+            { size_section(&layout, &btn, on_custom_size) }
             { preset_row(fl!("style-page-margins"), rsx! {
                 { btn(fl!("ribbon-margin-normal-aria"), PagePreset::MarginsNormal) }
                 { btn(fl!("ribbon-margin-narrow-aria"), PagePreset::MarginsNarrow) }
