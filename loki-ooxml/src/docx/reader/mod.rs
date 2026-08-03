@@ -12,6 +12,7 @@ pub mod document;
 pub mod footnotes;
 pub mod header_footer;
 pub mod numbering;
+pub(crate) mod page_style_part;
 pub mod runs;
 pub mod sectpr;
 pub mod settings;

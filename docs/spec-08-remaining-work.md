@@ -153,7 +153,7 @@ all exist. And the task list below over-states what remains:
 | T6.2 page-size catalogue | remaining | **Done, r98.** 28 papers, plus user-defined. See below. |
 | T6.3 app-scoped defaults | remaining | **Done, r100.** See below. |
 | T6.4 unit resolution | remaining | **Done, r99** for the page surfaces; the rest of the panel still shows pt. See below — and the r96 wording was loose: typed `Length<U>` units existed all along, what was missing was a *runtime* one. |
-| T6.5 advisory DOCX part | remaining | **Remaining.** No custom-part writer. |
+| T6.5 advisory DOCX part | remaining | **Done, r101.** See below. |
 | T6.6 odd/even + first page | remaining | **Already built.** DOCX reader, writer, `settings.xml` assembly, model fields, and `flow_headers::assign_headers_footers` selecting the first/even/default variant. The spec's "mirrored margins are near-useless without it" was already satisfied. |
 | T6.7 UI panel + manager | remaining | **Was half built — the editing half is done, r97.** See the correction below: the r96 row was wrong about rename. |
 | T6.8 conformance | remaining | **Remaining** for page styles specifically; the ODF round-trip suites exist to extend. |
@@ -162,6 +162,68 @@ all exist. And the task list below over-states what remains:
 `w:mirrorMargins` → `DocumentSettings` → `LayoutOptions` → `mirrored_margins()`
 swapping left/right on even pages, with a Loro round-trip and tests. What did
 *not* exist was any ODF spelling of it.
+
+### T6.5 — the advisory DOCX page-style part (done, r101)
+
+`/word/lokiPageStyles.xml` carries page-style **names** and the section → name
+mapping through a DOCX round trip. OOXML has no named page style — a section is
+its `w:sectPr` and nothing else — so a rename made in the style panel survived
+ODT export (which has `style:master-page`, wired in T6.1's neighbourhood) and was
+lost the moment the document was saved as `.docx`. That asymmetry is what D-02
+exists to close.
+
+**"Advisory" is four claims, and each is enforced rather than asserted.**
+
+1. *Ignored by Word.* A private part, private content type, private
+   relationship type; nothing in `document.xml` refers to it. A consumer that
+   does not know it exists reads the document it would have read anyway.
+2. *Never affects geometry.* The reader writes `Section::page_style` and catalog
+   display names and touches no `PageLayout` field. Asserted end-to-end by
+   exporting the same document twice — once named, once stripped — and comparing
+   every section's layout across the two round trips, which also catches the
+   case where the geometry is wrong in both.
+3. *Validated against the `sectPr` count.* The part declares how many sections it
+   described; a document whose count has changed since gets no names rather than
+   the wrong ones.
+4. *Discarded on mismatch.* The **whole** part, not the offending entry — a
+   partial mapping leaves some sections named and others not, which is harder to
+   explain than no names at all.
+
+**The declared count is written explicitly, not derived.** A count computed from
+the same `<section>` list it is meant to validate would agree with itself no
+matter what — the instrument would be reporting on its own input. Deriving it
+instead of reading it kills the stale-part test.
+
+**The stale-part test edits a real `.docx`.** It exports, opens the package,
+rewrites `sectionCount="2"` to `"3"`, re-zips, and re-imports — which is what a
+Word round trip that merged two sections would leave behind. A guard asserts the
+fixture really did declare two sections first, so the test cannot pass by editing
+nothing.
+
+**Not `customXml/`**: that is a public OPC affordance with its own item/itemProps
+pair and a datastore Word surfaces in its UI. This is not user data.
+
+**One duplication removed on the way through.** `write/custom_props.rs` and
+`write/comments.rs` each carried a private `escape` function and this part would
+have been the third; there is now one `xml_util::escape_xml`.
+
+**A bug worth recording, because the type system permitted it.**
+`local_name(e)` where `e: &BytesStart` *compiles* — `BytesStart` derefs to
+`[u8]`, so it silently matched against the element's entire raw bytes,
+attributes included, and every well-formed part was rejected. The failing tests
+were the ones asserting successful parses; had the tests only covered rejection,
+this would have looked like a working validator.
+
+Mutation-tested four ways: dropping the count check, letting the part write
+geometry, applying the valid half of an inconsistent map, and deriving the count
+from the listed sections — each kills a specific test.
+
+**Not established:** no real Word has opened one of these files. The claim that
+Word ignores the part rests on it being unreferenced from `document.xml` with a
+private content type, which is how OPC is specified to behave, not on an
+observation. Whether Word *preserves* the part through its own save is untested
+and out of our hands — the count check exists precisely because it may not.
+Nothing outside DOCX uses the map; ODT continues to carry names natively.
 
 ### T6.3 — app-scoped defaults (done, r100)
 

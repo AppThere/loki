@@ -20,6 +20,7 @@ pub(super) mod footnotes;
 pub(super) mod media;
 mod metadata;
 mod numbering;
+pub(crate) mod page_style_part;
 mod rels;
 mod revision;
 mod run_props;

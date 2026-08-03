@@ -74,7 +74,7 @@ pub(super) fn write_comments_xml(comments: &[Comment]) -> Vec<u8> {
         }
         for block in &c.body {
             out.push_str("<w:p><w:r><w:t xml:space=\"preserve\">");
-            out.push_str(&escape(&block_text(block)));
+            out.push_str(&crate::xml_util::escape_xml(&block_text(block)));
             out.push_str("</w:t></w:r></w:p>");
         }
         out.push_str("</w:comment>");
@@ -105,22 +105,6 @@ fn attr(out: &mut String, name: &str, value: &str) {
     out.push(' ');
     out.push_str(name);
     out.push_str("=\"");
-    out.push_str(&escape(value));
+    out.push_str(&crate::xml_util::escape_xml(value));
     out.push('"');
-}
-
-/// Escapes XML text / attribute content.
-fn escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&apos;"),
-            _ => out.push(c),
-        }
-    }
-    out
 }

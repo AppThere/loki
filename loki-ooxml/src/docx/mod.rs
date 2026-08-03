@@ -22,6 +22,7 @@ pub mod import;
 pub mod mapper;
 pub(crate) mod model;
 pub(crate) mod omml;
+pub(crate) mod page_style_part;
 pub(crate) mod reader;
 pub mod repair;
 pub(crate) mod write;

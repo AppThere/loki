@@ -227,6 +227,12 @@ pub(crate) fn assemble_docx_kind(
     crate::docx::write::metadata::populate_core_properties(&mut pkg, &doc.meta);
     crate::docx::write::custom_props::add_custom_properties(&mut pkg, &doc.meta.dublin_core)?;
 
+    // ── Advisory page-style names (T6.5 / D-02) ───────────────────────────
+    // OOXML has no named page style, so the names travel beside the document
+    // in a private part. Nothing in `document.xml` refers to it and no geometry
+    // depends on it; a consumer that ignores it reads the same document.
+    crate::docx::write::page_style_part::add_page_style_part(&mut pkg, doc)?;
+
     // ── Content types ─────────────────────────────────────────────────────
     let ct = pkg.content_type_map_mut();
     ct.add_default(
