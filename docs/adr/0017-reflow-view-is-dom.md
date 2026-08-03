@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 | Field | Value |
 | --- | --- |
-| Status | **Accepted** — 2026-08-03. Direction agreed; **not implemented** |
+| Status | **Accepted** — 2026-08-03. Direction agreed; primary risk measured (§3.2); **not implemented** |
 | Drivers | Spec 08 T7.0 (probe P1), T7.2, T7.3, T7.4 |
 | Affects | `loki-renderer` (reflow path), `loki-layout` (reflow mode), `loki-text` editor route |
 | Makes moot | The ambient reading-measure cap added for T7.2 (`loki_renderer::measure`) |
@@ -71,18 +71,48 @@ layout and the browser owns hit-testing.
 
 ### 3.2 What this costs, and what is not yet known
 
-**Text fidelity is the risk, and it is the one to measure first.** The canvas
-path shapes with Parley against `loki-layout`'s own resolution of the document's
-character properties. Blitz shapes with Parley too — but through Stylo's CSS
-cascade, from styles we would have to emit. Whether a paragraph sets identically
-through both is **not established**, and it is the question that decides whether
-this ADR survives contact.
+**Text fidelity was the risk. It was measured on 2026-08-03 and the two paths
+agree.**
 
-*What would settle it:* take one ACID case, render it through both paths at the
-same width, and compare line-break positions. Equal breaks mean the mapping is
-faithful; differing breaks mean every document reflows differently than it does
-today, which is a fidelity regression that would have to be accepted explicitly
-or would sink the decision.
+The canvas path shapes with Parley against `loki-layout`'s own resolution of the
+document's character properties; Blitz shapes with Parley too, but through
+Stylo's CSS cascade from styles we emit. Whether a paragraph sets identically
+through both was the question that decided whether this ADR survives contact.
+
+*Procedure.* One paragraph, Liberation Sans 12 pt / 16 px, laid out through
+`loki_layout::layout_document` in `LayoutMode::Reflow` across 180–620 px in 2 px
+steps, counting distinct glyph-run baselines; then the same text rendered in DOM
+by `appthere-ui/examples/linebreak_probe.rs` at each **transition** width ± 2 px,
+with an explicit `line-height` so the count reads off the block height.
+
+Transition widths are the discriminating points: at a coarse width the break is
+unambiguous and agreement proves little, whereas where the count changes the
+decision is marginal, and marginal is where two shapers diverge first.
+
+*Result — all seven transitions matched, each pinned to a 2 px window:*
+
+| lines | layout side | DOM side |
+| --- | --- | --- |
+| 10 → 9 | 182 px | 180 = 10, 182 = 9 |
+| 9 → 8 | 192 px | 190 = 9, 192 = 8 |
+| 8 → 7 | 218 px | 216 = 8, 218 = 7 |
+| 7 → 6 | 272 px | 270 = 7, 272 = 6 |
+| 6 → 5 | 306 px | 304 = 6, 306 = 5 |
+| 5 → 4 | 370 px | 368 = 5, 370 = 4 |
+| 4 → 3 | 520 px | 518 = 4, 520 = 3 |
+
+*Why they agree, and what that does not cover.* Both paths shape with **the same
+engine** — Parley — so the test is not really about shaping; it is about whether
+our property resolution and the CSS we emit perturb it. For plain LTR Latin text
+in one face at one size, they do not.
+
+**Not established**, and each is a way the agreement could still fail: mixed
+style runs within a paragraph (bold/italic spans, per-run family or size),
+letter-spacing and word-spacing, justified text, tab stops, hyphenation,
+non-Latin scripts, and font fallback where the requested face is absent. The
+probe extends to each by changing its text and styles; the layout sweep extends
+the same way. **The ADR is supported, not proven**, and the next extension worth
+running is mixed style runs, because a document is rarely one uniform run.
 
 **Spell squiggles, selection geometry, the caret and revision marks** are all
 painted from `PositionedItem`s today. Each needs a DOM equivalent or an overlay.
@@ -101,7 +131,8 @@ that must agree about the document).
 
 ### 3.3 Sequencing
 
-1. The line-break comparison in §3.2. It is cheap and it can end this ADR.
+1. ~~The line-break comparison in §3.2.~~ **Done 2026-08-03 — the paths agree.**
+   Extend it to mixed style runs before relying on it further.
 2. If it holds: build the DOM reflow view behind the existing view-mode switch,
    so both paths are live and comparable.
 3. Move T7.3's per-element scroller onto it.
