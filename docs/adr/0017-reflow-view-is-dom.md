@@ -133,8 +133,8 @@ that must agree about the document).
 
 1. ~~The line-break comparison in §3.2.~~ **Done 2026-08-03 — the paths agree.**
    Extend it to mixed style runs before relying on it further.
-2. If it holds: build the DOM reflow view behind the existing view-mode switch,
-   so both paths are live and comparable.
+2. ~~Build the DOM reflow view behind the existing view-mode switch, so both
+   paths are live and comparable.~~ **Done 2026-08-03 — see §5.**
 3. Move T7.3's per-element scroller onto it.
 4. Delete `loki_renderer::measure` **in the same change** that replaces it —
    see §3.1.
@@ -147,3 +147,53 @@ its column follow the measure. It is marked here rather than in a comment,
 because a comment on a module that is about to be deleted is the marking that
 decays first. **It is parked, not forgotten** — this section is its reference
 count.
+
+---
+
+## 5. Step 2 — the DOM reflow view exists (2026-08-03)
+
+`loki-text/src/routes/editor/dom_reflow/`, reached with `LOKI_REFLOW_DOM=1` and
+the view mode set to Reflow. `render_canvas_area` returns to it before any
+canvas wiring, so the two paths are mutually exclusive and the existing switch
+selects between them. `scripts/sitting/run.sh domreflow` photographs the same
+document through both.
+
+**It renders**, and the reading measure is what this ADR said it would be: a
+`max-width` on the column, in CSS, applied by the same layout that paints it —
+no ambient static, no ordering hazard between the pass that resolves it and the
+pass that reads it.
+
+### 5.1 The gap the comparison found, which is the one that was predicted
+
+Side by side on a screenplay, the canvas path renders monospaced, centred
+dialogue and a right-aligned `CUT TO:`; the DOM path renders proportional,
+left-aligned text. Same blocks, same order, same content — different formatting.
+
+**Cause: `content.rs` applies only *direct* character and paragraph
+properties.** A style *reference* resolves through `StyleCatalog`, which this
+view does not consult, so a document whose formatting lives in named styles —
+which is most documents, and every imported one — renders unstyled.
+`TODO(dom-reflow-styles)`.
+
+This matters for §3.2's result. The line-break comparison passed *given
+equivalent inputs*; it says nothing about a path that does not supply them. So
+**the ADR's evidence does not yet transfer to real documents through this
+view** — not because the shaping disagrees, but because the two paths are not
+being handed the same properties. Resolving through the catalog is therefore not
+a polish item; it is the precondition for any further comparison being about
+rendering at all.
+
+### 5.2 What it deliberately does not do
+
+Read-only: no caret, selection, hit-testing, spell squiggles or revision marks.
+Tables, lists and images render a **visible placeholder** rather than nothing —
+a silently dropped table would make the two paths look closer than they are,
+which is the one failure mode a comparison instrument must not have.
+
+### 5.3 Revised sequencing
+
+1. Resolve through `StyleCatalog` (§5.1). Until then no further comparison is
+   meaningful.
+2. Re-run the line-break comparison on a *styled* document, and extend it to
+   mixed style runs (§3.2's open item).
+3. Then T7.3's per-element scroller, and the virtualisation measurement.

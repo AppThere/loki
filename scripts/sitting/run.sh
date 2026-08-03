@@ -803,5 +803,39 @@ statusoverflow)
   echo "  Read the two shots: s0-wide has the full bar; s1-narrow should show the"
   echo "  page indicator, the zoom control, and a … trigger for the rest."
   ;;
+
+domreflow)
+  # ── ADR-0017 step 2: the DOM reflow view, beside the canvas one ──
+  #
+  # Same document, same window, same view mode — twice, once per rendering
+  # path. The comparison is the point: a single shot of the DOM path would show
+  # that it renders, which is not the question. The question is whether it
+  # renders the same document.
+  #
+  # `WIDE` is deliberately narrow enough that Reflow is the default view mode,
+  # so neither run needs to toggle it and the two differ only in `LOKI_REFLOW_DOM`.
+  start_x || exit 1
+  WINSIZE="${SIZE:-900x800}" start_app env LOKI_DEVICE_PROFILE=pointer=fine || exit 1
+  for _ in $(seq 1 7); do key Tab; done
+  key Return
+  sleep "${OPEN_SETTLE:-14}"
+  # Toggle to Reflow explicitly. The width-based default moved between runs
+  # once already, and a scenario that assumes it silently photographs the wrong
+  # view — which is exactly what this comparison must not do.
+  CLICK_SETTLE=4 click_at "${VX:-659}" "${VY:-787}" "view-mode chip"
+  shot d0-canvas
+
+  stop; sleep 1
+  start_x || exit 1
+  WINSIZE="${SIZE:-900x800}" start_app env LOKI_DEVICE_PROFILE=pointer=fine LOKI_REFLOW_DOM=1 \
+    || exit 1
+  for _ in $(seq 1 7); do key Tab; done
+  key Return
+  sleep "${OPEN_SETTLE:-14}"
+  CLICK_SETTLE=4 click_at "${VX:-659}" "${VY:-787}" "view-mode chip"
+  shot d1-dom
+  echo "  Compare d0-canvas (painted) against d1-dom (DOM). They render the same"
+  echo "  document; they are not expected to be pixel-identical — see ADR-0017."
+  ;;
 esac
 echo "DONE: $1"

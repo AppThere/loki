@@ -96,10 +96,14 @@ pub(super) fn render_canvas_area(
     zoom_percent: Signal<u32>,
     // The only way the zoom changes, so Ctrl+wheel anchors (Spec 08 T5.6).
     zoom_command: super::editor_zoom::ZoomCommand,
-    // `macro_run_request`: set to the proc name when a MACROBUTTON (`loki-macro:`
-    // link) is clicked, so `editor_macro_notice` dispatches a gated run (§6).
+    // Set to the proc name when a MACROBUTTON (`loki-macro:` link) is clicked,
+    // so `editor_macro_notice` dispatches a gated run (§6).
     macro_run_request: Signal<Option<String>>,
 ) -> Element {
+    // ADR-0017: DOM reflow behind `LOKI_REFLOW_DOM=1`. See `dom_reflow`.
+    if view_mode() == ViewMode::Reflow && super::dom_reflow::enabled() {
+        return super::dom_reflow::dom_reflow_view(&doc_state_render, cursor_state);
+    }
     rsx! {
         // Outer wrapper: the editor column's flex:1 slot — scroll viewport
         // beside custom scrollbar indicators (Blitz paints no scrollbar
@@ -112,16 +116,13 @@ pub(super) fn render_canvas_area(
             // COMPAT(dioxus-native): flex: 1 needs height: 100vh on the parent
             // for Taffy to resolve the fraction. tabindex="0" + autofocus give the
             // canvas keyboard focus on mount so the user types without clicking.
-            //
             // overflow-x: auto (was hidden) lets the user pan a page wider than the
             // viewport (US-Letter on a narrow phone, or while zoomed); the patched
             // Blitz shell synthesises horizontal touch-drag into a scroll here
             // (window.rs), and `can_x_scroll` needs overflow-x auto/scroll.
-            //
             // COMPAT(dioxus-native): scrollbar-width / scrollbar-color are Stylo
             // properties blitz-paint 0.2.x does not paint (no scrollbar chrome);
             // kept as forward-compatible hints — scrolling works via touch/wheel.
-            //
             // inputmode="text" marks this a text surface so the patched Blitz shell
             // raises the Android soft keyboard on focus (window.rs). Without it the
             // on-screen keyboard never appears on mobile.
@@ -334,12 +335,11 @@ pub(super) fn render_canvas_area(
                             // residency plan so it measures visibility from the
                             // origin the scroll offset actually uses.
                             content_padding_top_px: CANVAS_CONTENT_PADDING_PX,
-                            // Resident page-texture budget (Spec 08 T2.1),
-                            // derived from the live DeviceProfile, plus the
-                            // display's device pixel ratio — the renderer needs
-                            // both to decide what to mount and at what
-                            // rasterisation scale, and neither is reachable from
-                            // L4 (DeviceProfile is L5).
+                            // Resident page-texture budget (Spec 08 T2.1), from
+                            // the live DeviceProfile, plus the display's device
+                            // pixel ratio — the renderer needs both to decide what
+                            // to mount and at what rasterisation scale, and
+                            // neither is reachable from L4 (DeviceProfile is L5).
                             texture_budget: crate::texture_budget::current(),
                             device_scale_factor: crate::texture_budget::device_scale_factor(),
                             // Paginated: hit-test against the editor's paginated

@@ -24,3 +24,14 @@ loki-spreadsheet/src/routes/editor/editor_inner.rs | monospace
 # marker that must not read as a cell value, so it is set apart by face as well
 # as by colour and slant.
 loki-spreadsheet/src/routes/editor/editor_inner.rs | serif
+
+# ── Document content, not UI chrome (ADR-0017's DOM reflow view) ─────────────
+# These declare the *document's* faces, not the interface's. The r94 rule is
+# that UI chrome inherits one face from the root; a document's own runs are the
+# opposite case — their whole job is to carry the face the author chose, and a
+# document rendered in the UI face would be the defect.
+#
+# `'{}'` is the interpolated family from `CharProps::font_name`.
+loki-text/src/routes/editor/dom_reflow/style.rs | '{}'
+# A code block is monospace by definition, matching the canvas path.
+loki-text/src/routes/editor/dom_reflow/content.rs | monospace
