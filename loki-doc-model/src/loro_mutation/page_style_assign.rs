@@ -22,7 +22,7 @@
 use loro::LoroDoc;
 
 use super::MutationError;
-use super::page_style::{section_at, sections_using, write_section_geometry};
+use super::page_style::{section_at, section_ref, sections_using, write_section_geometry};
 use crate::layout::page::PageLayout;
 use crate::loro_schema::{KEY_PAGE_STYLE_REF, KEY_SECTIONS};
 use crate::style::catalog::StyleId;
@@ -98,6 +98,56 @@ pub fn set_section_page_style(
 
     target.insert(KEY_PAGE_STYLE_REF, name)?;
     write_section_geometry(&target, &layout)
+}
+
+/// Removes the page style `name` from the catalog **and drops every section's
+/// reference to it**, leaving each section's geometry exactly where it was.
+///
+/// A no-op when `name` is not a page style.
+///
+/// # Why the references go too, and why the geometry does not
+///
+/// Dropping only the catalog entry would not delete anything the user can see.
+/// The panel lists referenced-but-uncatalogued styles as well — it has to, or a
+/// catalog an importer left incomplete would orphan the only handle on those
+/// sections — so a half-deleted style reappears in the list under the same name
+/// and delete looks broken.
+///
+/// The geometry stays because a section owns its own copy: the catalog entry is
+/// a *name* for a shape, not the shape itself. Deleting the name must not move
+/// the pages — the user asked to stop calling these pages "PageStyle2", not to
+/// resize them. On export the sections are simply renamed by the deriving walk,
+/// which is what an import that never carried names produces anyway.
+///
+/// # Errors
+///
+/// [`MutationError::Loro`] for an underlying Loro error.
+pub fn delete_page_style(loro: &LoroDoc, name: &str) -> Result<(), MutationError> {
+    let id = StyleId::new(name);
+    let mut catalog = crate::loro_bridge::read_document_styles(loro);
+    // Refuse only when the name is unknown *both* ways. A style referenced by a
+    // section but missing from the catalog is exactly the case the panel lists
+    // and the user can select, so it must be deletable too.
+    let in_catalog = catalog.page_styles.shift_remove(&id).is_some();
+    let referenced = !sections_using(loro, name).is_empty();
+    if !in_catalog && !referenced {
+        return Ok(());
+    }
+    if in_catalog {
+        crate::loro_bridge::write_document_styles(loro, &catalog)
+            .map_err(|e| MutationError::Loro(e.to_string()))?;
+    }
+
+    let sections = loro.get_list(KEY_SECTIONS);
+    for s in 0..sections.len() {
+        let Some(section) = section_at(&sections, s) else {
+            continue;
+        };
+        if section_ref(&section).as_deref() == Some(name) {
+            section.delete(KEY_PAGE_STYLE_REF)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

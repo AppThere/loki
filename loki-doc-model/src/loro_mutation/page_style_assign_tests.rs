@@ -10,7 +10,7 @@
 
 use loro::LoroDoc;
 
-use super::{create_page_style, set_section_page_style};
+use super::{create_page_style, delete_page_style, set_section_page_style};
 use crate::content::block::Block;
 use crate::content::inline::Inline;
 use crate::document::Document;
@@ -246,5 +246,160 @@ fn dropping_to_one_column_clears_the_separator_it_left_behind() {
     assert!(
         cols.is_none_or(|c| !c.separator),
         "a one-column layout came back carrying a separator: {cols:?}"
+    );
+}
+
+// ── delete_page_style ─────────────────────────────────────────────────────────
+
+/// **Deleting a page style removes the name and leaves the pages alone.**
+///
+/// The catalog entry is a name for a shape, not the shape. A delete that also
+/// dropped the geometry would resize the user's pages when they asked only to
+/// stop calling them "PageStyle1".
+#[test]
+fn delete_removes_the_name_and_keeps_the_geometry() {
+    use crate::loro_mutation::set_page_style_geometry;
+
+    let loro = two_section_doc();
+    let landscape = landscape_letter();
+    set_page_style_geometry(&loro, "PageStyle1", &landscape).expect("set geometry");
+
+    // Establish the phenomenon before removing it: both sections must actually
+    // carry the reference *and* the geometry, or the assertions below pass on a
+    // document that never had either.
+    let before = loro_to_document(&loro).expect("read back");
+    assert!(
+        before
+            .sections
+            .iter()
+            .all(|s| s.page_style.as_ref().map(StyleId::as_str) == Some("PageStyle1")),
+        "fixture sections do not reference the style"
+    );
+    assert!(
+        before
+            .styles
+            .page_styles
+            .contains_key(&StyleId::new("PageStyle1")),
+        "fixture style is not in the catalog"
+    );
+    let geometry_before: Vec<_> = before.sections.iter().map(|s| s.layout.clone()).collect();
+
+    delete_page_style(&loro, "PageStyle1").expect("delete");
+
+    let after = loro_to_document(&loro).expect("read back");
+    assert!(
+        !after
+            .styles
+            .page_styles
+            .contains_key(&StyleId::new("PageStyle1")),
+        "the catalog entry survived the delete"
+    );
+    assert!(
+        after.sections.iter().all(|s| s.page_style.is_none()),
+        "a section still references the deleted style"
+    );
+    let geometry_after: Vec<_> = after.sections.iter().map(|s| s.layout.clone()).collect();
+    assert_eq!(
+        geometry_before, geometry_after,
+        "deleting the name moved the pages"
+    );
+}
+
+/// **The references must go too, or the style comes straight back.**
+///
+/// `panel_page_styles` lists referenced-but-uncatalogued styles as well — it has
+/// to, or a catalog an importer left incomplete would orphan the only handle on
+/// those sections. So dropping the catalog entry alone deletes nothing the user
+/// can see: the name reappears in the list, sourced from the sections.
+///
+/// This is the assertion that fails if `delete_page_style` stops clearing the
+/// references, which `delete_removes_the_name_and_keeps_the_geometry` also
+/// covers — but this one states *why* in the terms the panel sees.
+#[test]
+fn a_deleted_style_is_not_reachable_through_a_section_reference() {
+    let loro = two_section_doc();
+    delete_page_style(&loro, "PageStyle1").expect("delete");
+    let after = loro_to_document(&loro).expect("read back");
+
+    let names: Vec<String> = after
+        .sections
+        .iter()
+        .filter_map(|s| s.page_style.as_ref().map(|i| i.as_str().to_string()))
+        .chain(
+            after
+                .styles
+                .page_styles
+                .keys()
+                .map(|k| k.as_str().to_string()),
+        )
+        .collect();
+    assert!(
+        !names.iter().any(|n| n == "PageStyle1"),
+        "the deleted style is still reachable: {names:?}"
+    );
+}
+
+/// **A style referenced by a section but absent from the catalog is deletable.**
+///
+/// That combination is not hypothetical — the panel lists it, so the user can
+/// select it, so delete must reach it. A guard written as "is it in the catalog"
+/// would refuse, leaving a selectable style with a dead delete button.
+#[test]
+fn delete_reaches_a_style_the_catalog_never_had() {
+    let loro = two_section_doc();
+    // Point a section at a name the catalog does not contain.
+    let sections = loro.get_list(crate::loro_schema::KEY_SECTIONS);
+    let section = sections
+        .get(0)
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_map().ok())
+        .expect("section 0");
+    section
+        .insert(crate::loro_schema::KEY_PAGE_STYLE_REF, "Uncatalogued")
+        .expect("point at an uncatalogued name");
+
+    let before = loro_to_document(&loro).expect("read back");
+    assert_eq!(
+        before.sections[0].page_style.as_ref().map(StyleId::as_str),
+        Some("Uncatalogued"),
+        "fixture did not create the uncatalogued reference"
+    );
+    assert!(
+        !before
+            .styles
+            .page_styles
+            .contains_key(&StyleId::new("Uncatalogued")),
+        "fixture accidentally catalogued the name"
+    );
+
+    delete_page_style(&loro, "Uncatalogued").expect("delete");
+
+    let after = loro_to_document(&loro).expect("read back");
+    assert!(
+        after.sections[0].page_style.is_none(),
+        "the uncatalogued reference survived"
+    );
+}
+
+/// The inverse: deleting a name nothing uses changes nothing, and deleting one
+/// style leaves the others alone.
+#[test]
+fn delete_is_a_no_op_for_an_unknown_name_and_spares_the_others() {
+    let loro = two_section_doc();
+    create_page_style(&loro, "Keep", &landscape_letter()).expect("create");
+    let before = format!("{:?}", loro_to_document(&loro).expect("read back"));
+
+    delete_page_style(&loro, "NoSuchStyle").expect("delete unknown");
+    assert_eq!(
+        before,
+        format!("{:?}", loro_to_document(&loro).expect("read back")),
+        "deleting an unknown name changed the document"
+    );
+
+    delete_page_style(&loro, "PageStyle1").expect("delete");
+    let after = loro_to_document(&loro).expect("read back");
+    assert!(
+        after.styles.page_styles.contains_key(&StyleId::new("Keep")),
+        "deleting one style removed another"
     );
 }

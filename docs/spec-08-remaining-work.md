@@ -155,13 +155,95 @@ all exist. And the task list below over-states what remains:
 | T6.4 unit resolution | remaining | **Done, r99** for the page surfaces; the rest of the panel still shows pt. See below — and the r96 wording was loose: typed `Length<U>` units existed all along, what was missing was a *runtime* one. |
 | T6.5 advisory DOCX part | remaining | **Done, r101.** See below. |
 | T6.6 odd/even + first page | remaining | **Was "already built" — it was not. Done, r103.** Every format leg really did exist; the *selection* did not work past section 1. See below. |
-| T6.7 UI panel + manager | remaining | **Was half built — the editing half is done, r97.** See the correction below: the r96 row was wrong about rename. |
+| T6.7 UI panel + manager | remaining | **Manager verbs complete, r104** (duplicate/delete landed, New and Duplicate separated); unit-aware margin fields landed. Catalogue **search** and **live preview** are still not built — see below. |
 | T6.8 conformance | remaining | **Done, r102** — and it found a defect in T6.5. See below. |
 
 **T6.1's premise checked out.** `mirror_margins` really is wired end to end —
 `w:mirrorMargins` → `DocumentSettings` → `LayoutOptions` → `mirrored_margins()`
 swapping left/right on even pages, with a Loro round-trip and tests. What did
 *not* exist was any ODF spelling of it.
+
+### T6.7 — duplicate, delete, and margin entry (r104)
+
+Closes three of the five items the r97 close listed as not built. What r97 left
+open was: *duplicate, delete, set-default, catalogue search, unit-aware margin
+fields and live preview*.
+
+**Set-default was built in the meantime**, by T6.3 — `new_document_defaults_row`
+in the page form writes the app-scoped geometry for new documents, which is what
+"set default" means for a family whose styles are document-scoped (D-07). The
+r97 row predates it and was accurate when written.
+
+**New and Duplicate were the same button.** `new_page_style_button` seeded the
+created style from *the selected style's* geometry when there was one. That is
+Duplicate wearing New's label — and the conflation cost the other verb: with a
+style selected there was no way to reach a fresh default-geometry page style,
+because the browser offers no way to deselect. A name asserting a property it
+lacks (rule 4), with the reachable-but-unnameable verb hiding the unreachable
+one. They are separate controls now; each does what its label says, and
+Duplicate is withheld when there is nothing to copy.
+
+**`delete_page_style` drops the name, not the pages.** The catalog entry is a
+name for a shape, not the shape — a section owns its own geometry copy. So
+delete removes the catalog entry *and* every section's reference, and touches no
+geometry: the pages after a delete look exactly as they did before. Both halves
+are load-bearing. Dropping only the catalog entry deletes nothing the user can
+see, because `panel_page_styles` lists referenced-but-uncatalogued styles too
+(it has to, or an incomplete catalog would orphan the only handle on those
+sections) — the name simply reappears, sourced from the sections. And the guard
+is "unknown *both* ways", not "absent from the catalog": a referenced-but-
+uncatalogued style is exactly what the panel lists and the user can select, so a
+catalog-only guard would leave a selectable style with a dead Delete button.
+
+No confirmation prompt: the mutation goes through the undo manager like every
+other edit here and changes no geometry, so a prompt would be guarding a
+reversible rename.
+
+**Unit-aware margin fields.** Normal / Narrow / Wide are three points in a
+continuous space; every margin they do not name was unreachable from the panel
+while the model and all four import/export paths carried arbitrary values — the
+same shape as the 1–3 column limit this task called out. Four fields, read in the
+active unit with an explicit suffix honoured, range-checked **in points after
+conversion** (0 to 20 in) and rejected rather than clamped. The presets stay as
+shortcuts, which is what the spec line asks for. `header`, `footer` and `gutter`
+are spread through from the current margins rather than rebuilt — a fresh
+`PageMargins` would silently reset all three while the user thought they set a
+margin. `TODO(page-gutter-field)` marks the gutter control the spec line names.
+
+**One inconsistency found while splitting the file.** Seven controls each
+performed the same six-step commit dance by hand, and one of them —
+`page_form`'s preset handler — called `post_mutation_sync` *without* releasing
+the Loro read guard first, while its three neighbours released it. Harmless as
+it happens (nested `Signal::read` is permitted and the sync only reads), but
+invisible until the sync one day needs to write. All seven now go through
+`page_commit::commit`, which is what brought `page_form.rs` back under the
+ceiling — the duplication was what pushed it over, so removing it was the fix
+rather than moving lines to a sibling.
+
+**Mutation-tested, seven ways.** Model: dropping the reference-clearing loop,
+guarding on catalog membership alone, and wiping the section geometry each kill a
+specific delete test. Panel: rebuilding `PageMargins` instead of spreading the
+base, transposing left/right, dropping the unit from the reseed key, and clamping
+instead of rejecting each kill one margin test and no other.
+
+**Still not built — and why each is not a small addition:**
+
+- **Catalogue with search.** The 28-paper grid wants to become a filtered
+  dropdown, which needs the panel hosted in `AtPopoverHost`. That is a
+  structural change to where the panel lives, not a control; r97 flagged it and
+  it is still the blocker.
+- **Live preview.** Undefined by the spec line and ambiguous in the panel's
+  present shape: every edit here already applies to the live document
+  immediately, so "preview" must mean either a page thumbnail beside the form or
+  a *provisional* apply the user can back out of. The second would need a
+  staging concept the mutation layer does not have. **What would settle it:**
+  decide which of the two the line means before building either.
+
+**Not established, unchanged from r97:** no screen sitting. The style panel still
+has no harness scenario, so everything here is verified by unit and model tests
+only — the new Duplicate/Delete buttons, the four margin boxes and their wrapping
+behaviour in the Compact posture have not been seen rendered. `TODO(page-panel-touch)`
+still applies and now covers more controls than when it was written.
 
 ### T6.6 — odd/even and first-page variants (done, r103)
 

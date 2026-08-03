@@ -60,6 +60,14 @@ style-page-defaults-label = New docs
 style-page-set-default = Use as default
 style-page-clear-default = Reset
 style-page-unit-label = Unit
+style-page-duplicate = Duplicate
+style-page-delete = Delete
+style-page-margins-custom = Exact
+style-page-margin-top = Top
+style-page-margin-bottom = Bottom
+style-page-margin-left = Left
+style-page-margin-right = Right
+style-page-margins-apply = Set
 # One indent level of a list style
 style-list-level-label = Level { $n }
 # A list level's label kind and geometry (non-inheriting; shown read-only)

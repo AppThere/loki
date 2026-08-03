@@ -20,19 +20,20 @@ use std::sync::{Arc, Mutex};
 
 use appthere_ui::tokens;
 use dioxus::prelude::*;
-use loki_doc_model::layout::page::{PageLayout, PageSize};
+use loki_doc_model::layout::page::{PageLayout, PageMargins, PageSize};
 use loki_doc_model::{rename_page_style, set_page_style_geometry, set_section_page_style};
 use loki_i18n::fl;
 
 use super::super::editor_defaults::PanelSettings;
-use super::super::editor_keydown_ctrl::post_mutation_sync;
 use super::StyleEditorSync;
+use super::page_commit::commit;
 use super::page_defaults_row::{new_document_defaults_row, unit_row};
+use super::page_margin_fields::{MarginFields, margin_field_key};
 use super::page_presets::{PagePreset, apply_preset, column_count, is_active};
 use super::page_rename::PageRenameField;
 use super::page_size_picker::size_section;
 use super::panel_data_page::{caret_section_index, page_edit_target};
-use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
+use crate::editing::state::DocumentState;
 
 /// Shared button chrome; `active` gives the pressed/selected look.
 ///
@@ -85,19 +86,7 @@ fn preset_button(
                     return;
                 };
                 let next = apply_preset(&current, preset);
-                let guard = sync.loro_doc.read();
-                let Some(ldoc) = guard.as_ref() else { return };
-                if set_page_style_geometry(ldoc, &name, &next).is_ok() {
-                    apply_mutation_and_relayout(&ds, ldoc);
-                    post_mutation_sync(
-                        &ds,
-                        sync.loro_doc,
-                        sync.cursor_state,
-                        sync.undo_manager,
-                        sync.can_undo,
-                        sync.can_redo,
-                    );
-                }
+                commit(&ds, sync, |ldoc| set_page_style_geometry(ldoc, &name, &next));
             },
             "{label}"
         }
@@ -151,19 +140,7 @@ fn apply_here_button(
         button {
             style: button_css(false),
             onclick: move |_| {
-                let guard = sync.loro_doc.read();
-                let Some(ldoc) = guard.as_ref() else { return };
-                if set_section_page_style(ldoc, section, &name).is_ok() {
-                    apply_mutation_and_relayout(&ds, ldoc);
-                    post_mutation_sync(
-                        &ds,
-                        sync.loro_doc,
-                        sync.cursor_state,
-                        sync.undo_manager,
-                        sync.can_undo,
-                        sync.can_redo,
-                    );
-                }
+                commit(&ds, sync, |ldoc| set_section_page_style(ldoc, section, &name));
             },
             { fl!("style-page-apply-here") }
         }
@@ -196,19 +173,9 @@ pub(super) fn page_style_form(
     let ds_rename = Arc::clone(doc_state);
     let old_name = name.clone();
     let on_rename = move |new: String| {
-        let guard = sync.loro_doc.read();
-        let Some(ldoc) = guard.as_ref() else { return };
-        if rename_page_style(ldoc, &old_name, &new).is_ok() {
-            apply_mutation_and_relayout(&ds_rename, ldoc);
-            drop(guard);
-            post_mutation_sync(
-                &ds_rename,
-                sync.loro_doc,
-                sync.cursor_state,
-                sync.undo_manager,
-                sync.can_undo,
-                sync.can_redo,
-            );
+        if commit(&ds_rename, sync, |ldoc| {
+            rename_page_style(ldoc, &old_name, &new)
+        }) {
             editing_page_style.set(Some(new));
         }
     };
@@ -225,22 +192,26 @@ pub(super) fn page_style_form(
         // size the user typed is kept even if the document write fails.
         super::super::editor_defaults::remember_custom_size(&size);
         next.set_page_size(size);
-        let guard = sync.loro_doc.read();
-        let Some(ldoc) = guard.as_ref() else { return };
-        if set_page_style_geometry(ldoc, &size_name, &next).is_ok() {
-            apply_mutation_and_relayout(&ds_size, ldoc);
-            drop(guard);
-            post_mutation_sync(
-                &ds_size,
-                sync.loro_doc,
-                sync.cursor_state,
-                sync.undo_manager,
-                sync.can_undo,
-                sync.can_redo,
-            );
-        }
+        commit(&ds_size, sync, |ldoc| {
+            set_page_style_geometry(ldoc, &size_name, &next)
+        });
+    };
+    // Hand-entered margins go through the same geometry mutation as the presets;
+    // only the way the four numbers were chosen differs.
+    let ds_margins = Arc::clone(doc_state);
+    let margins_name = name.clone();
+    let on_margins = move |margins: PageMargins| {
+        let Some(mut next) = page_edit_target(&ds_margins, &margins_name) else {
+            return;
+        };
+        next.margins = margins;
+        commit(&ds_margins, sync, |ldoc| {
+            set_page_style_geometry(ldoc, &margins_name, &next)
+        });
     };
     let unit = settings.unit;
+    let margin_key = margin_field_key(&layout, unit);
+    let margins_now = layout.margins.clone();
     let count = column_count(&layout);
     rsx! {
         div {
@@ -258,6 +229,17 @@ pub(super) fn page_style_form(
                 { btn(fl!("ribbon-margin-narrow-aria"), PagePreset::MarginsNarrow) }
                 { btn(fl!("ribbon-margin-wide-aria"), PagePreset::MarginsWide) }
             }) }
+            // Wrapped so the keyed component is the first node of its own block:
+            // Dioxus only honours `key` there, and a `key` it ignores would leave
+            // the fields holding the previously selected style's numbers.
+            div {
+                MarginFields {
+                    key: "{margin_key}",
+                    current: margins_now,
+                    unit,
+                    on_apply: EventHandler::new(on_margins),
+                }
+            }
             { preset_row(fl!("style-page-columns"), rsx! {
                 { btn(fl!("ribbon-columns-one-aria"), PagePreset::Columns(1)) }
                 { btn(fl!("ribbon-columns-two-aria"), PagePreset::Columns(2)) }

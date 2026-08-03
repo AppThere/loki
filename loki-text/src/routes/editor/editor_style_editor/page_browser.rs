@@ -8,64 +8,25 @@
 //! Selecting a page style writes its id into `editing_page_style`, which the
 //! panel reads to show that style's geometry rows read-only (§9). Page styles
 //! are non-inheriting, so this is a plain list (a flat family, like lists).
+//!
+//! The New / Duplicate / Delete verbs live in [`super::page_manager_verbs`] —
+//! they act on the list rather than on the open form, so they render here, but
+//! they are three separate controls and keeping them out of this file is what
+//! holds it under the ceiling.
 
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::tokens;
 use dioxus::prelude::*;
-use loki_doc_model::create_page_style;
 use loki_i18n::fl;
 
-use super::super::editor_keydown_ctrl::post_mutation_sync;
 use super::StyleEditorSync;
-use super::page_form::button_css;
-use super::panel_data_page::{PageListEntry, next_page_style_name, page_edit_target};
+use super::page_manager_verbs::{
+    delete_page_style_button, duplicate_page_style_button, new_page_style_button,
+};
+use super::panel_data_page::PageListEntry;
 use super::posture::StylePanelPosture;
-use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
-
-/// The "New page style" button: creates the next free `PageStyleN`, seeded from
-/// the selected style's geometry (else the document default), and selects it so
-/// the form opens on it — the user renames it there.
-///
-/// The new style is applied to no section yet, which is why the browser lists
-/// unapplied styles at all: a style that appeared nowhere until it was in use
-/// could not be reached to put it in use.
-fn new_page_style_button(
-    doc_state: &Arc<Mutex<DocumentState>>,
-    selected: Option<String>,
-    mut editing_page_style: Signal<Option<String>>,
-    sync: StyleEditorSync,
-) -> Element {
-    let ds = Arc::clone(doc_state);
-    rsx! {
-        button {
-            style: button_css(false),
-            onclick: move |_| {
-                let Some(name) = next_page_style_name(&ds) else { return };
-                let seed = selected
-                    .as_deref()
-                    .and_then(|s| page_edit_target(&ds, s))
-                    .unwrap_or_default();
-                let guard = sync.loro_doc.read();
-                let Some(ldoc) = guard.as_ref() else { return };
-                if create_page_style(ldoc, &name, &seed).is_ok() {
-                    apply_mutation_and_relayout(&ds, ldoc);
-                    drop(guard);
-                    post_mutation_sync(
-                        &ds,
-                        sync.loro_doc,
-                        sync.cursor_state,
-                        sync.undo_manager,
-                        sync.can_undo,
-                        sync.can_redo,
-                    );
-                    editing_page_style.set(Some(name));
-                }
-            },
-            { fl!("style-page-new") }
-        }
-    }
-}
+use crate::editing::state::DocumentState;
 
 /// Renders the "Page styles" heading, the New button, and one button per page
 /// style. `page_selected` highlights the active id; `posture` supplies the
@@ -89,7 +50,13 @@ pub(super) fn page_list_section(
             ),
             { fl!("style-page-family-heading") }
         }
-        { new_page_style_button(doc_state, page_selected.clone(), editing_page_style, sync) }
+        // New / Duplicate / Delete — the list-level manager verbs (T6.7).
+        div {
+            style: "display: flex; flex-direction: row; gap: 4px; flex-wrap: wrap; margin-bottom: 2px;",
+            { new_page_style_button(doc_state, editing_page_style, sync) }
+            { duplicate_page_style_button(doc_state, page_selected.clone(), editing_page_style, sync) }
+            { delete_page_style_button(doc_state, page_selected.clone(), editing_page_style, sync) }
+        }
         for (id, display, applied) in page_list.into_iter() {
             {
                 let is_sel = page_selected.as_deref() == Some(id.as_str());
