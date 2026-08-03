@@ -1,124 +1,143 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Document properties → CSS declarations, for the DOM reflow view (ADR-0017).
+//! Resolved document properties → CSS declarations, for the DOM reflow view
+//! (ADR-0017 §5.1).
 //!
-//! # This is where the ADR's risk lives
+//! # Resolved, not direct — and resolved by the *same* code
 //!
-//! ADR-0017 §3.2 measured that a paragraph breaks identically through
-//! `loki-layout`'s own property resolution and through Blitz's Stylo cascade —
-//! *given equivalent inputs*. This module is what makes them equivalent. A
-//! property mapped wrongly here does not fail loudly; it reflows the document
-//! differently from the canvas path, which is the regression the ADR exists to
-//! avoid.
+//! The first version of this module read a paragraph's **direct** properties.
+//! That renders most documents unstyled, because formatting lives in named
+//! styles: side by side on a screenplay the canvas path set monospaced, centred
+//! dialogue and this one set proportional, left-aligned text.
 //!
-//! So it is pure and unit-tested, separately from the rsx that consumes it.
+//! It now takes [`loki_layout::para::ResolvedParaProps`] and
+//! [`loki_layout::para::StyleSpan`] — the output of `loki_layout`'s own
+//! `resolve_para_props` and `flatten_paragraph_with_base`, which is what the
+//! canvas path shapes with. Not a second resolver against the same catalog: the
+//! *same* resolver, so the two paths cannot disagree about what a style means.
+//! A reimplementation would be one more copy of the cascade, and the cascade is
+//! exactly the thing whose second copy drifts.
+//!
+//! # Everything is emitted, because everything is resolved
+//!
+//! A resolved property is a definite value, so each is written out rather than
+//! left to inherit. That is the opposite of the direct-property version, which
+//! had to omit unset properties so CSS inheritance could stand in for the
+//! model's — and it is better: it does not require Stylo's cascade to agree with
+//! ours, because nothing is left for either cascade to decide.
 //!
 //! # Points, not pixels
 //!
-//! The model is in points and CSS is authored in `pt` here rather than
-//! converted to `px`. Blitz resolves `pt` at the CSS-standard 96/72, which is
-//! exactly `loki-renderer`'s `PX_TO_PT`. Converting by hand would be a second
-//! statement of that ratio, and the two would drift.
+//! The model is in points and CSS is authored in `pt`. Blitz resolves `pt` at
+//! the CSS-standard 96/72, which is exactly `loki-renderer`'s `PX_TO_PT`;
+//! converting by hand would be a second statement of that ratio.
 
-use loki_doc_model::loki_primitives::color::DocumentColor;
-use loki_doc_model::style::props::char_props::CharProps;
-use loki_doc_model::style::props::para_props::{ParaProps, ParagraphAlignment};
+use loki_layout::color::LayoutColor;
+use loki_layout::para::{ResolvedParaProps, StyleSpan};
 
-/// A CSS colour for a [`DocumentColor`], or `None` when it has no direct sRGB
-/// form.
+/// A CSS colour for a resolved [`LayoutColor`].
 ///
-/// Delegates to [`DocumentColor::to_hex`] rather than re-deriving the
-/// conversion: that function already answers exactly this question, including
-/// returning `None` for the variants that have no sRGB form, and a second copy
-/// of a colour conversion is a second place for it to be wrong.
-///
-/// Theme colours resolve through a document theme this view does not carry, and
-/// CMYK is a print space; both are dropped rather than approximated, because a
-/// wrong colour is harder to notice than a missing one. `TODO(dom-reflow-color)`.
+/// Alpha is carried through as `rgba()`: a run at less than full opacity is a
+/// real thing in the model, and dropping it to `rgb()` would paint a watermark
+/// as body text.
 #[must_use]
-pub(super) fn css_color(c: &DocumentColor) -> Option<String> {
-    c.to_hex()
+pub(super) fn css_layout_color(c: LayoutColor) -> String {
+    let to255 = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    format!(
+        "rgba({}, {}, {}, {})",
+        to255(c.r),
+        to255(c.g),
+        to255(c.b),
+        c.a.clamp(0.0, 1.0)
+    )
 }
 
-/// The CSS declarations for a run's character properties.
-///
-/// Emits only what is **set**: an absent property must inherit, exactly as it
-/// does in the model, and writing a default here would override an ancestor
-/// that had a real value.
+/// The CSS declarations for one resolved run.
 #[must_use]
-pub(super) fn char_css(p: &CharProps) -> String {
+pub(super) fn span_css(s: &StyleSpan) -> String {
     let mut css = String::new();
-    if let Some(name) = &p.font_name {
+    if let Some(name) = &s.font_name {
         // Quoted: family names contain spaces, and an unquoted `Liberation Sans`
         // is two keywords rather than one family.
         css.push_str(&format!("font-family: '{}'; ", name.replace('\'', "")));
     }
-    if let Some(size) = p.font_size {
-        css.push_str(&format!("font-size: {}pt; ", size.value()));
-    }
-    if p.bold == Some(true) {
-        css.push_str("font-weight: bold; ");
-    } else if p.bold == Some(false) {
-        // Explicitly not bold — a run inside a bold ancestor needs saying.
-        css.push_str("font-weight: normal; ");
-    }
-    if p.italic == Some(true) {
-        css.push_str("font-style: italic; ");
-    } else if p.italic == Some(false) {
-        css.push_str("font-style: normal; ");
-    }
-    // `text-decoration` is one property with two independent model fields, so
-    // the lines are collected and emitted once — two declarations would have the
-    // second win and the first vanish.
+    css.push_str(&format!("font-size: {}pt; ", s.font_size));
+    // The **numeric** weight, not `bold`. `StyleSpan` carries both and its own
+    // docs say the numeric one supersedes the boolean when a `font_weight`
+    // style set it — a semibold run written as `bold` would render at 700.
+    css.push_str(&format!("font-weight: {}; ", s.weight));
+    css.push_str(if s.italic {
+        "font-style: italic; "
+    } else {
+        "font-style: normal; "
+    });
+    css.push_str(&format!("color: {}; ", css_layout_color(s.color)));
+
+    // One `text-decoration`, not two: a second declaration would win outright
+    // and the first would vanish, so a run that is both underlined and struck
+    // would lose its underline.
     let mut decorations = Vec::new();
-    if p.underline.is_some() {
+    if s.underline.is_some() {
         decorations.push("underline");
     }
-    if p.strikethrough.is_some() {
+    if s.strikethrough.is_some() {
         decorations.push("line-through");
     }
-    if !decorations.is_empty() {
-        css.push_str(&format!("text-decoration: {}; ", decorations.join(" ")));
+    css.push_str(&format!(
+        "text-decoration: {}; ",
+        if decorations.is_empty() {
+            "none".to_string()
+        } else {
+            decorations.join(" ")
+        }
+    ));
+
+    if let Some(h) = s.highlight_color {
+        css.push_str(&format!("background: {}; ", css_layout_color(h)));
     }
-    if let Some(color) = p.color.as_ref().and_then(css_color) {
-        css.push_str(&format!("color: {color}; "));
+    if let Some(ls) = s.letter_spacing {
+        css.push_str(&format!("letter-spacing: {ls}pt; "));
     }
     css
 }
 
-/// The CSS declarations for a block's paragraph properties.
+/// The CSS declarations for one resolved paragraph.
+///
+/// `space_before` / `space_after` become margins here. On the canvas path the
+/// flow adds them around the paragraph box rather than inside it — the resolved
+/// struct's own docs say they are "handled by the caller, not included in
+/// `ParagraphLayout::height`" — and a CSS margin is that same outside space.
 #[must_use]
-pub(super) fn para_css(p: &ParaProps) -> String {
-    let mut css = String::new();
-    if let Some(a) = p.alignment {
-        let value = match a {
-            ParagraphAlignment::Left => "start",
-            ParagraphAlignment::Center => "center",
-            ParagraphAlignment::Right => "end",
-            ParagraphAlignment::Justify => "justify",
-            // A distributed paragraph justifies its last line too; CSS says that
-            // with a second property, and `justify` alone is the closest single
-            // value. Marked rather than silently equated.
-            // TODO(dom-reflow-distribute): `text-align-last: justify`.
-            _ => "justify",
-        };
-        css.push_str(&format!("text-align: {value}; "));
+pub(super) fn resolved_para_css(p: &ResolvedParaProps) -> String {
+    // Matched on the `Debug` form: `parley::Alignment` is not re-exported by
+    // `loki-layout` and this crate does not depend on Parley directly. Adding a
+    // Parley dependency to the app for one enum would put a shaping crate in the
+    // UI layer; naming the variants is the smaller cost, and an unknown one
+    // falls through to the reading-order default rather than being invented.
+    let align = match format!("{:?}", p.alignment).as_str() {
+        "Start" => "start",
+        "Middle" | "Center" => "center",
+        "End" => "end",
+        "Justify" | "Justified" => "justify",
+        _ => "start",
+    };
+    let mut css = format!(
+        "text-align: {align}; margin: {before}pt 0 {after}pt 0; \
+         padding-inline-start: {start}pt; padding-inline-end: {end}pt; ",
+        before = p.space_before,
+        after = p.space_after,
+        start = p.indent_start,
+        end = p.indent_end,
+    );
+    // Hanging wins over first-line when set, which is the model's own order:
+    // both write `text-indent`, and a hanging indent is the negative one.
+    if p.indent_hanging > 0.0 {
+        css.push_str(&format!("text-indent: -{}pt; ", p.indent_hanging));
+    } else if p.indent_first_line != 0.0 {
+        css.push_str(&format!("text-indent: {}pt; ", p.indent_first_line));
     }
-    if let Some(i) = p.indent_start {
-        css.push_str(&format!("margin-inline-start: {}pt; ", i.value()));
-    }
-    if let Some(i) = p.indent_end {
-        css.push_str(&format!("margin-inline-end: {}pt; ", i.value()));
-    }
-    if let Some(i) = p.indent_first_line {
-        css.push_str(&format!("text-indent: {}pt; ", i.value()));
-    }
-    // Hanging indent is a *negative* first-line indent against a start indent,
-    // which is how CSS expresses it; the model states it as its own positive
-    // quantity. Emitted only when there is no explicit first-line indent, since
-    // both write `text-indent` and the model treats first-line as the winner.
-    if let (Some(h), None) = (p.indent_hanging, p.indent_first_line) {
-        css.push_str(&format!("text-indent: -{}pt; ", h.value()));
+    if let Some(bg) = p.background_color {
+        css.push_str(&format!("background: {}; ", css_layout_color(bg)));
     }
     css
 }

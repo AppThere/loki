@@ -163,25 +163,45 @@ document through both.
 no ambient static, no ordering hazard between the pass that resolves it and the
 pass that reads it.
 
-### 5.1 The gap the comparison found, which is the one that was predicted
+### 5.1 Catalog resolution (done, same day)
 
-Side by side on a screenplay, the canvas path renders monospaced, centred
-dialogue and a right-aligned `CUT TO:`; the DOM path renders proportional,
-left-aligned text. Same blocks, same order, same content — different formatting.
+The first cut applied only **direct** properties, so a screenplay rendered
+proportional and left-aligned against the canvas path's monospaced, centred
+dialogue. Fixed by resolving through the catalog — and specifically by resolving
+through **`loki_layout`'s own resolver**, `resolve_para_props` and
+`flatten_paragraph_with_base`, which is what the canvas path shapes with.
 
-**Cause: `content.rs` applies only *direct* character and paragraph
-properties.** A style *reference* resolves through `StyleCatalog`, which this
-view does not consult, so a document whose formatting lives in named styles —
-which is most documents, and every imported one — renders unstyled.
-`TODO(dom-reflow-styles)`.
+That choice is the point. A second resolver reading the same catalog would be a
+second copy of the cascade, and the cascade is exactly the thing whose second
+copy drifts. Reusing the same functions means the two paths cannot disagree
+about what a style *means*; any remaining difference is about rendering, which
+is what this comparison is for.
 
-This matters for §3.2's result. The line-break comparison passed *given
-equivalent inputs*; it says nothing about a path that does not supply them. So
-**the ADR's evidence does not yet transfer to real documents through this
-view** — not because the shaping disagrees, but because the two paths are not
-being handed the same properties. Resolving through the catalog is therefore not
-a polish item; it is the precondition for any further comparison being about
-rendering at all.
+It also simplified the CSS. Resolved properties are definite values, so each is
+written out rather than left to inherit — nothing is delegated to Stylo's
+cascade, so Stylo's cascade does not have to agree with ours.
+
+**Measured after:** alignment, centring, the right-aligned `CUT TO:`, indents and
+paragraph spacing all now match the canvas path.
+
+### 5.1a One difference remains: font substitution
+
+The canvas path renders the screenplay monospaced; the DOM path renders it
+proportional. The status bar says "1 font substituted" in both — which is the
+clue. `loki-layout` resolves a missing family to a metric-compatible substitute
+through `FontResources::resolve_font_name`; the DOM path emits the family the
+document *asked* for and lets Blitz fall back its own way. Two different
+substitution policies for the same missing font.
+
+**This is a service the DOM path bypasses, not a mapping error.** The fix is to
+run each span's family through the same `resolve_font_name` before emitting it,
+which needs the `FontResources` handle the view does not currently take —
+`DocumentState::shared_font_resources` has it. `TODO(dom-reflow-font-sub)`.
+
+Worth noting for §3.2: the line-break comparison was run with a family both
+paths could resolve, so it never exercised this. A substituted font has
+different metrics, so line breaks would differ — which makes this the **first**
+thing to fix before re-running that comparison on a styled document.
 
 ### 5.2 What it deliberately does not do
 
@@ -192,8 +212,10 @@ which is the one failure mode a comparison instrument must not have.
 
 ### 5.3 Revised sequencing
 
-1. Resolve through `StyleCatalog` (§5.1). Until then no further comparison is
-   meaningful.
-2. Re-run the line-break comparison on a *styled* document, and extend it to
-   mixed style runs (§3.2's open item).
-3. Then T7.3's per-element scroller, and the virtualisation measurement.
+1. ~~Resolve through `StyleCatalog`.~~ **Done — §5.1.**
+2. Route families through `resolve_font_name` (§5.1a). Until then a document
+   with a substituted font sets differently on the two paths, so a line-break
+   comparison on a styled document would measure that rather than the mapping.
+3. Re-run the line-break comparison on a styled document, and extend it to mixed
+   style runs (§3.2's open item).
+4. Then T7.3's per-element scroller, and the virtualisation measurement.

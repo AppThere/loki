@@ -125,7 +125,7 @@ pub(super) fn dom_reflow_view(
                 ),
                 for (si, section) in doc.sections.iter().enumerate() {
                     for (bi, block) in section.blocks.iter().enumerate() {
-                        { rsx! { div { key: "{si}-{bi}", { content::block_el(block) } } } }
+                        { rsx! { div { key: "{si}-{bi}", { content::block_el(block, &doc.styles) } } } }
                     }
                 }
             }

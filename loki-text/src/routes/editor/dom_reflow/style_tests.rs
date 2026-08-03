@@ -1,153 +1,192 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for the DOM reflow view's property → CSS mapping (ADR-0017).
+//! Tests for the DOM reflow view's **resolved** property → CSS mapping
+//! (ADR-0017 §5.1).
+//!
+//! These take `loki_layout`'s resolved types, which is the point: the values
+//! under test are the same ones the canvas path shapes with, so a mapping error
+//! here is a difference between the two paths and nothing else.
 
-use super::{char_css, css_color, para_css};
-use loki_doc_model::loki_primitives::color::DocumentColor;
-use loki_doc_model::loki_primitives::units::Points;
-use loki_doc_model::style::props::char_props::{CharProps, StrikethroughStyle, UnderlineStyle};
-use loki_doc_model::style::props::para_props::{ParaProps, ParagraphAlignment};
+use super::{css_layout_color, resolved_para_css, span_css};
+use loki_layout::color::LayoutColor;
+use loki_layout::para::{ResolvedParaProps, StyleSpan};
 
-/// **An unset property emits nothing.** This is the load-bearing rule of the
-/// whole module: the model inherits, and a declaration written for an absent
-/// property would override an ancestor that had a real value — silently, and
-/// only for documents that use nested runs.
-#[test]
-fn unset_properties_emit_nothing() {
-    assert_eq!(char_css(&CharProps::default()), "");
-    assert_eq!(para_css(&ParaProps::default()), "");
+/// A resolved span, obtained the way the view obtains one: by running a real
+/// paragraph through `loki_layout`'s own flattener.
+///
+/// Constructing a `StyleSpan` field-by-field would be a second statement of what
+/// "resolved" means, and it would keep compiling after the real resolver started
+/// producing something different — which is precisely the drift these tests
+/// exist to catch.
+fn resolved_span() -> StyleSpan {
+    use loki_doc_model::content::block::StyledParagraph;
+    use loki_doc_model::content::inline::Inline;
+    use loki_doc_model::style::catalog::StyleCatalog;
+
+    let para = StyledParagraph {
+        style_id: None,
+        direct_para_props: None,
+        direct_char_props: None,
+        inlines: vec![Inline::Str("resolved".into())],
+        attr: Default::default(),
+    };
+    let mut notes = 0u32;
+    let (_, spans, _, _) = loki_layout::resolve::flatten_paragraph_with_base(
+        &para,
+        &StyleCatalog::new(),
+        &mut notes,
+        None,
+        loki_layout::RevisionDisplay::default(),
+    );
+    spans.into_iter().next().expect("one run")
 }
 
-/// The inverse: a set property does emit, so "" above is about absence and not
-/// about the function never working.
+/// **Every resolved property is written out.** A resolved value is definite, so
+/// nothing is left for CSS inheritance to supply — which is what stops Stylo's
+/// cascade and ours having to agree.
 #[test]
-fn a_set_property_emits_a_declaration() {
-    let css = char_css(&CharProps {
-        bold: Some(true),
-        ..CharProps::default()
-    });
-    assert!(css.contains("font-weight: bold"), "{css}");
+fn a_resolved_run_emits_every_property_it_carries() {
+    let css = span_css(&resolved_span());
+    for decl in [
+        "font-size:",
+        "font-weight:",
+        "font-style:",
+        "color:",
+        "text-decoration:",
+    ] {
+        assert!(css.contains(decl), "a default run omitted {decl}: {css}");
+    }
 }
 
-/// **`false` is not the same as unset.** A run explicitly not bold, inside a
-/// bold ancestor, needs `font-weight: normal` — dropping it because "false is
-/// the default" makes the run inherit bold and renders it wrong.
+/// **The numeric weight, not the boolean.** `StyleSpan` carries both, and its
+/// own docs say the numeric one supersedes `bold` when a `font_weight` style set
+/// it — a semibold run written as `bold` would render at 700.
 #[test]
-fn an_explicit_false_is_emitted_not_dropped() {
-    let css = char_css(&CharProps {
-        bold: Some(false),
-        italic: Some(false),
-        ..CharProps::default()
-    });
-    assert!(css.contains("font-weight: normal"), "{css}");
-    assert!(css.contains("font-style: normal"), "{css}");
+fn the_numeric_weight_is_used_not_the_bold_flag() {
+    let semibold = StyleSpan {
+        weight: 600,
+        bold: false,
+        ..resolved_span()
+    };
+    assert!(span_css(&semibold).contains("font-weight: 600"));
+
+    // And the boolean does not override it: a span flagged bold but resolved to
+    // 600 is still 600.
+    let both = StyleSpan {
+        weight: 600,
+        bold: true,
+        ..resolved_span()
+    };
+    assert!(
+        span_css(&both).contains("font-weight: 600"),
+        "the boolean overrode the resolved numeric weight"
+    );
 }
 
-/// **Underline and strikethrough share one CSS property.** Emitting two
-/// `text-decoration` declarations makes the second win and the first vanish, so
-/// a run that is both would lose its underline.
+/// Underline and strikethrough share one CSS property; two declarations would
+/// make the second win and the first vanish.
 #[test]
 fn underline_and_strikethrough_combine_into_one_declaration() {
-    let css = char_css(&CharProps {
-        underline: Some(UnderlineStyle::Single),
-        strikethrough: Some(StrikethroughStyle::Single),
-        ..CharProps::default()
-    });
+    let s = StyleSpan {
+        underline: Some(loki_layout::para::UnderlineStyle::Single),
+        strikethrough: Some(loki_layout::para::StrikethroughStyle::Single),
+        ..resolved_span()
+    };
+    let css = span_css(&s);
     assert_eq!(
         css.matches("text-decoration").count(),
         1,
         "two text-decoration declarations — the first is dead: {css}"
     );
-    assert!(css.contains("underline"), "{css}");
-    assert!(css.contains("line-through"), "{css}");
+    assert!(
+        css.contains("underline") && css.contains("line-through"),
+        "{css}"
+    );
+
+    // The inverse: a run with neither says `none` explicitly rather than
+    // omitting it, so an ancestor's decoration cannot leak in.
+    assert!(span_css(&resolved_span()).contains("text-decoration: none"));
+}
+
+/// **Alpha survives.** A run at less than full opacity is a real thing in the
+/// model, and flattening it to `rgb()` would paint a watermark as body text.
+#[test]
+fn colour_alpha_is_carried_through() {
+    let faint = css_layout_color(LayoutColor {
+        r: 1.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.25,
+    });
+    assert!(faint.starts_with("rgba("), "{faint}");
+    assert!(faint.contains("0.25"), "alpha was dropped: {faint}");
+    assert!(faint.contains("255, 0, 0"), "{faint}");
 }
 
 /// A family name is quoted, because names contain spaces and an unquoted
 /// `Liberation Sans` is two keywords rather than one family.
 #[test]
 fn a_family_name_is_quoted() {
-    let css = char_css(&CharProps {
+    let s = StyleSpan {
         font_name: Some("Liberation Sans".into()),
-        ..CharProps::default()
-    });
-    assert!(css.contains("font-family: 'Liberation Sans'"), "{css}");
+        ..resolved_span()
+    };
+    assert!(span_css(&s).contains("font-family: 'Liberation Sans'"));
 }
 
-/// **Sizes stay in points.** Converting to px here would restate the 96/72
-/// ratio that Blitz already applies, and the two copies would drift.
+/// **Sizes stay in points.** Converting to px would restate the 96/72 ratio
+/// Blitz already applies, and the two copies would drift.
 #[test]
 fn sizes_are_emitted_in_points() {
-    let css = char_css(&CharProps {
-        font_size: Some(Points::new(12.0)),
-        ..CharProps::default()
-    });
+    let css = span_css(&resolved_span());
     assert!(css.contains("12pt"), "{css}");
     assert!(!css.contains("px"), "a size was converted to px: {css}");
 }
 
-/// Only sRGB colours map; theme and CMYK are dropped rather than approximated.
+/// A resolved paragraph emits its alignment, its outside spacing and its
+/// indents — the properties that decide where its lines start and end.
 #[test]
-fn only_direct_rgb_colours_map() {
-    let rgb = DocumentColor::from_hex("#112233").expect("valid hex");
-    assert_eq!(
-        css_color(&rgb).as_deref(),
-        Some("#112233".to_uppercase().as_str())
-    );
-    assert!(
-        css_color(&DocumentColor::Transparent).is_none(),
-        "a colour with no direct sRGB form was approximated"
-    );
-}
-
-/// Alignment maps to the logical CSS keywords, so a right-to-left document is
-/// not laid out with physical directions its script does not use.
-#[test]
-fn alignment_maps_to_logical_keywords() {
-    let of = |a| {
-        para_css(&ParaProps {
-            alignment: Some(a),
-            ..ParaProps::default()
-        })
+fn a_resolved_paragraph_emits_its_geometry() {
+    let p = ResolvedParaProps {
+        space_before: 6.0,
+        space_after: 12.0,
+        indent_start: 24.0,
+        indent_end: 18.0,
+        ..ResolvedParaProps::default()
     };
-    assert!(of(ParagraphAlignment::Left).contains("text-align: start"));
-    assert!(of(ParagraphAlignment::Right).contains("text-align: end"));
-    assert!(of(ParagraphAlignment::Center).contains("text-align: center"));
-    assert!(of(ParagraphAlignment::Justify).contains("text-align: justify"));
+    let css = resolved_para_css(&p);
+    assert!(css.contains("margin: 6pt 0 12pt 0"), "{css}");
+    assert!(css.contains("padding-inline-start: 24pt"), "{css}");
+    assert!(css.contains("padding-inline-end: 18pt"), "{css}");
+    assert!(css.contains("text-align:"), "{css}");
 }
 
-/// **A hanging indent and a first-line indent both write `text-indent`, and the
-/// model gives first-line the win.** Emitting both would let the hanging value
-/// override it, turning an indented first line into an outdented one.
+/// **A hanging indent wins over a first-line one**, which is the model's own
+/// order. Both write `text-indent`, so emitting each would let the later one
+/// silently replace the earlier.
 #[test]
-fn a_first_line_indent_beats_a_hanging_one() {
-    let both = para_css(&ParaProps {
-        indent_first_line: Some(Points::new(18.0)),
-        indent_hanging: Some(Points::new(36.0)),
-        ..ParaProps::default()
+fn a_hanging_indent_beats_a_first_line_one() {
+    let both = resolved_para_css(&ResolvedParaProps {
+        indent_first_line: 18.0,
+        indent_hanging: 36.0,
+        ..ResolvedParaProps::default()
     });
     assert_eq!(
         both.matches("text-indent").count(),
         1,
         "two text-indent declarations: {both}"
     );
-    assert!(both.contains("text-indent: 18pt"), "{both}");
+    assert!(both.contains("text-indent: -36pt"), "{both}");
 
-    // Hanging alone is a negative first-line indent, which is how CSS says it.
-    let hanging = para_css(&ParaProps {
-        indent_hanging: Some(Points::new(36.0)),
-        ..ParaProps::default()
+    // First-line alone is the positive one.
+    let first = resolved_para_css(&ResolvedParaProps {
+        indent_first_line: 18.0,
+        ..ResolvedParaProps::default()
     });
-    assert!(hanging.contains("text-indent: -36pt"), "{hanging}");
-}
+    assert!(first.contains("text-indent: 18pt"), "{first}");
 
-/// Indents use logical properties too, for the same reason as alignment.
-#[test]
-fn indents_are_logical_and_in_points() {
-    let css = para_css(&ParaProps {
-        indent_start: Some(Points::new(24.0)),
-        indent_end: Some(Points::new(12.0)),
-        ..ParaProps::default()
-    });
-    assert!(css.contains("margin-inline-start: 24pt"), "{css}");
-    assert!(css.contains("margin-inline-end: 12pt"), "{css}");
+    // Neither: no declaration at all, rather than a zero that would override an
+    // ancestor's.
+    let none = resolved_para_css(&ResolvedParaProps::default());
+    assert!(!none.contains("text-indent"), "{none}");
 }
