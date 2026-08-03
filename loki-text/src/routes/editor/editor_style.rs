@@ -90,9 +90,8 @@ pub fn style_picker_panel(
                 ),
                 span {
                     style: format!(
-                        "font-family: {ff}; font-size: {fs}px; font-weight: {fw}; \
+                        "font-size: {fs}px; font-weight: {fw}; \
                          color: {fg};",
-                        ff = tokens::FONT_FAMILY_UI,
                         fs = tokens::FONT_SIZE_LABEL,
                         fw = tokens::FONT_WEIGHT_MEDIUM,
                         fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
@@ -134,13 +133,12 @@ pub fn style_picker_panel(
                         "flex: 1; height: 28px; padding: 0 {p}px; \
                          background: {bg}; border: 1px solid {border}; \
                          border-radius: {r}px; \
-                         font-family: {ff}; font-size: {fs}px; \
+                         font-size: {fs}px; \
                          color: {fg}; box-sizing: border-box;",
                         p      = tokens::SPACE_2,
                         bg     = tokens::COLOR_SURFACE_2,
                         border = tokens::COLOR_BORDER_DEFAULT,
                         r      = tokens::RADIUS_SM,
-                        ff     = tokens::FONT_FAMILY_UI,
                         fs     = tokens::FONT_SIZE_BODY,
                         fg     = tokens::COLOR_TEXT_ON_CHROME,
                     ),
@@ -175,7 +173,7 @@ pub fn style_picker_panel(
                             style: format!(
                                 "padding: {p}px {p2}px; border-radius: 4px; \
                                  border: 1px solid {border}; cursor: pointer; \
-                                 font-family: {ff}; font-size: {fs}px; \
+                                 font-size: {fs}px; \
                                  font-weight: {fw}; font-style: {fi}; \
                                  background: {bg}; color: {fg}; flex-shrink: 0;",
                                 p      = tokens::SPACE_1,
@@ -185,7 +183,6 @@ pub fn style_picker_panel(
                                 } else {
                                     tokens::COLOR_BORDER_CHROME
                                 },
-                                ff     = tokens::FONT_FAMILY_UI,
                                 fs     = preview_fs,
                                 fw     = preview_fw,
                                 fi     = if preview_fi { "italic" } else { "normal" },

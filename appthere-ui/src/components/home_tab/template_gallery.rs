@@ -31,9 +31,7 @@ use crate::components::home_tab::BuiltinTemplate;
 use crate::responsive::use_breakpoint;
 use crate::tokens::colors::{COLOR_ACCENT_PRIMARY, COLOR_SURFACE_PAGE, COLOR_TEXT_ON_CHROME};
 use crate::tokens::spacing::{RADIUS_LG, RADIUS_SM, SPACE_1, SPACE_2, SPACE_3, TOUCH_MIN};
-use crate::tokens::typography::{
-    FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_SEMIBOLD,
-};
+use crate::tokens::typography::{FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_SEMIBOLD};
 
 // ── AtTemplateGallery ─────────────────────────────────────────────────────────
 
@@ -60,7 +58,7 @@ pub(crate) fn AtTemplateGallery(props: AtTemplateGalleryProps) -> Element {
             style: format!(
                 "display: flex; flex-direction: row; flex-wrap: wrap; \
                  align-content: flex-start; gap: {gap}px; {cap} \
-                 padding-bottom: {pb}px; font-family: {font};",
+                 padding-bottom: {pb}px; ",
                 // COMPAT(dioxus-native): flex-wrap and overflow-y: auto are both
                 // in the confirmed set (CLAUDE.md); `align-content: flex-start`
                 // is not — without it a capped grid with one row would centre
@@ -68,7 +66,6 @@ pub(crate) fn AtTemplateGallery(props: AtTemplateGalleryProps) -> Element {
                 gap  = CARD_GAP_PX,
                 cap  = cap,
                 pb   = SPACE_2,
-                font = FONT_FAMILY_UI,
             ),
 
             for (idx, tmpl) in props.templates.iter().enumerate() {

@@ -43,8 +43,7 @@ pub(super) fn table_style_form(
 
             div {
                 style: format!(
-                    "font-family: {ff}; font-size: {fs}px; color: {fg};",
-                    ff = tokens::FONT_FAMILY_UI,
+                    "font-size: {fs}px; color: {fg};",
                     fs = tokens::FONT_SIZE_XS,
                     fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                 ),
@@ -77,8 +76,7 @@ fn text_row(
             style: "display: flex; flex-direction: row; align-items: center; gap: 8px;",
             span {
                 style: format!(
-                    "font-family: {ff}; font-size: {fs}px; color: {fg}; min-width: 72px;",
-                    ff = tokens::FONT_FAMILY_UI,
+                    "font-size: {fs}px; color: {fg}; min-width: 72px;",
                     fs = tokens::FONT_SIZE_LABEL,
                     fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                 ),
@@ -88,14 +86,13 @@ fn text_row(
                 style: format!(
                     "flex: 1; min-height: {h}px; padding: 0 {p}px; border-radius: {r}px; \
                      border: 1px solid {border}; background: {bg}; color: {fg}; \
-                     font-family: {ff}; font-size: {fs}px;",
+                     font-size: {fs}px;",
                     h = tokens::TOUCH_MIN,
                     p = tokens::SPACE_2,
                     r = tokens::RADIUS_SM,
                     border = tokens::COLOR_BORDER_CHROME,
                     bg = tokens::COLOR_SURFACE_2,
                     fg = tokens::COLOR_TEXT_ON_CHROME,
-                    ff = tokens::FONT_FAMILY_UI,
                     fs = tokens::FONT_SIZE_BODY,
                 ),
                 value: "{value}",
@@ -124,7 +121,7 @@ fn alignment_row(
             button {
                 style: format!(
                     "flex: 1; min-height: {touch}px; border: 1px solid {border}; \
-                     cursor: pointer; font-family: {ff}; font-size: {fs}px; \
+                     cursor: pointer; font-size: {fs}px; \
                      background: {bg}; color: {fg};",
                     touch = tokens::TOUCH_MIN,
                     border = if active {
@@ -132,7 +129,6 @@ fn alignment_row(
                     } else {
                         tokens::COLOR_BORDER_CHROME
                     },
-                    ff = tokens::FONT_FAMILY_UI,
                     fs = tokens::FONT_SIZE_LABEL,
                     bg = if active { tokens::COLOR_SURFACE_3 } else { tokens::COLOR_SURFACE_2 },
                     fg = tokens::COLOR_TEXT_ON_CHROME,
@@ -170,13 +166,12 @@ fn apply_button(
             button {
                 style: format!(
                     "padding: {p}px {p2}px; border-radius: {r}px; border: 1px solid {border}; \
-                     cursor: pointer; font-family: {ff}; font-size: {fs}px; \
+                     cursor: pointer; font-size: {fs}px; \
                      background: {bg}; color: {fg};",
                     p = tokens::SPACE_1,
                     p2 = tokens::SPACE_3,
                     r = tokens::RADIUS_SM,
                     border = tokens::COLOR_TAB_ACTIVE_INDICATOR,
-                    ff = tokens::FONT_FAMILY_UI,
                     fs = tokens::FONT_SIZE_BODY,
                     bg = tokens::COLOR_SURFACE_3,
                     fg = tokens::COLOR_TEXT_ON_CHROME,

@@ -12,7 +12,7 @@ use crate::responsive::use_breakpoint;
 use crate::theme::use_theme;
 use crate::tokens::layout::STATUS_BAR_HEIGHT;
 use crate::tokens::spacing::{RADIUS_SM, SPACE_1, SPACE_2, SPACE_4, TOUCH_MIN};
-use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_XS, FONT_WEIGHT_MEDIUM};
+use crate::tokens::typography::{FONT_SIZE_XS, FONT_WEIGHT_MEDIUM};
 
 #[path = "status_bar_chips.rs"]
 mod chips;
@@ -61,14 +61,12 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                 "height: {h}px; min-height: {h}px; background: {bg}; \
                  border-top: 1px solid {border}; \
                  display: flex; align-items: center; \
-                 padding: 0 {pad}px; flex-shrink: 0; gap: {gap}px; \
-                 font-family: {font};",
+                 padding: 0 {pad}px; flex-shrink: 0; gap: {gap}px;",
                 h      = STATUS_BAR_HEIGHT,
                 bg     = palette.surface_chrome,
                 border = palette.border_chrome,
                 pad    = SPACE_4,
                 gap    = SPACE_4,
-                font   = FONT_FAMILY_UI,
             ),
 
             // ── Left: document statistics ─────────────────────────────────────

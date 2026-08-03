@@ -70,10 +70,9 @@ pub(super) fn iu_buttons(
                         key: "{lbl}",
                         style: format!(
                             "padding: 2px 8px; border-radius: 3px; border: 1px solid {border}; \
-                             cursor: pointer; font-family: {ff}; font-size: {fs}px; \
+                             cursor: pointer; font-size: {fs}px; \
                              font-style: {fi}; text-decoration: {td}; background: {bg}; color: {fg};",
                             border = if active { tokens::COLOR_TAB_ACTIVE_INDICATOR } else { tokens::COLOR_BORDER_CHROME },
-                            ff = tokens::FONT_FAMILY_UI,
                             fs = tokens::FONT_SIZE_LABEL,
                             fi = if is_italic { "italic" } else { "normal" },
                             td = if is_italic { "none" } else { "underline" },
@@ -114,10 +113,9 @@ fn alignment_buttons(
                     key: "{val}",
                     style: format!(
                         "padding: 2px 6px; border-radius: 3px; border: 1px solid {border}; \
-                         cursor: pointer; font-family: {ff}; font-size: {fs}px; \
+                         cursor: pointer; font-size: {fs}px; \
                          background: {bg}; color: {fg};",
                         border = if is_a { tokens::COLOR_TAB_ACTIVE_INDICATOR } else { tokens::COLOR_BORDER_CHROME },
-                        ff = tokens::FONT_FAMILY_UI,
                         fs = tokens::FONT_SIZE_LABEL,
                         bg = if is_a { tokens::COLOR_SURFACE_3 } else { tokens::COLOR_SURFACE_2 },
                         fg = tokens::COLOR_TEXT_ON_CHROME,
@@ -205,13 +203,12 @@ pub(super) fn style_form(
                     style: format!(
                         "padding: {p}px {p2}px; border-radius: {r}px; \
                          border: 1px solid {border}; cursor: pointer; \
-                         font-family: {ff}; font-size: {fs}px; \
+                         font-size: {fs}px; \
                          background: {bg}; color: {fg};",
                         p = tokens::SPACE_1,
                         p2 = tokens::SPACE_3,
                         r = tokens::RADIUS_SM,
                         border = tokens::COLOR_TAB_ACTIVE_INDICATOR,
-                        ff = tokens::FONT_FAMILY_UI,
                         fs = tokens::FONT_SIZE_BODY,
                         bg = tokens::COLOR_SURFACE_3,
                         fg = tokens::COLOR_TEXT_ON_CHROME,

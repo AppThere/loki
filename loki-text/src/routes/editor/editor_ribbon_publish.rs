@@ -95,9 +95,8 @@ fn label_node(text: &str) -> Element {
     rsx! {
         span {
             style: format!(
-                "font-family: {ff}; font-size: {fs}px; color: inherit; \
+                "font-size: {fs}px; color: inherit; \
                  white-space: nowrap;",
-                ff = tokens::FONT_FAMILY_UI,
                 fs = tokens::FONT_SIZE_LABEL,
             ),
             "{text}"

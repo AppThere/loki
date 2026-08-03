@@ -46,9 +46,7 @@ use crate::tokens::colors::{
     COLOR_TEXT_ON_CHROME_SECONDARY,
 };
 use crate::tokens::spacing::{RADIUS_MD, RADIUS_SM, SPACE_2, SPACE_3, SPACE_4, TOUCH_MIN};
-use crate::tokens::typography::{
-    FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_SIZE_MD, FONT_WEIGHT_SEMIBOLD,
-};
+use crate::tokens::typography::{FONT_SIZE_BODY, FONT_SIZE_MD, FONT_WEIGHT_SEMIBOLD};
 
 /// The reference length drawn, in millimetres: the ISO/IEC 7810 ID-1 width that
 /// every bank, credit and ID card shares.
@@ -161,8 +159,7 @@ pub fn AtCalibrateDialog(props: AtCalibrateDialogProps) -> Element {
             style: format!(
                 "position: absolute; inset: 0; background: rgba(0,0,0,0.5); \
                  display: flex; align-items: center; justify-content: center; \
-                 z-index: 50; font-family: {family};",
-                family = FONT_FAMILY_UI,
+                 z-index: 50; ",
             ),
             onclick: move |_| props.on_cancel.call(()),
             div {

@@ -76,13 +76,12 @@ pub(super) fn left_column(
                                 "text-align: left; padding: {p}px {p2}px; \
                                  padding-left: {indent}px; {touch} \
                                  border-radius: 3px; border: 1px solid {border}; \
-                                 cursor: pointer; font-family: {ff}; \
+                                 cursor: pointer; \
                                  font-size: {fs}px; background: {bg}; color: {fg};",
                                 p = tokens::SPACE_1, p2 = tokens::SPACE_2,
                                 touch = posture.touch_min_css(),
                                 indent = tokens::SPACE_2 + depth as f32 * tokens::SPACE_3,
                                 border = if is_active { tokens::COLOR_TAB_ACTIVE_INDICATOR } else { tokens::COLOR_BORDER_CHROME },
-                                ff = tokens::FONT_FAMILY_UI,
                                 fs = tokens::FONT_SIZE_LABEL,
                                 bg = if is_active { tokens::COLOR_SURFACE_3 } else { tokens::COLOR_SURFACE_2 },
                                 fg = tokens::COLOR_TEXT_ON_CHROME,
@@ -102,13 +101,12 @@ pub(super) fn left_column(
                 style: format!(
                     "padding: {p}px {p2}px; border-radius: 3px; margin-top: {mt}px; {touch} \
                      border: 1px solid {border}; cursor: pointer; \
-                     font-family: {ff}; font-size: {fs}px; \
+                     font-size: {fs}px; \
                      background: {bg}; color: {fg};",
                     p = tokens::SPACE_1, p2 = tokens::SPACE_2,
                     mt = tokens::SPACE_2,
                     touch = posture.touch_min_css(),
                     border = tokens::COLOR_BORDER_DEFAULT,
-                    ff = tokens::FONT_FAMILY_UI,
                     fs = tokens::FONT_SIZE_LABEL,
                     bg = tokens::COLOR_SURFACE_2,
                     fg = tokens::COLOR_TEXT_ON_CHROME,
@@ -150,7 +148,7 @@ pub(super) fn section_switcher(mut inspect: Signal<bool>) -> Element {
     let seg = |active: bool| {
         format!(
             "flex: 1; min-height: {touch}px; border: 1px solid {border}; \
-             cursor: pointer; font-family: {ff}; font-size: {fs}px; \
+             cursor: pointer; font-size: {fs}px; \
              background: {bg}; color: {fg};",
             touch = tokens::TOUCH_MIN,
             border = if active {
@@ -158,7 +156,6 @@ pub(super) fn section_switcher(mut inspect: Signal<bool>) -> Element {
             } else {
                 tokens::COLOR_BORDER_CHROME
             },
-            ff = tokens::FONT_FAMILY_UI,
             fs = tokens::FONT_SIZE_LABEL,
             bg = if active {
                 tokens::COLOR_SURFACE_3

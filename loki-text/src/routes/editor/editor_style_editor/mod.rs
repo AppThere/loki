@@ -175,8 +175,7 @@ pub(super) fn style_editor_panel(
                 ),
                 span {
                     style: format!(
-                        "font-family: {ff}; font-size: {fs}px; font-weight: {fw}; color: {fg};",
-                        ff = tokens::FONT_FAMILY_UI,
+                        "font-size: {fs}px; font-weight: {fw}; color: {fg};",
                         fs = tokens::FONT_SIZE_LABEL,
                         fw = tokens::FONT_WEIGHT_MEDIUM,
                         fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,

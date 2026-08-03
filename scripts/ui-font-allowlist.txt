@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 AppThere Loki contributors
+#
+# Elements that deliberately do NOT use the UI face.
+#
+# The UI typeface is declared once, at the document root, by
+# `appthere_ui::ui_font_css()`; everything else inherits it. An entry here is a
+# statement that this element wants a *different* face and why — not a place to
+# park a `font-family` that should simply be deleted.
+#
+# Format: <path> | <family>, keyed on the family rather than a line number so an
+# unrelated edit to the file does not fail the gate. Removing the declaration
+# without removing its line here also fails, so the two cannot drift.
+
+# Macro source, shown as code. A proportional face makes indentation unreadable
+# and turns aligned columns into ragged ones.
+loki-text/src/routes/editor/editor_macro_editor.rs | {mono}
+loki-text/src/routes/editor/editor_macro_viewer.rs | {mono}
+
+# The spreadsheet's formula bar is code entry — same reason.
+loki-spreadsheet/src/routes/editor/editor_inner.rs | monospace
+
+# The italic serif row marker in the spreadsheet gutter: a deliberate visual
+# marker that must not read as a cell value, so it is set apart by face as well
+# as by colour and slant.
+loki-spreadsheet/src/routes/editor/editor_inner.rs | serif

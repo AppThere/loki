@@ -21,7 +21,7 @@ use crate::tokens::colors::{
     COLOR_TEXT_ON_CHROME_SECONDARY,
 };
 use crate::tokens::spacing::{RADIUS_SM, SPACE_2, SPACE_4, TOUCH_MIN};
-use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_WEIGHT_SEMIBOLD};
+use crate::tokens::typography::{FONT_SIZE_BODY, FONT_WEIGHT_SEMIBOLD};
 
 /// Maximum number of recent entries displayed in the list.
 const RECENT_VISIBLE_LIMIT: usize = 10;
@@ -64,10 +64,8 @@ pub(crate) fn AtRecentFileList(props: AtRecentFileListProps) -> Element {
     rsx! {
         div {
             style: format!(
-                "display: flex; flex-direction: column; gap: {gap}px; \
-                 font-family: {font};",
+                "display: flex; flex-direction: column; gap: {gap}px;",
                 gap  = SPACE_2,
-                font = FONT_FAMILY_UI,
             ),
 
             if props.documents.is_empty() {

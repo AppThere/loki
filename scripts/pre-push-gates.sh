@@ -41,6 +41,7 @@ GATES=(
     check-root-layer-band.py
     check-suppressions.py
     check-todo-format.py
+    check-ui-font.py
     check-unsafe-policy.py
 )
 

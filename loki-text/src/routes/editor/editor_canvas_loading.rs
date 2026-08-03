@@ -35,8 +35,7 @@ pub(super) fn loading_view() -> Element {
                 ),
                 span {
                     style: format!(
-                        "font-family: {ff}; font-size: {fs}px; color: {fg};",
-                        ff = tokens::FONT_FAMILY_UI,
+                        "font-size: {fs}px; color: {fg};",
                         fs = tokens::FONT_SIZE_BODY,
                         fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                     ),

@@ -30,9 +30,7 @@ use crate::tokens::colors::{
 };
 use crate::tokens::layout::TAB_BAR_HEIGHT;
 use crate::tokens::spacing::{RADIUS_SM, SPACE_2, SPACE_3, SPACE_4, SPACE_6, TOUCH_MIN};
-use crate::tokens::typography::{
-    FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_SEMIBOLD,
-};
+use crate::tokens::typography::{FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_SEMIBOLD};
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -117,10 +115,9 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
             style: format!(
                 "display: flex; flex-direction: column; \
                  height: {h}; overflow: hidden; \
-                 background: {bg}; font-family: {font}; color: {fg};",
+                 background: {bg}; color: {fg};",
                 h    = outer_height,
                 bg   = COLOR_SURFACE_BASE,
-                font = FONT_FAMILY_UI,
                 fg   = COLOR_TEXT_PRIMARY,
             ),
 

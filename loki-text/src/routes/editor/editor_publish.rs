@@ -82,8 +82,7 @@ pub(super) fn publish_panel(
             ),
             span {
                 style: format!(
-                    "font-family: {ff}; font-size: {fs}px; font-weight: {fw}; color: {fg};",
-                    ff = tokens::FONT_FAMILY_UI,
+                    "font-size: {fs}px; font-weight: {fw}; color: {fg};",
                     fs = tokens::FONT_SIZE_LABEL,
                     fw = tokens::FONT_WEIGHT_MEDIUM,
                     fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
@@ -220,12 +219,11 @@ fn level_button_style(selected: bool) -> String {
     };
     format!(
         "min-height: 28px; padding: 0 {p}px; background: {bg}; border: 1px solid {border}; \
-         border-radius: {r}px; font-family: {ff}; font-size: {fs}px; color: {fg}; cursor: pointer;",
+         border-radius: {r}px; font-size: {fs}px; color: {fg}; cursor: pointer;",
         p = tokens::SPACE_2,
         bg = bg,
         border = tokens::COLOR_BORDER_DEFAULT,
         r = tokens::RADIUS_SM,
-        ff = tokens::FONT_FAMILY_UI,
         fs = tokens::FONT_SIZE_LABEL,
         fg = fg,
     )
@@ -239,12 +237,11 @@ fn panel_action_style(primary: bool) -> String {
     };
     format!(
         "min-height: 28px; padding: 0 {p}px; background: {bg}; border: 1px solid {border}; \
-         border-radius: {r}px; font-family: {ff}; font-size: {fs}px; color: {fg}; cursor: pointer;",
+         border-radius: {r}px; font-size: {fs}px; color: {fg}; cursor: pointer;",
         p = tokens::SPACE_3,
         bg = bg,
         border = tokens::COLOR_BORDER_CHROME,
         r = tokens::RADIUS_SM,
-        ff = tokens::FONT_FAMILY_UI,
         fs = tokens::FONT_SIZE_LABEL,
         fg = fg,
     )

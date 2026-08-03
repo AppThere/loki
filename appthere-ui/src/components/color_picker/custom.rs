@@ -20,14 +20,13 @@ fn input_style(width_px: f32) -> String {
     format!(
         "width: {width_px}px; padding: {pv}px {ph}px; background: {bg}; \
          color: {fg}; border: 1px solid {border}; border-radius: {r}px; \
-         font-family: {ff}; font-size: {fs}px;",
+         font-size: {fs}px;",
         pv = tokens::SPACE_1,
         ph = tokens::SPACE_1,
         bg = tokens::COLOR_SURFACE_3,
         fg = tokens::COLOR_TEXT_ON_CHROME,
         border = tokens::COLOR_BORDER_CHROME,
         r = tokens::RADIUS_SM,
-        ff = tokens::FONT_FAMILY_UI,
         fs = tokens::FONT_SIZE_LABEL,
     )
 }
@@ -86,7 +85,7 @@ pub(super) fn CustomColorSection(
         format!(
             "padding: {pv}px {ph}px; background: {bg}; color: {fg}; cursor: pointer; \
              border: 1px solid {border}; border-radius: {r}px; \
-             font-family: {ff}; font-size: {fs}px;",
+             font-size: {fs}px;",
             pv = tokens::SPACE_1,
             ph = tokens::SPACE_1,
             bg = if active {
@@ -105,7 +104,6 @@ pub(super) fn CustomColorSection(
                 tokens::COLOR_BORDER_CHROME
             },
             r = tokens::RADIUS_SM,
-            ff = tokens::FONT_FAMILY_UI,
             fs = tokens::FONT_SIZE_XS,
         )
     };
@@ -198,7 +196,7 @@ pub(super) fn CustomColorSection(
                     style: format!(
                         "padding: {pv}px {ph}px; background: {bg}; color: {fg}; \
                          border: 1px solid {border}; border-radius: {r}px; cursor: pointer; \
-                         font-family: {ff}; font-size: {fs}px;",
+                         font-size: {fs}px;",
                         pv = tokens::SPACE_1,
                         ph = tokens::SPACE_3,
                         bg = tokens::COLOR_SURFACE_3,
@@ -209,7 +207,6 @@ pub(super) fn CustomColorSection(
                         },
                         border = tokens::COLOR_BORDER_CHROME,
                         r = tokens::RADIUS_SM,
-                        ff = tokens::FONT_FAMILY_UI,
                         fs = tokens::FONT_SIZE_LABEL,
                     ),
                     disabled: preview.is_none(),

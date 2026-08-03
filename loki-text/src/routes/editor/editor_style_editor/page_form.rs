@@ -162,10 +162,9 @@ fn preset_button(
         button {
             style: format!(
                 "padding: 2px 6px; border-radius: 3px; border: 1px solid {border}; \
-                 cursor: pointer; font-family: {ff}; font-size: {fs}px; \
+                 cursor: pointer; font-size: {fs}px; \
                  background: {bg}; color: {fg};",
                 border = if active { tokens::COLOR_TAB_ACTIVE_INDICATOR } else { tokens::COLOR_BORDER_CHROME },
-                ff = tokens::FONT_FAMILY_UI,
                 fs = tokens::FONT_SIZE_LABEL,
                 bg = if active { tokens::COLOR_SURFACE_3 } else { tokens::COLOR_SURFACE_2 },
                 fg = tokens::COLOR_TEXT_ON_CHROME,

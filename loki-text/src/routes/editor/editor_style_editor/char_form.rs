@@ -50,8 +50,7 @@ pub(super) fn char_style_form(
 
             div {
                 style: format!(
-                    "font-family: {ff}; font-size: {fs}px; color: {fg};",
-                    ff = tokens::FONT_FAMILY_UI,
+                    "font-size: {fs}px; color: {fg};",
                     fs = tokens::FONT_SIZE_XS,
                     fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                 ),
@@ -88,13 +87,12 @@ fn apply_button(
             button {
                 style: format!(
                     "padding: {p}px {p2}px; border-radius: {r}px; border: 1px solid {border}; \
-                     cursor: pointer; font-family: {ff}; font-size: {fs}px; \
+                     cursor: pointer; font-size: {fs}px; \
                      background: {bg}; color: {fg};",
                     p = tokens::SPACE_1,
                     p2 = tokens::SPACE_3,
                     r = tokens::RADIUS_SM,
                     border = tokens::COLOR_TAB_ACTIVE_INDICATOR,
-                    ff = tokens::FONT_FAMILY_UI,
                     fs = tokens::FONT_SIZE_BODY,
                     bg = tokens::COLOR_SURFACE_3,
                     fg = tokens::COLOR_TEXT_ON_CHROME,

@@ -136,7 +136,7 @@ pub fn AtColorPickerPanel(
         "display: flex; flex-direction: row; align-items: center; gap: {gap}px; \
          padding: {pv}px {ph}px; min-height: {touch}px; background: transparent; \
          border: 1px solid {border}; border-radius: {r}px; cursor: pointer; \
-         color: {fg}; font-family: {ff}; font-size: {fs}px;",
+         color: {fg}; font-size: {fs}px;",
         gap = tokens::SPACE_2,
         pv = tokens::SPACE_1,
         ph = tokens::SPACE_2,
@@ -144,7 +144,6 @@ pub fn AtColorPickerPanel(
         border = tokens::COLOR_BORDER_CHROME,
         r = tokens::RADIUS_SM,
         fg = tokens::COLOR_TEXT_ON_CHROME,
-        ff = tokens::FONT_FAMILY_UI,
         fs = tokens::FONT_SIZE_LABEL,
     );
 
@@ -155,13 +154,12 @@ pub fn AtColorPickerPanel(
                 "display: flex; flex-direction: column; gap: {gap}px; \
                  padding: {pv}px {ph}px; background: {bg}; \
                  border-top: 1px solid {border}; border-bottom: 1px solid {border}; \
-                 font-family: {ff}; color: {fg}; flex-shrink: 0;",
+                 color: {fg}; flex-shrink: 0;",
                 gap = tokens::SPACE_2,
                 pv = tokens::SPACE_2,
                 ph = tokens::SPACE_4,
                 bg = tokens::COLOR_SURFACE_2,
                 border = tokens::COLOR_BORDER_CHROME,
-                ff = tokens::FONT_FAMILY_UI,
                 fg = tokens::COLOR_TEXT_ON_CHROME,
             ),
 

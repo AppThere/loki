@@ -95,9 +95,41 @@ leftover `recent.json` state — the same leak class as r92's `window.json`, now
 cleared alongside it. The Recent ⋮ menu is therefore fixed by enumeration and
 inheritance, not photographed.
 
-**Follow-up, not done:** the ~25 per-component declarations are now redundant
-(all name the same token). Removing them is a one-fact-one-derivation cleanup
-with a wide diff and no behaviour change, so it is a separate pass.
+### The cleanup pass (r95)
+
+**91 declarations removed across 55 files.** The count in r94 said "~25" — that
+was `appthere-ui` alone; tree-wide it was 86 naming the UI token plus five that
+did not. All 86 were verified to bind to `FONT_FAMILY_UI` before anything was
+touched, mechanically rather than by reading.
+
+**Two of the five were not redundant — they were wrong.** The spreadsheet and
+presentation editor roots declared `system-ui, sans-serif`, overriding the
+bundled face for their entire editor surface. An inline declaration beats a
+sheet, so those two would have kept rendering in the wrong font after r94. They
+are removed, which is a behaviour change and the point of it. Four genuine
+exceptions stay: monospace for macro source and the formula bar, and the
+spreadsheet's italic-serif row marker.
+
+**Verified as a cleanup should be: ten screen sittings, every one 0 px.** Home,
+editor with ribbon and status bar, zoom menu open, keyboard walk, zoom applied,
+Actual Size, and the overflow menu at a narrow window — all pixel-identical to
+the pre-cleanup build under the same harness state. A first attempt at this
+comparison showed 68 218 px on the Home screen and was *not* a regression: the
+baseline predated the `recent.json` reset, so the two runs had different Recent
+lists. Re-baselined by stashing the cleanup, rebuilding, and re-shooting.
+
+**Locked by `scripts/check-ui-font.py`** (gate 15, and in CI): no component may
+declare `font-family`; the four exceptions live in `ui-font-allowlist.txt` keyed
+by *family* rather than line number, and an allowlist entry whose declaration
+has gone also fails. A deleted duplicate comes back, and two of the 91 had
+already drifted without review noticing — a `font-family` line looks like
+diligence.
+
+**Not established:** the two `system-ui` removals are in apps with no sitting
+scenario. Loki Calc's Home screen was photographed and renders in Atkinson, but
+its *editor* root — the line actually changed — was not reached; the `editor`
+scenario's Tab counts are calibrated for loki-text and do not open a document
+there.
 
 Not fixed, and not this branch's: the macro trust/signature stack, `loki-layout`'s
 squiggle clamp, and the gate-script bypasses.

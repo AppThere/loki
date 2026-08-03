@@ -116,8 +116,7 @@ pub(super) fn spell_menu_content(
                 ),
                 span {
                     style: format!(
-                        "font-family: {ff}; font-size: {size}px; color: {fg}; font-weight: 600;",
-                        ff = tokens::FONT_FAMILY_UI,
+                        "font-size: {size}px; color: {fg}; font-weight: 600;",
                         size = tokens::FONT_SIZE_LABEL,
                         fg = tokens::COLOR_TEXT_ON_CHROME,
                     ),
@@ -233,12 +232,11 @@ fn menu_item_style(hovered: bool) -> String {
     format!(
         "display: block; width: 100%; text-align: left; \
          padding: {p}px {p2}px; background: {bg}; border: none; \
-         border-radius: 4px; color: {fg}; font-family: {ff}; \
+         border-radius: 4px; color: {fg}; \
          font-size: {size}px; cursor: pointer;",
         p = tokens::SPACE_1,
         p2 = tokens::SPACE_2,
         fg = tokens::COLOR_TEXT_ON_CHROME,
-        ff = tokens::FONT_FAMILY_UI,
         size = tokens::FONT_SIZE_LABEL,
     )
 }
@@ -264,8 +262,7 @@ fn hover_setter(
 
 fn muted_text_style() -> String {
     format!(
-        "font-family: {ff}; font-size: {size}px; color: {fg}; padding: {p}px {p2}px;",
-        ff = tokens::FONT_FAMILY_UI,
+        "font-size: {size}px; color: {fg}; padding: {p}px {p2}px;",
         size = tokens::FONT_SIZE_LABEL,
         fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
         p = tokens::SPACE_1,

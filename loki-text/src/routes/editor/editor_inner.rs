@@ -550,9 +550,8 @@ pub(super) fn EditorInner(path: String) -> Element {
                 // context. The spelling menu left for `AtPopoverHost` in r63; the
                 // comment that named it as a child here outlived it by a commit.
                 "display: flex; flex-direction: column; flex: 1; position: relative; \
-                 overflow: hidden; background: {bg}; font-family: {ff};",
+                 overflow: hidden; background: {bg}; ",
                 bg = tokens::COLOR_SURFACE_BASE,
-                ff = tokens::FONT_FAMILY_UI,
             ),
 
             // ── Scrollable page canvas ────────────────────────────────────────

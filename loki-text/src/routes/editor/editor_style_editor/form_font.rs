@@ -87,9 +87,8 @@ pub(super) fn font_picker(
                             key: "{name}",
                             style: format!(
                                 "text-align: left; padding: 4px 6px; border-radius: 3px; \
-                                 border: none; cursor: pointer; font-family: {ff}; \
+                                 border: none; cursor: pointer; \
                                  font-size: {fs}px; background: {bg}; color: {fg};",
-                                ff = tokens::FONT_FAMILY_UI,
                                 fs = tokens::FONT_SIZE_LABEL,
                                 bg = if is_sel { tokens::COLOR_SURFACE_3 } else { "transparent" },
                                 fg = tokens::COLOR_TEXT_ON_CHROME,
@@ -130,10 +129,9 @@ pub(super) fn weight_selector(
                         key: "{w}",
                         style: format!(
                             "padding: 2px 6px; border-radius: 3px; border: 1px solid {border}; \
-                             cursor: pointer; font-family: {ff}; font-size: {fs}px; \
+                             cursor: pointer; font-size: {fs}px; \
                              font-weight: {fw}; background: {bg}; color: {fg};",
                             border = if is_w { tokens::COLOR_TAB_ACTIVE_INDICATOR } else { tokens::COLOR_BORDER_CHROME },
-                            ff = tokens::FONT_FAMILY_UI,
                             fs = tokens::FONT_SIZE_LABEL,
                             fw = w,
                             bg = if is_w { tokens::COLOR_SURFACE_3 } else { tokens::COLOR_SURFACE_2 },
@@ -157,8 +155,7 @@ pub(super) fn weight_selector(
 /// Shared label `<span>` style for the form's field captions.
 pub(super) fn label_style() -> String {
     format!(
-        "font-family: {ff}; font-size: {fs}px; color: {fg};",
-        ff = tokens::FONT_FAMILY_UI,
+        "font-size: {fs}px; color: {fg};",
         fs = tokens::FONT_SIZE_LABEL,
         fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
     )
@@ -168,13 +165,12 @@ pub(super) fn label_style() -> String {
 pub(super) fn input_style(extra: &str) -> String {
     format!(
         "{extra}; height: 24px; padding: 0 {p}px; background: {bg}; \
-         border: 1px solid {border}; border-radius: {r}px; font-family: {ff}; \
+         border: 1px solid {border}; border-radius: {r}px; \
          font-size: {fs}px; color: {fg}; box-sizing: border-box;",
         p = tokens::SPACE_2,
         bg = tokens::COLOR_SURFACE_2,
         border = tokens::COLOR_BORDER_DEFAULT,
         r = tokens::RADIUS_SM,
-        ff = tokens::FONT_FAMILY_UI,
         fs = tokens::FONT_SIZE_BODY,
         fg = tokens::COLOR_TEXT_ON_CHROME,
     )

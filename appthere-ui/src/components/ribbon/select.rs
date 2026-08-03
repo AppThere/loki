@@ -21,7 +21,7 @@ use crate::tokens::{
     },
     layout::{RIBBON_SELECT_WIDTH_CONDENSED_PX, RIBBON_SELECT_WIDTH_PX},
     spacing::{SPACE_2, TOUCH_MIN},
-    typography::{FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_REGULAR},
+    typography::{FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_REGULAR},
 };
 
 /// Props for [`AtRibbonSelect`].
@@ -80,7 +80,7 @@ pub fn AtRibbonSelect(props: AtRibbonSelectProps) -> Element {
                 "display: flex; flex-direction: row; align-items: center; gap: {gap}px; \
                  width: {w}px; min-height: {h}px; padding: 0 {p}px; \
                  background: {bg}; border: 1px solid {border}; border-radius: 4px; \
-                 font-family: {ff}; font-size: {fs}px; font-weight: {fw}; \
+                 font-size: {fs}px; font-weight: {fw}; \
                  color: {fg}; cursor: pointer; flex-shrink: 0;",
                 gap    = SPACE_2,
                 w      = width,
@@ -88,7 +88,6 @@ pub fn AtRibbonSelect(props: AtRibbonSelectProps) -> Element {
                 p      = SPACE_2,
                 bg     = bg_color,
                 border = border_color,
-                ff     = FONT_FAMILY_UI,
                 fs     = FONT_SIZE_BODY,
                 fw     = FONT_WEIGHT_REGULAR,
                 fg     = COLOR_TEXT_ON_CHROME,
@@ -99,8 +98,7 @@ pub fn AtRibbonSelect(props: AtRibbonSelectProps) -> Element {
             span {
                 style: format!(
                     "flex: 1; min-width: 0; overflow: hidden; \
-                     font-family: {ff}; font-size: {fs}px; color: {fg};",
-                    ff = FONT_FAMILY_UI,
+                     font-size: {fs}px; color: {fg};",
                     fs = FONT_SIZE_BODY,
                     fg = COLOR_TEXT_ON_CHROME,
                 ),

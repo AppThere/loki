@@ -935,7 +935,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         div {
             style: format!(
                 "display: flex; flex-direction: column; flex: 1; \
-                 overflow: hidden; background: {bg}; font-family: system-ui, sans-serif;",
+                 overflow: hidden; background: {bg};",
                 bg = tokens::COLOR_SURFACE_BASE,
             ),
 

@@ -30,13 +30,12 @@ pub(super) fn save_banner(mut save_message: Signal<Option<SaveStatus>>) -> Eleme
                 "display: flex; flex-direction: row; align-items: center; \
                  justify-content: space-between; padding: {p}px {p2}px; \
                  background: {bg}; border-top: 1px solid {border}; \
-                 font-family: {ff}; font-size: {size}px; \
+                 font-size: {size}px; \
                  color: {fg}; flex-shrink: 0;",
                 p = tokens::SPACE_2,
                 p2 = tokens::SPACE_4,
                 bg = tokens::COLOR_SURFACE_2,
                 border = tokens::COLOR_BORDER_CHROME,
-                ff = tokens::FONT_FAMILY_UI,
                 size = tokens::FONT_SIZE_LABEL,
                 fg = tokens::COLOR_TEXT_ON_CHROME,
             ),

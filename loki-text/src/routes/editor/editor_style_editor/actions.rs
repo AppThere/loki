@@ -38,13 +38,12 @@ pub(super) fn delete_button(
             style: format!(
                 "padding: {p}px {p2}px; border-radius: {r}px; \
                  border: 1px solid {border}; cursor: pointer; \
-                 font-family: {ff}; font-size: {fs}px; \
+                 font-size: {fs}px; \
                  background: transparent; color: {fg};",
                 p = tokens::SPACE_1,
                 p2 = tokens::SPACE_3,
                 r = tokens::RADIUS_SM,
                 border = tokens::COLOR_BORDER_CHROME,
-                ff = tokens::FONT_FAMILY_UI,
                 fs = tokens::FONT_SIZE_BODY,
                 fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
             ),

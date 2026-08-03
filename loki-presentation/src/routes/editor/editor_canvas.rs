@@ -111,7 +111,7 @@ pub(super) fn SlideCanvas(
                     style: format!(
                         "font-size: {fs}px; font-weight: bold; background: transparent; \
                          border: 1px dashed rgba(128,128,128,0.4); color: inherit; \
-                         width: 100%; outline: none; font-family: inherit; padding: 2px;",
+                         width: 100%; outline: none; padding: 2px;",
                         fs = z(32.0),
                     ),
                     value: "{t.text}",
@@ -130,7 +130,7 @@ pub(super) fn SlideCanvas(
                     style: format!(
                         "font-size: {fs}px; font-style: italic; background: transparent; \
                          border: 1px dashed rgba(128,128,128,0.4); color: inherit; \
-                         width: 100%; outline: none; font-family: inherit; padding: 2px; opacity: 0.85;",
+                         width: 100%; outline: none; padding: 2px; opacity: 0.85;",
                         fs = z(16.0),
                     ),
                     value: "{s.text}",
@@ -159,7 +159,7 @@ pub(super) fn SlideCanvas(
                             style: format!(
                                 "background: transparent; border: 1px dashed rgba(128,128,128,0.4); \
                                  color: inherit; width: 92%; outline: none; font-size: {fs}px; \
-                                 font-family: inherit; padding: 2px;",
+                                 padding: 2px;",
                                 fs = z(16.0),
                             ),
                             value: "{line.text}",

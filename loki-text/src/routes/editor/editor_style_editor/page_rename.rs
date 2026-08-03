@@ -41,10 +41,9 @@ pub(super) fn PageRenameField(name: String, on_rename: EventHandler<String>) -> 
             button {
                 style: format!(
                     "padding: 2px 8px; border-radius: 3px; border: 1px solid {border}; \
-                     cursor: pointer; font-family: {ff}; font-size: {fs}px; \
+                     cursor: pointer; font-size: {fs}px; \
                      background: {bg}; color: {fg};",
                     border = tokens::COLOR_TAB_ACTIVE_INDICATOR,
-                    ff = tokens::FONT_FAMILY_UI,
                     fs = tokens::FONT_SIZE_LABEL,
                     bg = tokens::COLOR_SURFACE_3,
                     fg = tokens::COLOR_TEXT_ON_CHROME,

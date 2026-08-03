@@ -22,7 +22,7 @@ use crate::tokens::colors::{
     COLOR_CONTEXTUAL_TAB, COLOR_SURFACE_1, COLOR_TEXT_ON_CHROME, COLOR_TEXT_ON_CHROME_SECONDARY,
 };
 use crate::tokens::spacing::{RADIUS_SM, SPACE_1, SPACE_2, SPACE_3, TOUCH_MIN};
-use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_WEIGHT_SEMIBOLD};
+use crate::tokens::typography::{FONT_SIZE_BODY, FONT_WEIGHT_SEMIBOLD};
 
 /// Props for [`AtInfobar`]. All display strings are props (i18n-agnostic).
 #[derive(Props, Clone, PartialEq)]
@@ -61,14 +61,13 @@ pub struct AtInfobarProps {
 pub fn AtInfobar(props: AtInfobarProps) -> Element {
     let button_style = format!(
         "min-height: {th}px; box-sizing: border-box; padding: {py}px {px}px; \
-         border-radius: {r}px; font-family: {font}; font-size: {fs}px; \
+         border-radius: {r}px; font-size: {fs}px; \
          font-weight: {fw}; background: transparent; border: 1px solid {accent}; \
          color: {accent}; cursor: pointer; display: flex; align-items: center;",
         th = TOUCH_MIN,
         py = SPACE_1,
         px = SPACE_3,
         r = RADIUS_SM,
-        font = FONT_FAMILY_UI,
         fs = FONT_SIZE_BODY,
         fw = FONT_WEIGHT_SEMIBOLD,
         accent = COLOR_CONTEXTUAL_TAB,
@@ -82,13 +81,12 @@ pub fn AtInfobar(props: AtInfobarProps) -> Element {
                  box-sizing: border-box; padding: {py}px {px}px; \
                  background: {bg}; border-bottom: 1px solid {accent}; \
                  border-left: 3px solid {accent}; \
-                 font-family: {font}; font-size: {fs}px; color: {fg};",
+                 font-size: {fs}px; color: {fg};",
                 gap = SPACE_2,
                 py = SPACE_2,
                 px = SPACE_3,
                 bg = COLOR_SURFACE_1,
                 accent = COLOR_CONTEXTUAL_TAB,
-                font = FONT_FAMILY_UI,
                 fs = FONT_SIZE_BODY,
                 fg = COLOR_TEXT_ON_CHROME,
             ),
