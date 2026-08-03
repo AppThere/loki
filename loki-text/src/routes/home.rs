@@ -15,8 +15,7 @@ use loki_file_access::{FileAccessToken, FilePicker, PickOptions, PickerError, Sa
 use loki_i18n::fl;
 
 use super::home_util::{
-    TemplateBrowserHost, close_tab_for_path, is_template_name, push_new_tab, push_or_switch_tab,
-    suggested_copy_name,
+    close_tab_for_path, is_template_name, push_new_tab, push_or_switch_tab, suggested_copy_name,
 };
 use crate::new_document::{new_blank_tab, new_import_tab, new_template_tab};
 use crate::recent_documents::RecentDocuments;
@@ -25,6 +24,8 @@ use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
 use crate::utils::display_title_from_path;
 
+#[path = "home_pickers.rs"]
+mod pickers;
 #[path = "home_templates.rs"]
 mod templates;
 use templates::{MIME_TYPES, make_templates};
@@ -47,9 +48,6 @@ pub fn Home() -> Element {
     // Holds the last file-picker error message, if any.
     let pick_error: Signal<Option<String>> = use_signal(|| None);
 
-    // True while the template-browser overlay is open (Browse… card).
-    let mut browsing_templates = use_signal(|| false);
-
     // ── on_template_select ── index 0 = Blank, 1..=5 = bundled templates ─────
     let on_template_select = move |idx: usize| {
         let tab = match idx {
@@ -63,6 +61,13 @@ pub fn Home() -> Element {
         };
         let path = push_new_tab(tabs, active_tab, tab);
         navigator.push(Route::Editor { path });
+    };
+
+    // ── on_browse_templates ───────────────────────────────────────────────────
+    // Opens the system file dialog filtered to template types; the flow lives
+    // in `home_pickers` to keep this file under the 300-line ceiling.
+    let on_browse_templates = move |_| {
+        pickers::browse_templates(navigator, pick_error, tabs, active_tab);
     };
 
     // ── on_open_file ──────────────────────────────────────────────────────────
@@ -263,7 +268,7 @@ pub fn Home() -> Element {
             recent_open_copy_label: fl!("home-recent-menu-open-copy"),
                 pick_error:             pick_error,
                 on_template_select:     on_template_select,
-                on_browse_templates:    move |_| browsing_templates.set(true),
+                on_browse_templates:    on_browse_templates,
                 on_recent_open:         on_recent_open,
                 on_open_file:           on_open_file,
                 on_recent_remove:       on_recent_remove,
@@ -271,7 +276,6 @@ pub fn Home() -> Element {
                 on_recent_open_copy:    on_recent_open_copy,
             }
 
-            TemplateBrowserHost { browsing: browsing_templates, on_select: on_template_select }
 
             // ── Delete confirmation (ADR-0013 boundary mount) ─────────────────
             {pending_delete.read().clone().map(|(path, title)| rsx! {

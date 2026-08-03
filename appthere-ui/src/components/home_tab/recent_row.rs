@@ -29,6 +29,16 @@ use crate::tokens::colors::{
 use crate::tokens::spacing::{RADIUS_MD, RADIUS_SM, SPACE_1, SPACE_3, SPACE_4, TOUCH_MIN};
 use crate::tokens::typography::{FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_SEMIBOLD};
 
+/// Keeps a long file name inside the row instead of widening it.
+///
+/// `overflow: hidden` is the load-bearing half and is the one that stops the
+/// list panning sideways; it works whether or not the other two land.
+// COMPAT(dioxus-native): `white-space: nowrap` and `text-overflow: ellipsis`
+// are both on the unconfirmed list for Blitz. They are additive here — without
+// them the name wraps or is cut without an ellipsis, which is untidy but not
+// the horizontal-scroll defect this exists to fix.
+const TEXT_CLIP: &str = "overflow: hidden; white-space: nowrap; text-overflow: ellipsis;";
+
 /// Props for [`RecentRow`]. The parent owns the open-menu state; the row
 /// reports toggle/action clicks by index.
 #[derive(Props, Clone, PartialEq)]
@@ -91,7 +101,8 @@ pub(super) fn RecentRow(props: RecentRowProps) -> Element {
                         "background: transparent; border: none; \
                          border-radius: {r}px; \
                          padding: {pv}px {ph}px; min-height: {touch}px; \
-                         flex: 1; display: flex; flex-direction: column; \
+                         flex: 1; min-width: 0; overflow: hidden; \
+                         display: flex; flex-direction: column; \
                          gap: {gap}px; cursor: pointer; \
                          text-align: left; box-sizing: border-box;",
                         r     = RADIUS_MD,
@@ -103,18 +114,21 @@ pub(super) fn RecentRow(props: RecentRowProps) -> Element {
                     onclick: move |_| { props.on_select.call(idx); },
                     span {
                         style: format!(
-                            "font-size: {size}px; font-weight: {weight}; color: {fg};",
+                            "font-size: {size}px; font-weight: {weight}; \
+                             color: {fg}; {clip}",
                             size   = FONT_SIZE_BODY,
                             weight = FONT_WEIGHT_SEMIBOLD,
                             fg     = COLOR_TEXT_PRIMARY,
+                            clip   = TEXT_CLIP,
                         ),
                         "{props.title}"
                     }
                     span {
                         style: format!(
-                            "font-size: {size}px; color: {fg};",
+                            "font-size: {size}px; color: {fg}; {clip}",
                             size = FONT_SIZE_LABEL,
                             fg   = COLOR_TEXT_SECONDARY,
+                            clip = TEXT_CLIP,
                         ),
                         "{props.modified}"
                     }

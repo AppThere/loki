@@ -19,6 +19,19 @@ pub(super) const MIME_TYPES: &[&str] = &[
     "application/vnd.oasis.opendocument.text-template",                        // .ott
 ];
 
+/// MIME types the **Browse templates** picker accepts — the template subset of
+/// [`MIME_TYPES`], so that dialog offers only files this app would open as a
+/// detached copy.
+///
+/// `.dotm` rides along with `.dotx`: it is the same template, macro-enabled,
+/// and `is_template_name` already treats the two identically — a filter that
+/// omitted it would hide files the open path handles perfectly well.
+pub(super) const TEMPLATE_MIME_TYPES: &[&str] = &[
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.template", // .dotx
+    "application/vnd.ms-word.template.macroEnabled.12",                        // .dotm
+    "application/vnd.oasis.opendocument.text-template",                        // .ott
+];
+
 // ── Template data ─────────────────────────────────────────────────────────────
 
 // Gallery card 0 is the plain Blank document; cards 1..=5 are the bundled
@@ -58,3 +71,7 @@ pub(super) fn make_templates() -> Vec<BuiltinTemplate> {
         },
     ]
 }
+
+#[cfg(test)]
+#[path = "home_templates_tests.rs"]
+mod tests;

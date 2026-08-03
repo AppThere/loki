@@ -35,6 +35,8 @@ home-recent-menu-open-copy = Open as copy
 
 # File picker filter label (not shown to user on all platforms)
 home-filter-label = Documents
+# File-dialog filter for the Browse templates card (DOTX / DOTM / OTT)
+home-template-filter-label = Document templates
 
 # Spreadsheet Templates & Filters
 home-template-blank-spreadsheet = Blank Spreadsheet
