@@ -81,6 +81,20 @@ pub struct AtZoomControlProps {
     pub on_actual_size: EventHandler<()>,
 }
 
+/// The width this control occupies in the status bar (CSS px).
+///
+/// Three [`TOUCH_MIN`] controls with [`SPACE_1`] between them — the same numbers
+/// the rsx below applies, stated once so the status bar's fit engine
+/// (Spec 08 T7.1) can charge for it without a second, drifting copy.
+///
+/// It exists because the first version of that engine declared this control by
+/// its *readout text*, as if it were a label. That under-declared it by roughly
+/// 80 px, the bar overflowed its window at 420 px instead of dropping an item,
+/// and the overflow trigger was pushed off the right edge — the exact
+/// under-estimating failure the engine's own docs warn about, committed against
+/// the one control that can never drop to make room.
+pub(crate) const ZOOM_CONTROL_WIDTH_PX: f32 = 3.0 * TOUCH_MIN + 2.0 * SPACE_1;
+
 /// Zoom out / readout / zoom in, with a preset menu on the readout.
 ///
 /// # Touch target

@@ -18,6 +18,15 @@ pub struct AtStatusBarProps {
     /// Pre-formatted word count label, e.g. `"1,847 words"`.
     pub word_count_label: String,
 
+    /// Accessible name for the overflow ("More") trigger — the translated
+    /// string from the caller (Spec 08 T7.1).
+    ///
+    /// Defaulted so an app that has not translated one yet still compiles and
+    /// still gets a labelled control; the default is English, which is a
+    /// deliberate stopgap rather than a design — `TODO(status-overflow-i18n)`.
+    #[props(default = String::from("More status items"))]
+    pub overflow_aria_label: String,
+
     /// Active language label, e.g. `"English (US)"`.
     pub language_label: String,
 

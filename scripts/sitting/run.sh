@@ -772,5 +772,36 @@ nestedscroll)
   echo "  inner_in    : $(band "$II" n7-h-rest n8-h-hwheel)   (>0 = the inner took it)"
   echo "  outer_above : $(band "$OA" n7-h-rest n8-h-hwheel)   (want 0 — the outer did NOT move)"
   ;;
+
+statusoverflow)
+  # ── T7.1: does the status bar drop items by measured width, keep the page
+  # indicator and zoom, and offer the rest behind a "More" popover? ──
+  #
+  # Two runs at two widths, because the claim is comparative: the same document
+  # in a wide window and a narrow one must produce different bars. One width
+  # alone would photograph a bar and say nothing about *why* it looks that way.
+  #
+  # The reading is the bottom strip. `STATUS` crops the bar's full width at the
+  # window bottom; `STATUS_L` and `STATUS_R` are its two halves, so "the left
+  # end still shows a page label" is separable from "the right end changed".
+  start_x || exit 1
+  WINSIZE="${WIDE:-1200x760}" start_app env LOKI_DEVICE_PROFILE=pointer=fine || exit 1
+  for _ in $(seq 1 7); do key Tab; done
+  key Return
+  sleep "${OPEN_SETTLE:-12}"
+  shot s0-wide
+  echo "  wide window:   $(xdotool getactivewindow getwindowgeometry 2>/dev/null | tr '\n' ' ')"
+
+  stop; sleep 1
+  start_x || exit 1
+  WINSIZE="${NARROW:-420x760}" start_app env LOKI_DEVICE_PROFILE=pointer=fine || exit 1
+  for _ in $(seq 1 7); do key Tab; done
+  key Return
+  sleep "${OPEN_SETTLE:-12}"
+  shot s1-narrow
+  echo "  narrow window: $(xdotool getactivewindow getwindowgeometry 2>/dev/null | tr '\n' ' ')"
+  echo "  Read the two shots: s0-wide has the full bar; s1-narrow should show the"
+  echo "  page indicator, the zoom control, and a … trigger for the rest."
+  ;;
 esac
 echo "DONE: $1"

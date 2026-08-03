@@ -8,7 +8,7 @@
 use dioxus::prelude::*;
 
 use crate::components::zoom_control::AtZoomControl;
-use crate::responsive::use_breakpoint;
+use crate::responsive::use_status_fit;
 use crate::theme::use_theme;
 use crate::tokens::layout::STATUS_BAR_HEIGHT;
 use crate::tokens::spacing::{RADIUS_SM, SPACE_1, SPACE_2, SPACE_4, TOUCH_MIN};
@@ -16,6 +16,10 @@ use crate::tokens::typography::{FONT_SIZE_XS, FONT_WEIGHT_MEDIUM};
 
 #[path = "status_bar_chips.rs"]
 mod chips;
+#[path = "status_bar_items.rs"]
+mod items;
+#[path = "status_bar_overflow.rs"]
+mod overflow;
 
 // ── AtStatusBar ───────────────────────────────────────────────────────────────
 
@@ -47,11 +51,22 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
     } else {
         palette.surface_3
     };
-    let show_view_toggle = !props.view_mode_label.is_empty();
-    let show_notice = !props.notice_label.is_empty();
-    // Compact (phone-width): drop the secondary stats (word count, language)
-    // so the essential page / notice / view-mode / zoom items don't crowd.
-    let compact = use_breakpoint().is_compact();
+    // T7.1: which items fit is a **width** decision, resolved from the measured
+    // viewport against each item's declared width — not the breakpoint tier this
+    // used to consult, which was wrong in both directions (a Compact window with
+    // three short labels dropped items that fitted; an Expanded one with a long
+    // language name overflowed without dropping any). The page indicator and the
+    // zoom control are the retention set and never drop.
+    let specs = items::specs(&props);
+    let (fit_items, slots) = items::build_items(&specs);
+    // The bar's own horizontal padding is width no item can use; see
+    // `use_status_fit`. `2.0 * SPACE_4` is the same value the container's
+    // `padding: 0 {pad}px` applies below — the same statement about the same box.
+    let fit = use_status_fit(fit_items, 2.0 * SPACE_4);
+    let shown = |slot: items::StatusSlot| items::is_shown(&slots, &fit.shown, slot);
+    let rows = items::overflow_rows(&props, &items::dropped_slots(&slots, &fit.shown));
+    let show_view_toggle = shown(items::StatusSlot::ViewMode);
+    let show_notice = shown(items::StatusSlot::Notice);
 
     rsx! {
         div {
@@ -73,7 +88,7 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
 
             // Page label (e.g. "Page 1 of 4"). Hidden when empty (e.g. the
             // reflow view, which has no fixed pages).
-            if !props.page_label.is_empty() {
+            if shown(items::StatusSlot::Page) {
                 span {
                     style: format!(
                         "font-size: {size}px; color: {fg};",
@@ -86,7 +101,7 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
 
             // Word count label (e.g. "1,847 words"). Hidden when empty or at
             // Compact width (secondary stat).
-            if !props.word_count_label.is_empty() && !compact {
+            if shown(items::StatusSlot::WordCount) {
                 span {
                     style: format!(
                         "font-size: {size}px; color: {fg};",
@@ -111,7 +126,7 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                     props.on_notice_click,
                 )}
             }
-            if !props.status_note_label.is_empty() {
+            if shown(items::StatusSlot::StatusNote) {
                 {chips::status_note_chip(
                     props.status_note_label.clone(),
                     &palette,
@@ -125,8 +140,8 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
 
             // ── Right: language, zoom, collaborators ──────────────────────────
 
-            // Language label (e.g. "English (US)"). Hidden at Compact width.
-            if !compact {
+            // Language label (e.g. "English (US)"). Dropped by measured width.
+            if shown(items::StatusSlot::Language) {
                 span {
                     style: format!(
                         "font-size: {size}px; color: {fg};",
@@ -172,8 +187,8 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                 on_actual_size: props.on_zoom_actual_size,
             }
 
-            // Collaborator badge (hidden when count is 0)
-            if props.collaborator_count > 0 {
+            // Collaborator badge (hidden when the count is 0 or it was dropped)
+            if shown(items::StatusSlot::Collaborators) {
                 span {
                     style: format!(
                         "font-size: {size}px; color: {fg};",
@@ -181,6 +196,16 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                         fg   = palette.text_accent,
                     ),
                     "{props.collaborator_label}"
+                }
+            }
+
+            // The dropped items, behind a "More" popover (T7.1). Rendered only
+            // when something was dropped — a trigger opening an empty menu is a
+            // control that does nothing.
+            if !rows.is_empty() {
+                overflow::AtStatusOverflow {
+                    rows,
+                    aria_label: props.overflow_aria_label.clone(),
                 }
             }
         }

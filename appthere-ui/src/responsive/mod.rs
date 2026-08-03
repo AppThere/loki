@@ -31,6 +31,7 @@ mod breakpoint;
 mod page_fit;
 mod ribbon_collapse;
 mod size_sensor;
+mod status_priority;
 mod viewport;
 mod width_sensor;
 
@@ -44,6 +45,7 @@ pub use size_sensor::{
     use_provide_window_size, use_window_size, window_size_signal, AtWindowSizeContext,
     AtWindowSizeSensor,
 };
+pub use status_priority::{estimate_label_px, resolve_status_fit, StatusFit, StatusItem};
 pub use viewport::{Viewport, DEFAULT_DPI};
 pub use width_sensor::AtViewportWidthSensor;
 
@@ -107,6 +109,51 @@ pub fn use_breakpoint() -> Breakpoint {
         Some(ctx) => *ctx.breakpoint.read(),
         None => Breakpoint::Expanded,
     }
+}
+
+/// Resolves which status-bar items fit the measured viewport width (Spec 08
+/// T7.1), hysteretically — the previously resolved drop count is retained
+/// across resizes so a drag across a threshold does not thrash.
+///
+/// **Resilient**, like [`use_ribbon_cascade`]: with no responsive context the
+/// width is treated as unbounded, so every item stays in the bar. That is the
+/// pre-T7.1 layout, which is the right thing for an app that has not wired the
+/// context — and it is also why "not yet measured" must not read as "no room":
+/// the first frame would otherwise hide the bar and then fill it.
+///
+/// The hysteresis state lives in a hook-local signal, so call this once per bar.
+#[must_use]
+pub fn use_status_fit(items: Vec<StatusItem>, reserved_px: f32) -> StatusFit {
+    let ctx = try_consume_context::<AtResponsiveContext>();
+    // `reserved_px` is what the container spends before any item — its own
+    // padding. Subtracted from the measured viewport rather than folded into an
+    // item, because it belongs to none of them. Leaving it out is what put the
+    // resolved bar about 32 px over its window at 420 px: the overflow trigger
+    // rendered, at the far right, past the edge, where it could not be seen.
+    //
+    // Saturating at zero: a viewport narrower than the chrome is the floor case,
+    // and a negative available width would read as "unmeasured" and freeze the
+    // fit at whatever it last was.
+    let read_width = move || {
+        ctx.map_or(f32::MAX, |c| {
+            (c.viewport.read().inner_width_px - reserved_px).max(0.0)
+        })
+    };
+    let mut dropped = use_signal(|| 0usize);
+
+    {
+        let items = items.clone();
+        use_effect(move || {
+            let prev = *dropped.peek();
+            let next = resolve_status_fit(&items, read_width(), prev).dropped;
+            if next != prev {
+                dropped.set(next);
+            }
+        });
+    }
+
+    let settled = *dropped.read();
+    resolve_status_fit(&items, read_width(), settled)
 }
 
 /// Resolves the width-driven ribbon collapse cascade (Spec 04 M3 §7) for the

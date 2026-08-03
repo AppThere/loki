@@ -33,6 +33,9 @@ scripts/sitting/run.sh save           # what the ribbon Save does (see r92)
 # Probe P1 (Spec 08 T7.0) — nested scroll input ROUTING. Different binary:
 cargo build -p appthere-ui --example nested_scroll_probe
 scripts/sitting/run.sh nestedscroll   # five readings; see the scenario's comments
+
+# T7.1 status-bar priority drop: same document, two window widths
+NARROW=420x760 scripts/sitting/run.sh statusoverflow
 ```
 
 **Not every scenario drives `loki-text`.** `nestedscroll` runs a scratch scene

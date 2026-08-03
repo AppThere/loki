@@ -164,6 +164,70 @@ swapping left/right on even pages, with a Loro round-trip and tests. What did
 *not* exist was any ODF spelling of it.
 
 
+
+### T7.1 — status-bar priority order (partial, r106)
+
+**Done: the drop itself.** `responsive::status_priority` is a pure, hysteretic
+priority engine — the status-bar analogue of `ribbon_collapse`, and deliberately
+the same shape, including Decision D3 (*collapse is width-driven, not
+tier-driven*). The bar used to drop the word count and the language label on
+`Breakpoint::is_compact`, which is wrong in both directions: a Compact window
+with three short labels dropped items that fitted, and an Expanded one with a
+long language name overflowed without dropping any.
+
+**Retention is structural rather than a rule.** Items in the retention set — the
+page indicator and the zoom control — are not in the drop order at all, so no
+loop running one step too far can reach them; `dropped` is bounded by the
+droppable count by construction. If they alone exceed the width, `scroll` says
+so and nothing hides them to make room.
+
+**Measured on screen, two widths, same document:** at 700 px the bar shows word
+count, notice, language, view mode and zoom; at 420 px word count, language and
+view mode are gone. That is the engine dropping by width, photographed
+(`scripts/sitting/run.sh statusoverflow`).
+
+#### Two width-accounting defects, both found on screen
+
+1. **The zoom control was declared by its readout text.** It is three
+   `TOUCH_MIN` controls (~140 px); declaring it as the string `"1000%"` came to
+   about 60. Under-declaring is the direction that *overflows* rather than drops
+   — and this was the worst case of it, because the zoom is retained and cannot
+   drop to absorb its own error. Photographed: at 420 px the zoom's `+` button
+   was clipped by the window edge. Fixed by `ZOOM_CONTROL_WIDTH_PX`, declared
+   next to the rsx that produces it, and pinned by
+   `the_zoom_control_declares_its_three_controls_not_its_readout`.
+
+2. **The bar's own padding was charged to nobody.** `padding: 0 SPACE_4` is
+   32 px no item can use, and the engine was resolving against the full viewport
+   width. `use_status_fit` now takes `reserved_px`.
+
+Both are the same error as the module's own docs warn about, committed anyway —
+which is the argument for the screen sitting rather than against the docs.
+
+#### Not established: the overflow trigger has never been seen
+
+The `…` trigger does not appear at 420 px, in a bar where three items
+demonstrably dropped. It is not known whether it fails to render or renders past
+the right edge; the second is likely, because the remaining declared-vs-painted
+gap is exactly the kind the chips contribute (border, warning icon, pill
+padding), and the trigger is the last item in the strip so it absorbs the whole
+accumulated error.
+
+**What would settle it:** either a `get_client_rect` on the trigger — the
+popover anchor already does this, so the measurement is available where the
+declaration is not — or a scenario that clicks where the trigger should be and
+checks whether a menu opens. The second is cheaper and is the next step.
+
+**The deeper question this raises for T7.3.** Declared widths are exact for the
+ribbon because its groups are icon buttons of known size. Status-bar items are
+variable text in bordered chips, and no character-advance estimate will be
+exact. The engine is right to be pure and testable; what it needs is measured
+item widths fed in, not better guesses. `TODO(status-measured-widths)`.
+
+**Also not done:** the compact posture's taller status bar (the honest fix for
+the 24 px bar's WCAG 2.5.5 shortfall, which `zoom_control`'s docs name as T7.1's
+job) is untouched.
+
 ### T7.0 / Probe P1 — nested scroll input routing (done, r105)
 
 **Answer: yes, for the wheel.** A nested scroll container consumes a gesture
@@ -796,7 +860,7 @@ kills the default-bytes test.
 | Task | Work |
 | --- | --- |
 | **T7.0** | **Done (r105) — P1 answers yes for the wheel.** Nested containers consume within their bounds and bubble the remainder, and a horizontal-only inner does **not** swallow a vertical gesture. T7.3 proceeds; T7.4's fallback is not needed on this evidence. Drag is **not** measured — see below. |
-| T7.1 | Status bar priority order, dropping items by **measured width**. Minimum retention: page indicator and zoom, rest behind a `Popover`. The ribbon overflow menu is this task's future consumer |
+| T7.1 | **Partial (r106).** The priority engine, the retention set and the width-driven drop are done and on screen; the overflow `Popover`'s trigger has **not** been observed rendering — see below. |
 | T7.2 | Reflow typography decoupled from page metrics. Measure is a user setting defaulting to ~72–80 characters at body size, resolved against live font metrics (D-05) |
 | T7.3 | Oversized elements shrink to fit the content column, aspect preserved, per-element expand into its own horizontal scroll container. **The document never scrolls horizontally** |
 | T7.4 | If P1 says nested containers do not route, fall back to a modal full-screen viewer and record the deviation. Never ship a version where the document scrolls sideways |
