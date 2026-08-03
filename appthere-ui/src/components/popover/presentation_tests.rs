@@ -231,3 +231,86 @@ fn req_with_room_below(room: f32, min_anchored: f32) -> PlacementRequest {
     req.min_anchored_height = min_anchored;
     req
 }
+
+/// **Growing a floored overlay must not push it over its own anchor.**
+///
+/// `place` guarantees the overlay and the anchor never overlap, and
+/// `geometry_place` calls that invariant "asserted rather than argued". `present`
+/// then grows a too-short overlay to the touch-target floor — and grew it
+/// *downward* regardless of the side it was placed on. For `Side::Above` the
+/// bottom edge is what sits against the anchor, so downward growth is growth
+/// straight across the trigger.
+///
+/// The existing `an_overlay_never_covers_its_own_anchor` asserts against `place`,
+/// and every consumer goes through `present` — so the invariant was checked on
+/// the one path the defect could not reach.
+#[test]
+fn growing_to_the_floor_never_covers_the_anchor() {
+    // A ribbon "More" button near the bottom of a short window: I-28's own menu
+    // on a landscape phone, and the zoom menu's geometry too.
+    let anchor = Rect {
+        x: 300.0,
+        y: 60.0,
+        width: 44.0,
+        height: 44.0,
+    };
+    let vp = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 400.0,
+        height: 150.0,
+    };
+    let req = PlacementRequest {
+        anchor,
+        width: 200.0,
+        height: 300.0,
+        viewport: vp,
+        preferred: Side::Above,
+        align: Align::End,
+        gap: 4.0,
+        margin: 8.0,
+        min_anchored_height: MIN_ANCHORED_MENU_PX,
+    };
+    let p = present(req);
+    assert!(
+        p.rect.bottom() <= anchor.y,
+        "an Above overlay {:?} grew over its anchor {anchor:?}",
+        p.rect,
+    );
+}
+
+/// **And the Below case still grows downward**, so the fix is a side-aware
+/// choice rather than a flipped constant.
+#[test]
+fn a_below_overlay_grows_downward_and_still_clears_the_anchor() {
+    let anchor = Rect {
+        x: 100.0,
+        y: 10.0,
+        width: 44.0,
+        height: 44.0,
+    };
+    let vp = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: 400.0,
+        height: 400.0,
+    };
+    let req = PlacementRequest {
+        anchor,
+        width: 200.0,
+        height: 10.0, // below the floor, so `present` grows it
+        viewport: vp,
+        preferred: Side::Below,
+        align: Align::Start,
+        gap: 4.0,
+        margin: 8.0,
+        min_anchored_height: MIN_ANCHORED_MENU_PX,
+    };
+    let p = present(req);
+    assert!(
+        p.rect.y >= anchor.bottom(),
+        "a Below overlay {:?} grew over its anchor {anchor:?}",
+        p.rect,
+    );
+    assert!(p.rect.height >= MIN_ANCHORED_MENU_PX, "{:?}", p.rect);
+}

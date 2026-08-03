@@ -16,8 +16,6 @@ use dioxus::prelude::*;
 // compute pipeline, so it falls through to the CPU-renderer path below.
 #[cfg(any(not(target_os = "android"), android_gpu))]
 use crate::page_tile::PageTile;
-#[cfg(any(not(target_os = "android"), android_gpu))]
-use crate::render_layout::RenderMode;
 use crate::renderer_state::RendererState;
 
 // The HTML-flow fallback is only used on the Android CPU path; GPU targets
@@ -72,7 +70,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         // Render mode, zoom, and the residency capability cap — one cluster,
         // because they must happen in that order and the read-back at the end
         // only means anything after the cap is applied. See `scale_resolve`.
-        let (render_mode, zoom) = crate::scale_resolve::resolve(
+        let zoom = crate::scale_resolve::resolve(
             &renderer.source,
             crate::scale_resolve::ScaleInputs {
                 view_mode: props.view_mode,
@@ -81,16 +79,14 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                 device_scale_factor: props.device_scale_factor,
                 texture_budget: props.texture_budget,
             },
+            // Single canonical layout: in paginated mode reuse the layout the
+            // editor already computed instead of laying it out again. Handed to
+            // `resolve` rather than seeded here, because it has to land after
+            // `set_render_mode` and before the capability call reads page sizes —
+            // an ordering that was stated in a comment and broken by the next
+            // edit. See `scale_resolve::resolve`.
+            props.paginated_layout.clone(),
         );
-        // Single canonical layout: in paginated mode reuse the layout the editor
-        // already computed for this document instead of laying it out again.
-        // Provided after set_render_mode so it is keyed to the current
-        // generation; reflow mode computes its own width-dependent layout.
-        if render_mode == RenderMode::Paginated
-            && let Some(layout) = props.paginated_layout.clone()
-        {
-            renderer.source.provide_paginated_layout(layout);
-        }
         let doc_gen = renderer.source.current_generation();
 
         // Tile boxes in CSS px at the current zoom, plus whether this is a

@@ -59,7 +59,7 @@
 //! fallback conditioned on cause would therefore be unreliable by construction;
 //! this one is conditioned only on the geometry that comes out.
 
-use super::geometry::{place, Placement, PlacementRequest, Rect};
+use super::geometry::{place, Placement, PlacementRequest, Rect, Side};
 use crate::tokens::spacing::TOUCH_MIN;
 
 /// Absolute floor for an anchored overlay: one WCAG 2.5.8 touch target.
@@ -148,10 +148,41 @@ pub const MIN_ANCHORED_MENU_PX: f32 = 2.0 * MENU_ROW_HEIGHT_PX;
 /// hue strip and fields are tall — it lands **with** that consumer, which is the
 /// only way it gets an implementation rather than a second interpretation.
 ///
-/// The floor is honoured even when the viewport cannot afford it. An overlay
-/// shorter than one touch target cannot be operated at all, whereas one that
-/// slightly overflows a very short viewport still can: the host renders with
-/// `overflow-y: auto`, so the content scrolls.
+/// # Three constraints, and the order they concede in
+///
+/// The floor, the anchor and the viewport can all three be unsatisfiable at
+/// once, and this function has to pick which gives. The order is:
+///
+/// 1. **The floor.** An overlay shorter than one touch target cannot be operated
+///    at all, so the height is `min` whatever else it costs.
+/// 2. **Never across the anchor.** The edge touching the anchor does not move.
+/// 3. **The viewport**, last — the grown overlay may hang off the edge it grew
+///    towards, and `clamped` says so.
+///
+/// **In the viewport-bound case all three cannot hold**, and that is not a
+/// corner: [`place`] measures room as the viewport less the gap and the edge
+/// margin, and returns a short overlay only when the roomier side holds less
+/// than the floor — so growing away from the anchor *always* breaches that edge
+/// margin, and breaches the viewport itself by `floor - room - margin` whenever
+/// that is positive. Conceding the viewport rather than the anchor is a choice
+/// between two bad placements, made on which failure a reader can see:
+///
+/// - An overlay clipped by the screen edge **looks clipped**. Content is
+///   missing and the user knows it.
+/// - An overlay across its own trigger **looks correct**. The trigger is
+///   obscured by the thing it opened, the re-click that would close it lands on
+///   the menu instead, and nothing on screen says so — the silent class this
+///   module already refuses once, at `Presentation::Modal`.
+///
+/// It also keeps the forced case *detectable*: `!placement.rect.is_inside(vp)`
+/// now means "the anchored form genuinely failed here", which is the trigger
+/// condition a real modal fallback needs. `clamped` cannot serve that — [`place`]
+/// sets it for ordinary reduction too. Under the previous rule the forced case
+/// was indistinguishable from a good placement, so nothing could ever have
+/// escalated out of it.
+///
+/// The remaining answer for this regime is the modal, and it lands with the
+/// consumer that wants one, for the reason given above.
 #[must_use]
 pub fn present(req: PlacementRequest) -> Placement {
     let placed = place(req);
@@ -162,13 +193,25 @@ pub fn present(req: PlacementRequest) -> Placement {
     if placed.rect.height >= min {
         return placed;
     }
-    // Grow to the floor, then keep as much of it on screen as the viewport
-    // allows: prefer moving the top edge up over letting the bottom run off.
-    let top = placed
-        .rect
-        .y
-        .min(req.viewport.bottom() - min)
-        .max(req.viewport.y);
+    // Grow **away from the anchor**, which is side-dependent: the edge touching
+    // the anchor is the bottom for `Above` and the top for `Below`, and that edge
+    // must not move. Growing downward regardless — which this did until the
+    // branch review — puts an `Above` overlay straight across the trigger that
+    // opened it, and a covered trigger cannot be clicked to close the menu.
+    //
+    // `place` guarantees the overlay and the anchor never overlap, and
+    // `geometry_place` calls that invariant "asserted rather than argued". It was
+    // argued: `an_overlay_never_covers_its_own_anchor` asserts against `place`,
+    // while every consumer reaches geometry through `present` — so the check
+    // covered the one path the defect could not reach. Rule 3: an instrument
+    // that speaks only where the question is already settled.
+    let top = match placed.side {
+        Side::Above => placed.rect.bottom() - min,
+        Side::Below => placed.rect.y,
+    };
+
+    // **And it is not clamped back into the viewport**, which is the second half
+    // of the same decision — see the ordering note on this function.
     Placement {
         rect: Rect {
             y: top,

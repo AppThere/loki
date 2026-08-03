@@ -79,19 +79,71 @@ impl DocPageSource {
     /// What is still T5.4's, because it is not storage: telling the reader it
     /// happened. A silent quality drop is the thing this makes explicable, not
     /// the thing it excuses.
+    ///
+    /// # It discards any memo
+    ///
+    /// [`Self::apply_capability_limit`] stores "this limit is what those inputs
+    /// produce", and after a direct set it no longer does —
+    /// so the inputs are cleared with it and the next
+    /// [`Self::apply_capability_limit`] recomputes rather than believing a limit
+    /// nothing derived.
     pub fn set_capability_limit_permille(&self, limit: Option<u16>) {
         *self
             .zoom_capability_permille
             .lock()
-            .unwrap_or_else(|e| e.into_inner()) = limit;
+            .unwrap_or_else(|e| e.into_inner()) = (None, limit);
+    }
+
+    /// Recomputes the cap **only when its inputs have changed**.
+    ///
+    /// # The bound is expensive and the render path asks for it every frame
+    ///
+    /// `max_servable_zoom_permille` searches the real planner: 76 zoom probes ×
+    /// 40 scroll offsets is up to **3040 `plan_residency` calls over an 8-page
+    /// document** for one answer. Searching rather than solving is the right
+    /// call — a closed form would be a second derivation of decisions
+    /// `plan_residency` already makes — but `scale_resolve::resolve` runs on
+    /// every render, so it was paying that search on every scroll frame to
+    /// re-derive a number that had not moved.
+    ///
+    /// It cannot have moved without one of these changing: the bound is a pure
+    /// function of the largest page, the display scale and the texture budget.
+    /// The document's pages change on a layout generation, the display scale on
+    /// a monitor change, and the budget on the 5-second memory probe — so the
+    /// steady state during a scroll is *no change at all*.
+    ///
+    /// # Why the inputs live in this lock rather than beside it
+    ///
+    /// A memo whose key is stored separately from its value has two writers and
+    /// one invariant between them, which is the shape that goes stale (L08-029).
+    /// Here the pair moves together under one lock and there is no ordering for
+    /// a caller to get wrong: this method is the only writer of both, and the
+    /// direct setter above clears the key rather than leaving one that lies.
+    ///
+    /// `compute` is a closure rather than a value so the search is not run to
+    /// produce an argument that is then thrown away — the whole point is that it
+    /// does not run.
+    pub fn apply_capability_limit(
+        &self,
+        inputs: crate::zoom_capability::CapabilityInputs,
+        compute: impl FnOnce() -> Option<u16>,
+    ) {
+        let mut slot = self
+            .zoom_capability_permille
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if slot.0 == Some(inputs) {
+            return;
+        }
+        *slot = (Some(inputs), compute());
     }
 
     /// The capability cap currently in force, if any.
     pub fn capability_limit_permille(&self) -> Option<u16> {
-        *self
-            .zoom_capability_permille
+        self.zoom_capability_permille
             .lock()
             .unwrap_or_else(|e| e.into_inner())
+            .1
     }
 
     /// The zoom actually rendered: [`Self::requested_zoom`] capped by any
@@ -134,91 +186,5 @@ impl DocPageSource {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use appthere_canvas::residency::{ZOOM_RANGE_MAX, ZOOM_RANGE_MIN};
-    use loki_doc_model::document::Document;
-
-    use crate::doc_page_source::DocPageSource;
-
-    /// The clamp must be the shared residency bound, not a literal that happens
-    /// to agree with it today.
-    ///
-    /// It *was* a literal `0.25, 4.0` here, in a crate the residency model cannot
-    /// see. That mattered more than a duplicated number usually does: texture
-    /// demand goes as the square of zoom, so this pair decides the peak byte
-    /// figure any device can be asked for, and therefore whether the survival
-    /// regime is reachable at all.
-    ///
-    /// The other half of the coupling —
-    /// `plan_reachability_tests::the_sweep_covers_the_whole_clamped_range` —
-    /// checks that the reachability sweep actually reaches this bound.
-    #[test]
-    fn the_zoom_clamp_is_the_shared_residency_bound() {
-        let source = DocPageSource::new(Arc::new(Document::default()));
-        source.set_zoom(1000.0);
-        assert_eq!(f64::from(source.zoom()), ZOOM_RANGE_MAX);
-        source.set_zoom(0.0);
-        assert_eq!(f64::from(source.zoom()), ZOOM_RANGE_MIN);
-        source.set_zoom(1.5);
-        assert_eq!(source.zoom(), 1.5, "an in-range zoom must pass through");
-    }
-
-    /// A capability cap must reduce what is *rendered* without touching what was
-    /// *asked for* — the property that makes a forced reduction recoverable.
-    #[test]
-    fn a_capability_cap_lowers_effective_zoom_and_leaves_the_request_intact() {
-        let source = DocPageSource::new(Arc::new(Document::default()));
-        source.set_zoom(3.0);
-        source.set_capability_limit_permille(Some(1500));
-        assert_eq!(source.zoom(), 1.5, "effective zoom must follow the cap");
-        assert_eq!(
-            source.requested_zoom(),
-            3.0,
-            "the cap must not overwrite the user's setting",
-        );
-    }
-
-    /// The half that a store-the-clamped-value design gets wrong: when the
-    /// constraint lifts, the reader goes back to where they were.
-    ///
-    /// This is the whole reason the two are separate. Without it, memory
-    /// pressure at 300% strands a session at 150% permanently, and — once page
-    /// size varies per section (T6.1) — scrolling Letter → A2 → Letter strands
-    /// it at the A2 limit.
-    #[test]
-    fn lifting_the_cap_restores_the_requested_zoom() {
-        let source = DocPageSource::new(Arc::new(Document::default()));
-        source.set_zoom(3.0);
-        source.set_capability_limit_permille(Some(1500));
-        assert_eq!(source.zoom(), 1.5);
-        source.set_capability_limit_permille(None);
-        assert_eq!(
-            source.zoom(),
-            3.0,
-            "removing the cap must restore the requested zoom, not leave the \
-             reduced one in place",
-        );
-    }
-
-    /// A cap above the request changes nothing — the common case on ordinary
-    /// paper, where the device can serve the whole range.
-    #[test]
-    fn a_cap_above_the_request_is_inert() {
-        let source = DocPageSource::new(Arc::new(Document::default()));
-        source.set_zoom(1.25);
-        source.set_capability_limit_permille(Some(4000));
-        assert_eq!(source.zoom(), 1.25);
-    }
-
-    /// Requests still clamp to the control's range permanently. That clamp is a
-    /// different kind from the capability cap — it is what the control offers,
-    /// not what today's device can serve — so it *should* be destructive.
-    #[test]
-    fn the_range_clamp_stays_destructive_because_it_is_not_a_capability() {
-        let source = DocPageSource::new(Arc::new(Document::default()));
-        source.set_zoom(99.0);
-        assert_eq!(f64::from(source.requested_zoom()), ZOOM_RANGE_MAX);
-    }
-}
+#[path = "doc_page_source_scale_tests.rs"]
+mod tests;

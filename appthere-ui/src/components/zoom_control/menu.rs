@@ -11,14 +11,14 @@ use std::rc::Rc;
 
 use dioxus::prelude::*;
 
-use super::field::{erase_last, push_digit, starts_typed_zoom, typed_zoom_field};
-use super::rows::{next_zoom_row, prev_zoom_row, zoom_rows, ZoomCommands, ZoomRow};
+use super::field::typed_zoom_field;
+use super::rows::{zoom_rows, ZoomCommands, ZoomRow};
 use super::{AtZoomLabels, ZOOM_POPOVER_ID};
 use crate::components::popover::{
     Align, KeyAction, OverlayKind, PlacementRequest, PopoverRequest, Rect, Role, Side,
     MIN_ANCHORED_MENU_PX,
 };
-use crate::components::zoom::{parse_zoom_percent, ZOOM_PRESETS_PERCENT};
+use crate::components::zoom::ZOOM_PRESETS_PERCENT;
 use crate::tokens::colors::{COLOR_BORDER_CHROME, COLOR_SURFACE_PAGE, COLOR_TEXT_PRIMARY};
 use crate::tokens::spacing::{RADIUS_MD, RADIUS_SM, SPACE_1, SPACE_3, TOUCH_MIN};
 use crate::tokens::typography::FONT_SIZE_BODY;
@@ -141,7 +141,25 @@ pub(super) fn zoom_menu_request(
         on_dismiss: Rc::new(move || {
             // Re-bound inside, for the `Fn`-not-`FnMut` reason above.
             let mut open = open;
+            let mut typed = typed;
+            let mut active = active;
             open.set(false);
+            // **Every per-open state resets here, and here is the only place it
+            // can.** These signals live in `AtZoomControl`, which outlives the
+            // menu, so anything left set survives into the next open. A stale
+            // `typed` is the bad one: the `on_key` closure hands the whole
+            // keyboard to the field while it is `Some`, so a menu re-opened with
+            // a leftover entry has dead arrows, a dead Enter, and a field
+            // showing a number the reader did not just type.
+            //
+            // It used to be cleared from an `on_key` arm for `KeyAction::Dismiss`
+            // — an arm the host never forwards, so it never ran (r93; see
+            // `KeyAction::dismissal_cause`). `on_dismiss` is also the *complete*
+            // hook: it fires for the outside click and the anchor leaving too,
+            // which no key routes and which the old arm could not have covered
+            // even if it had run.
+            typed.set(None);
+            active.set(None);
         }),
         anchor: anchor_el,
         // The rows carry no hover tint, so nothing consumes an outside move.
@@ -151,77 +169,7 @@ pub(super) fn zoom_menu_request(
         kind: OverlayKind::Dismissible,
         role: Role::Menu,
         on_key: Some(Rc::new(move |action: KeyAction| {
-            let mut active = active;
-            // `peek`, not `read`: this runs from an event handler, and a
-            // subscription taken here would tie whatever is rendering to the row
-            // the keyboard last touched.
-            let current = active.peek().clone();
-            // While the field is open it owns the keyboard: arrows would
-            // otherwise move a highlight the reader cannot see past the field,
-            // and Enter would activate a preset instead of submitting.
-            if typed.peek().is_some() {
-                let mut typed = typed;
-                let mut open = open;
-                let current = typed.peek().clone().unwrap_or_default();
-                match action {
-                    KeyAction::Activate => {
-                        if let Some(p) = parse_zoom_percent(&current) {
-                            key_ctx.on_change.call(p);
-                            typed.set(None);
-                            open.set(false);
-                        }
-                        // An entry that does not parse leaves the field as it is,
-                        // so the reader can correct it. Closing would discard
-                        // what they typed and look like it was accepted.
-                    }
-                    KeyAction::Typeahead(c) if starts_typed_zoom(c) => {
-                        typed.set(Some(push_digit(&current, c)));
-                    }
-                    KeyAction::Erase => typed.set(Some(erase_last(&current))),
-                    KeyAction::Dismiss => typed.set(None),
-                    _ => {}
-                }
-                return;
-            }
-
-            match action {
-                KeyAction::Next => {
-                    active.set(next_zoom_row(&key_rows, current.as_deref()).map(|r| r.key()));
-                }
-                KeyAction::Prev => {
-                    active.set(prev_zoom_row(&key_rows, current.as_deref()).map(|r| r.key()));
-                }
-                KeyAction::First => active.set(key_rows.first().map(|r| r.key())),
-                KeyAction::Last => active.set(key_rows.last().map(|r| r.key())),
-                KeyAction::Activate => {
-                    if let Some(row) = current
-                        .as_deref()
-                        .and_then(|k| key_rows.iter().find(|r| r.key() == k))
-                    {
-                        key_ctx.activate(*row);
-                        // `Signal` is `Copy`, so the captured copy is re-bound
-                        // mutably here; writing through the capture itself would
-                        // need `FnMut`, which the host cannot hold.
-                        let mut open = open;
-                        open.set(false);
-                    }
-                }
-                // Typeahead over "25%", "50%" … would match the first character
-                // of a *label*, when the character a reader types is the first
-                // digit of the **value** they want. So a digit starts the typed
-                // field with that digit in it — the same observation, used the
-                // other way round. See `field`.
-                KeyAction::Typeahead(c) if starts_typed_zoom(c) => {
-                    let mut typed = typed;
-                    // Every later key is routed here too — `route_key` sends the
-                    // whole keyboard to this closure while the menu is open — so
-                    // the field's buffer is edited from the same place rather
-                    // than from an element whose text does not survive a render.
-                    let current = typed.peek().clone().unwrap_or_default();
-                    typed.set(Some(push_digit(&current, c)));
-                }
-                _ => {}
-            }
+            super::menu_keys::handle_key(action, &key_ctx, &key_rows, active, open, typed);
         })),
         // `active` is read **inside** the closure so the read subscribes the
         // host and an arrow key repaints the menu. Read outside, the highlight

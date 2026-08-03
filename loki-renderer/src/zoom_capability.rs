@@ -73,12 +73,65 @@ pub fn capability_limit_permille(
     device_scale_factor: f64,
     budget: TextureBudget,
 ) -> Option<u16> {
-    let page = largest_page(pages_pt)?;
-    Some(max_servable_zoom_permille(
-        page,
-        device_scale_factor,
-        budget,
-    ))
+    CapabilityInputs::from_pages(pages_pt, device_scale_factor, budget).limit()
+}
+
+/// Everything the capability bound is a function of.
+///
+/// Named as a type so the memo in [`crate::doc_page_source::DocPageSource::apply_capability_limit`]
+/// cannot drift from the call: adding a fourth input to `max_servable_zoom_permille`
+/// would be a compile error here rather than a memo that quietly stops noticing
+/// it changed.
+///
+/// The page is `Option` because "the layout has not produced a page yet" is a
+/// real state with its own answer (`None` — do not cap), and it must be part of
+/// the key: a document whose first layout lands between two frames changes the
+/// answer without changing the scale or the budget.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct CapabilityInputs {
+    /// The largest page in the document, or `None` before a layout resolves.
+    pub largest_page: Option<PageBox>,
+    /// The display's device pixel ratio.
+    pub device_scale_factor: f64,
+    /// The resident-texture budget in force.
+    pub budget: TextureBudget,
+}
+
+impl CapabilityInputs {
+    /// Reduces a document's page list to the inputs the bound depends on.
+    ///
+    /// The reduction happens **here**, before any memo key is formed: keying on
+    /// the page list would recompute whenever a page the answer does not depend
+    /// on changed size.
+    #[must_use]
+    pub fn from_pages(
+        pages_pt: &[(f64, f64)],
+        device_scale_factor: f64,
+        budget: TextureBudget,
+    ) -> Self {
+        Self {
+            largest_page: largest_page(pages_pt),
+            device_scale_factor,
+            budget,
+        }
+    }
+
+    /// The bound, or `None` for a document with no resolved page.
+    ///
+    /// **The only place the search is called from.** Both the status bar's
+    /// direct query and the render path's memo go through here, so there is one
+    /// statement of what the bound is a function of — which is what lets the
+    /// memo key be trusted: a fourth input would land in this struct and the
+    /// key would carry it by construction.
+    #[must_use]
+    pub fn limit(self) -> Option<u16> {
+        let page = self.largest_page?;
+        Some(max_servable_zoom_permille(
+            page,
+            self.device_scale_factor,
+            self.budget,
+        ))
+    }
 }
 
 /// Computes the bound for `source`'s current layout and applies it.
@@ -98,8 +151,12 @@ pub fn apply_to(
     budget: TextureBudget,
 ) {
     let pages_pt = crate::tile_plan::page_sizes_pt(source);
-    let limit = capability_limit_permille(&pages_pt, device_scale_factor, budget);
-    source.set_capability_limit_permille(limit);
+    let inputs = CapabilityInputs::from_pages(&pages_pt, device_scale_factor, budget);
+    // **Guarded, not unconditional.** `resolve` runs on every render, including
+    // every scroll frame, and the search behind `limit()` is up to 3040
+    // `plan_residency` calls — see `DocPageSource::apply_capability_limit` for
+    // why re-running it on an unchanged document is pure waste.
+    source.apply_capability_limit(inputs, || inputs.limit());
 }
 
 #[cfg(test)]

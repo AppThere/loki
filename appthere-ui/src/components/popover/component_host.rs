@@ -11,7 +11,7 @@ use dioxus::prelude::*;
 
 use super::{AtPopoverContext, OverlayKind};
 use crate::components::popover::geometry::Placement;
-use crate::components::popover::{key_from_parts, route_key, DismissCause, KeyAction};
+use crate::components::popover::{key_from_parts, route_key, DismissCause};
 
 /// Renders the open popover at the app root.
 ///
@@ -95,19 +95,21 @@ pub fn AtPopoverHost() -> Element {
                     // reach the editor beneath and cancel an edit.
                     evt.stop_propagation();
                 }
-                match action {
-                    // The two the host owns, because closing is its business —
-                    // and they carry *different* causes, which is the whole
-                    // reason `focus_after_dismiss` distinguishes them: Escape
-                    // returns focus to the trigger, Tab asks to continue past it.
-                    KeyAction::Dismiss => dismiss_key(DismissCause::Escape),
-                    KeyAction::DismissAndAdvance => dismiss_key(DismissCause::TabOut),
+                // The host owns closing, and the two dismissing actions carry
+                // *different* causes — which is the whole reason
+                // `focus_after_dismiss` distinguishes them: Escape returns focus
+                // to the trigger, Tab asks to continue past it.
+                //
+                // Asked of the action rather than matched here, so the set the
+                // host swallows is stated once and a consumer can check it
+                // (`KeyAction::dismissal_cause`). Written as two arms it was a
+                // fact only this file knew, and the zoom menu handled `Dismiss`
+                // in its own `on_key` for a release without the arm ever running.
+                if let Some(cause) = action.dismissal_cause() {
+                    dismiss_key(cause);
+                } else if let Some(f) = on_key.as_ref() {
                     // Everything else needs to know what the items are.
-                    other => {
-                        if let Some(f) = on_key.as_ref() {
-                            f(other);
-                        }
-                    }
+                    f(action);
                 }
             },
             style: format!(

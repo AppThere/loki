@@ -33,6 +33,25 @@ Ahead of Phase 6, in this order.
 
 `click_at` fails loudly when a click changes nothing anywhere; every scenario's clicks go through it. It found two silently-dead steps in the colour-picker scenario on its first run. Window geometry no longer leaks between runs. A reported finding was retracted with it — see below.
 
+### Branch review — the findings in this branch's own code (r93)
+
+Seven, all fixed. Four were the same shape — **a decision with no reachable
+consumer** — which is the shape this branch kept finding in *other* people's code
+and then reproduced:
+
+| Finding | Fix |
+| --- | --- |
+| `present` grew a floored overlay **downward regardless of side**, putting an `Above` menu across the trigger that opened it. The no-overlap invariant was asserted against `place`, and every consumer reaches geometry through `present` | Grow away from the anchor, side-dependently. Forced the three constraints (floor / anchor / viewport) into a stated precedence — the viewport concedes, because a clipped overlay *looks* clipped where one over its own trigger looks correct. `!rect.is_inside(vp)` is now the detectable signal a real modal fallback needs |
+| The zoom menu cleared its typed field in a `KeyAction::Dismiss` arm of its own `on_key`. **The host answers `Dismiss` itself and never forwards it**, so one Escape left the field open with a stale value owning the keyboard for the rest of the session | Reset in `on_dismiss` — the complete hook, which also covers the outside click and the anchor leaving. `KeyAction::dismissal_cause` now states the host-owned set once, and a test asserts it from the consumer's side |
+| The calibrate dialog believed **any positive number** while `calibrated_css_ppi` refuses a ratio outside `0.5..=2.0`. The centimetre mistake its own prose warns about cleared the rejection notice and was then dropped by the caller: Apply did nothing, silently | `on_measured` returns `bool`. The dialog keeps the parse; believability stays with its one owner and the refusal is unavoidable rather than documented |
+| `scale_resolve::resolve` applied the capability cap **before** `document_view` seeded the editor's canonical layout — and the cap reads page sizes. `provide_paginated_layout` is a no-op once the cache is filled, so the renderer laid the document out itself and the editor's layout was dropped: a second full layout per generation, and the ~20 MB font scan on open. Introduced by r80; nothing failed | Seeding moved inside `resolve`, between the mode and the cap. Asserted by `Arc::ptr_eq` — the only instrument that separates *reused* from *recomputed to look the same* |
+| The capability search (up to **3040 `plan_residency` calls**) ran on every render, including every scroll frame, to re-derive a number that had not moved | Memoised on its three real inputs, key and value under one lock so they cannot desync. Counted, not timed |
+| `loki-spreadsheet` and `loki-presentation` mounted `AtPopoverHost` without `use_provide_window_size`, so every menu placed against an **unbounded** viewport — never flips, never clamps | Both now feed the context from the `AtWindowSizeSensor` they already had |
+| `anchor_scope::reposition` had a second idempotence guard comparing a pair `on_anchor_change` has already proved differs | Removed. A guard that cannot fire reads as the obligation being met there, so the next reader finds a decoy instead of the arm that enforces it |
+
+Not fixed, and not this branch's: the macro trust/signature stack, `loki-layout`'s
+squiggle clamp, and the gate-script bypasses.
+
 ---
 
 ## Phase 6 — Page styles (I-04)
@@ -102,6 +121,8 @@ Ahead of Phase 6, in this order.
 One live defect (I-28). One degraded but marked: Tab out of a popover lands on the trigger rather than past it — `set_focus` is a bool, so `AdvanceFocusPastAnchor` cannot be expressed; costs one extra Tab, logged not silent.
 
 Six gated on things that do not exist yet: frame-completion timer (current counter is a submission lower bound), platform accessibility text scale, a modal fallback to produce `DismissCause::PresentationChanged`, `:focus-visible` engine support, a `ThemeColor` producer, `AtPanelHost`.
+
+The modal-fallback row acquired a **trigger condition** in r93: `present` now leaves the viewport rather than crossing the anchor when the floor cannot be honoured on either side, so `!placement.rect.is_inside(viewport)` marks exactly the geometry where the anchored form has genuinely failed. Under the previous rule that case was indistinguishable from a good placement, so nothing could have escalated out of it.
 
 **Phase 5 blocked tail:** theme swatches (no importer reads a theme part), alpha (no consumer carries it), eyedropper (screen-capture permission), `TODO(t5.6-effective-anchor)` — unreachable because the page-fit rule flips to reflow before the capability cap engages.
 

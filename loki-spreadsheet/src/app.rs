@@ -90,6 +90,14 @@ pub fn App() -> Element {
     // context — which would present as a ⋮ button that does nothing, in two of
     // the three apps, with nothing in the log to say why.
     let _popover = use_provide_popover();
+    // **And the window it places against.** `use_provide_popover` alone gives the
+    // ⋮ menu a host; without this the host has no measured window, so
+    // `usable_viewport` falls back to the consumer's own placeholder — which for
+    // every menu in the suite is an *unbounded* rect. An unbounded viewport never
+    // flips and never clamps, so a menu near the window bottom opens downward off
+    // the screen and reads as a button that does nothing. `loki-text` has provided
+    // this since T4.1; these two mounted the host without it (r93).
+    let mut window_size = appthere_ui::use_provide_window_size();
 
     // Spell-check service (bundled English; dictionary cache shared across the
     // suite). Provided into context so this app's editor can query spelling and
@@ -166,8 +174,12 @@ pub fn App() -> Element {
             AtViewportWidthSensor {}
             // Persist the window size across sessions (debounced; desktop only
             // in effect — Android windows are fullscreen).
+            // Two consumers of one measurement: the geometry file, and the
+            // popover host, which places against the window and has no other way
+            // to know its height.
             appthere_ui::AtWindowSizeSensor {
-                on_size: |size: (f64, f64)| {
+                on_size: move |size: (f64, f64)| {
+                    window_size.set(size);
                     loki_app_shell::window_geometry::save_debounced(GEOMETRY_FILE, size)
                 },
             }

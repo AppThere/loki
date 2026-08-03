@@ -20,6 +20,7 @@
 
 mod field;
 mod menu;
+mod menu_keys;
 mod rows;
 
 use dioxus::prelude::*;

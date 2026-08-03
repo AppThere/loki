@@ -223,9 +223,19 @@ impl PopoverAnchor {
             AnchorResponse::Ignore => {}
             AnchorResponse::Dismiss => self.dismiss_with(DismissCause::AnchorScrolledAway),
             AnchorResponse::Reposition(placement) => {
-                if previous.placement == current.placement {
-                    return;
-                }
+                // **No second idempotence guard here.** There was one —
+                // `if previous.placement == current.placement { return }` — and
+                // it could never fire: `on_anchor_change` is handed these two
+                // requests and answers `Ignore` when their anchors *and*
+                // viewports match, so reaching this arm already means they
+                // differ. Unreachable by subsumption, the same shape the M4
+                // mutation found in `place` and the form-change rule in
+                // `on_anchor_change`.
+                //
+                // Worth removing rather than leaving harmless: a guard that
+                // cannot fire reads as the obligation being met *here*, so the
+                // next reader looking for where idempotence is enforced finds a
+                // decoy instead of the one arm above that actually enforces it.
                 if let Ok(mut slot) = self.ctx.open.try_write() {
                     *slot = Some(current);
                 }

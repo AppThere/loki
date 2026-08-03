@@ -85,12 +85,48 @@ pub struct AtCalibrateDialogProps {
     pub labels: AtCalibrateLabels,
     /// The density the drawn line is drawn at — what the app currently believes.
     pub assumed_css_ppi: f32,
-    /// The reader's measurement, in millimetres. Only fired for a value the
-    /// caller's validation will accept; see [`AtCalibrateDialogProps::on_cancel`]
-    /// for the other outcome.
-    pub on_measured: EventHandler<f32>,
+    /// The reader's measurement, in millimetres — **and whether it was
+    /// believed**.
+    ///
+    /// # It returns a `bool` because this dialog must not own the second copy
+    ///
+    /// Believability is `loki_app_shell::display_density::calibrated_css_ppi`'s
+    /// to decide: it refuses a measurement implying a density ratio outside
+    /// `0.5..=2.0`. This crate cannot call it (`appthere_ui` sits below
+    /// `loki_app_shell`), and the first version therefore kept its own rule —
+    /// accept any positive number — and fired `on_measured` as an
+    /// `EventHandler<f32>` with nowhere to say no.
+    ///
+    /// The two rules agreed everywhere except where it mattered (rule 4).
+    /// Typing centimetres for millimetres is the mistake the dialog's own prose
+    /// warns about, and `8.56` is positive: the dialog cleared its rejection
+    /// notice, the caller's `let … else { return }` swallowed the value, and
+    /// **Apply did nothing at all, silently** — the dead-control class, in the
+    /// one control whose whole job is to tell the reader their measurement was
+    /// not believed.
+    ///
+    /// Returning the verdict is what makes the refusal unavoidable rather than
+    /// documented (L08-043): a caller cannot drop it, because the type will not
+    /// let it, and this dialog cannot get the answer wrong because it never
+    /// forms one. What stays here is the *parse* — "is this text a number" is
+    /// genuinely the field's own question.
+    pub on_measured: Callback<f32, bool>,
     /// Dismissed without measuring.
     pub on_cancel: EventHandler<()>,
+}
+
+/// Reads the field as a length in millimetres.
+///
+/// **The whole of what this dialog decides**, and deliberately only a parse: a
+/// comma decimal separator is the same number a full stop is (most of Europe
+/// writes `85,6`), and a negative or non-finite length is not a measurement
+/// anybody made. Whether the number is *believable* is a different question with
+/// a different owner — see [`AtCalibrateDialogProps::on_measured`], which is
+/// where the two used to be conflated.
+#[must_use]
+fn parse_measurement(text: &str) -> Option<f32> {
+    let mm = text.trim().replace(',', ".").parse::<f32>().ok()?;
+    (mm.is_finite() && mm > 0.0).then_some(mm)
 }
 
 /// The calibration dialog.
@@ -107,18 +143,17 @@ pub fn AtCalibrateDialog(props: AtCalibrateDialogProps) -> Element {
         .max(1.0);
 
     let submit = move |_| {
-        let parsed = typed.read().trim().replace(',', ".").parse::<f32>();
-        match parsed {
-            Ok(mm) if mm.is_finite() && mm > 0.0 => {
-                rejected.set(false);
-                props.on_measured.call(mm);
-            }
-            // Not accepted, and *said so* rather than silently ignored: a button
-            // that does nothing reads as a broken dialog, and the commonest bad
-            // input here (centimetres for millimetres) looks perfectly reasonable
-            // to the person who typed it.
-            _ => rejected.set(true),
-        }
+        // Two questions, and only the first is this dialog's: whether the text is
+        // a number, and whether the number is believable. The second is asked of
+        // the caller and its answer is what sets the notice — see `on_measured`.
+        let accepted =
+            parse_measurement(&typed.read()).is_some_and(|mm| props.on_measured.call(mm));
+        // Not accepted, and *said so* rather than silently ignored: a button that
+        // does nothing reads as a broken dialog, and the commonest bad input here
+        // (centimetres for millimetres) looks perfectly reasonable to the person
+        // who typed it — which is exactly the case that used to clear this notice
+        // and then discard the value.
+        rejected.set(!accepted);
     };
 
     rsx! {
@@ -253,3 +288,7 @@ fn dialog_button(primary: bool) -> String {
         fg = COLOR_TEXT_ON_CHROME,
     )
 }
+
+#[cfg(test)]
+#[path = "calibrate_dialog_tests.rs"]
+mod tests;

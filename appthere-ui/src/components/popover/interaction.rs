@@ -178,6 +178,33 @@ impl KeyAction {
     pub fn consumes(self) -> bool {
         !matches!(self, Self::PassThrough)
     }
+
+    /// The dismissal this action **is**, if the host owns it.
+    ///
+    /// # Why this is a function and not two arms in the host
+    ///
+    /// Closing is the host's business, so the host answers `Dismiss` and
+    /// `DismissAndAdvance` itself and never forwards them to `on_key`. That is
+    /// correct and it is *invisible*: a consumer writing
+    /// `KeyAction::Dismiss => …` in its own `on_key` gets an arm that compiles,
+    /// reads as handled, and never runs. The zoom menu did exactly that — its
+    /// `Dismiss` arm cleared the typed field, so one Escape left the field open
+    /// with a stale value owning the keyboard for the rest of the session, and
+    /// the arm that would have prevented it was sitting right there (r93).
+    ///
+    /// One fact, one derivation (L08-029): the host asks this, and
+    /// `a_consumers_on_key_never_sees_a_dismissal` asserts the same set from the
+    /// other side. A consumer that needs to know a dismissal happened has
+    /// [`super::PopoverRequest::on_dismiss`], which fires for **every** cause —
+    /// including the outside click and the anchor leaving, which no key routes.
+    #[must_use]
+    pub fn dismissal_cause(self) -> Option<DismissCause> {
+        match self {
+            Self::Dismiss => Some(DismissCause::Escape),
+            Self::DismissAndAdvance => Some(DismissCause::TabOut),
+            _ => None,
+        }
+    }
 }
 
 /// Routes `key` for a popover of `role`.

@@ -508,13 +508,15 @@ fn every_reposition_carries_a_usable_placement() {
     let vp = Rect::new(0.0, 0.0, 900.0, 200.0);
     let mut repositioned = 0_u32;
     let mut grown = 0_u32;
+    let mut escaped = 0_u32;
     for ay in 0..=20 {
         let before = req_at(Rect::new(100.0, 0.0, 200.0, 100.0), vp);
         let after = req_at(Rect::new(100.0, ay as f32 * 5.0, 200.0, 100.0), vp);
         match on_anchor_change(before, after, true) {
             AnchorResponse::Reposition(p) => {
                 repositioned += 1;
-                if place(after).rect.height < MIN_ANCHORED_MENU_PX {
+                let was_grown = place(after).rect.height < MIN_ANCHORED_MENU_PX;
+                if was_grown {
                     grown += 1;
                 }
                 assert!(
@@ -524,7 +526,31 @@ fn every_reposition_carries_a_usable_placement() {
                     p.rect.height,
                     p.rect,
                 );
-                assert!(p.rect.is_inside(vp));
+                // **Never across the anchor** — asserted on every step, grown or
+                // not, because this is the path the overlap defect reached: the
+                // one check that existed was written against `place`, which
+                // cannot produce it.
+                assert!(
+                    p.rect.bottom() <= after.anchor.y || p.rect.y >= after.anchor.bottom(),
+                    "reposition put {:?} across its anchor {:?}",
+                    p.rect,
+                    after.anchor,
+                );
+                // **Inside the viewport whenever it was not grown.** This used
+                // to be unconditional, from when the viewport outranked the
+                // anchor. It does not: `present` grows away from the trigger and
+                // concedes the viewport when the two conflict, so asserting
+                // containment on a grown step would be asserting the defect.
+                // The grown steps are counted instead, below.
+                if !was_grown {
+                    assert!(
+                        p.rect.is_inside(vp),
+                        "an ungrown reposition left the viewport: {:?} in {vp:?}",
+                        p.rect,
+                    );
+                } else if !p.rect.is_inside(vp) {
+                    escaped += 1;
+                }
             }
             AnchorResponse::Dismiss => {}
             AnchorResponse::Ignore => {}
@@ -534,6 +560,17 @@ fn every_reposition_carries_a_usable_placement() {
         repositioned > 0 && grown > 0 && grown < repositioned,
         "the sweep must cross the boundary to say anything: {repositioned} \
          repositions, {grown} of them grown to the floor",
+    );
+    // **And the concession must actually be reached**, or the relaxed
+    // containment check above is a licence nothing exercises — the sweep would
+    // then be asserting the old rule under a weaker predicate and reading as if
+    // it covered the new one. Not every grown step escapes: `place` withholds
+    // the edge margin from its room, so growth up to `margin` past the room
+    // still lands inside the viewport.
+    assert!(
+        escaped > 0 && escaped <= grown,
+        "no grown reposition left the viewport, so the ordering under test was \
+         never exercised: {escaped} of {grown} grown",
     );
 }
 
@@ -764,5 +801,57 @@ fn backspace_erases_in_a_menu_and_passes_through_elsewhere() {
     assert_eq!(
         route_key(Role::Tooltip, Key::Backspace),
         KeyAction::PassThrough,
+    );
+}
+
+/// **A consumer's `on_key` never sees a dismissal**, stated from the consumer's
+/// side because that is where the mistake is made.
+///
+/// The host swallows the two dismissing actions and forwards the rest. A
+/// consumer cannot see that from its own file, so the zoom menu wrote
+/// `KeyAction::Dismiss => typed.set(None)` in its `on_key` — an arm that
+/// compiles, reads as handled, and never runs. One Escape therefore left its
+/// typed field open with a stale value owning the keyboard, and the menu was
+/// keyboard-dead for the rest of the session.
+///
+/// **Both polarities**, and the negative is the one that matters: if this said
+/// only "Dismiss is host-owned" it would pass for an implementation that
+/// swallowed everything, which is the failure it is here to rule out.
+#[test]
+fn a_consumers_on_key_never_sees_a_dismissal() {
+    assert_eq!(
+        KeyAction::Dismiss.dismissal_cause(),
+        Some(DismissCause::Escape),
+        "Escape returns focus to the trigger",
+    );
+    assert_eq!(
+        KeyAction::DismissAndAdvance.dismissal_cause(),
+        Some(DismissCause::TabOut),
+        "Tab asks focus to continue past it",
+    );
+    for action in [
+        KeyAction::Next,
+        KeyAction::Prev,
+        KeyAction::First,
+        KeyAction::Last,
+        KeyAction::Activate,
+        KeyAction::FocusNextControl,
+        KeyAction::FocusPrevControl,
+        KeyAction::Typeahead('5'),
+        KeyAction::Erase,
+        KeyAction::PassThrough,
+    ] {
+        assert_eq!(
+            action.dismissal_cause(),
+            None,
+            "{action:?} must reach the consumer — a host that swallowed it would \
+             leave the menu unable to act on its own items",
+        );
+    }
+    // And the key a reader actually presses resolves to the swallowed action,
+    // so this is not a statement about a variant nothing produces.
+    assert_eq!(
+        route_key(Role::Menu, Key::Escape).dismissal_cause(),
+        Some(DismissCause::Escape),
     );
 }

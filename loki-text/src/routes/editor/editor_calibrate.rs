@@ -76,12 +76,15 @@ pub(super) fn EditorCalibrate(props: EditorCalibrateProps) -> Element {
                 cancel: fl!("editor-calibrate-cancel"),
                 rejected: fl!("editor-calibrate-rejected"),
             },
-            on_measured: move |mm: f32| {
-                // A measurement the arithmetic refuses leaves the dialog open,
-                // so the reader can correct it. Closing on a refusal would look
-                // like it worked.
+            on_measured: move |mm: f32| -> bool {
+                // A measurement the arithmetic refuses leaves the dialog open
+                // **and says so** — the `false` is what raises the dialog's
+                // rejection notice. Returning silently, which this did until the
+                // branch review, left the reader with a button that did nothing:
+                // the dialog had already cleared the notice on the way in,
+                // believing any positive number.
                 let Some(density) = calibrated_css_ppi(ASSUMED_CSS_PPI, REFERENCE_MM, mm) else {
-                    return;
+                    return false;
                 };
                 let mut store = store;
                 store.write().set(key.clone(), density);
@@ -96,6 +99,7 @@ pub(super) fn EditorCalibrate(props: EditorCalibrateProps) -> Element {
                     zoom.set(p, ZoomAnchor::Centre);
                 }
                 open.set(false);
+                true
             },
             on_cancel: move |()| open.set(false),
         }
