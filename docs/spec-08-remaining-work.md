@@ -168,6 +168,45 @@ swapping left/right on even pages, with a Loro round-trip and tests. What did
 
 
 
+
+### Decision 1 diagnostic — the overflow trigger is present, off-screen (r110)
+
+The T7.1 close recorded that the `…` trigger had never been seen and that it was
+not known whether it fails to render or renders past the right edge. **It
+renders, and it is off-screen.** Measured, in three steps, because the first two
+were each wrong in an instructive way:
+
+1. **Click sweep across the bar's right end.** Inconclusive: 300–340 px changed
+   ~67 000 px, which is the *zoom menu* opening — that region is the zoom
+   control, so the instrument was reading a different control's response.
+2. **A loud magenta background on the trigger.** No magenta anywhere, which
+   read as "does not render". That was the wrong conclusion from a real
+   observation: Blitz paints nothing beyond the window, so an element entirely
+   past the edge is *invisible*, not clipped-at-the-content-box. The test could
+   not distinguish the two cases it was run to distinguish.
+3. **Instrumenting the bar, then moving the same element to the bar's start.**
+   The bar reports `dropped=3, rows=3` — the engine is correct and the component
+   is reached — and the component's own entry log fires with 3 rows. Moved to
+   the start, the magenta trigger paints perfectly. The zoom `+` is then pushed
+   off instead, which is the same overflow one control to the left.
+
+**So the bar's painted content exceeds its window, and the last item in the
+strip absorbs all of it.** The declared widths under-count the painted ones —
+the notice chip is the biggest contributor, being a bordered pill with an icon.
+
+**This answers decision 1: declarations are not sufficient here.** The engine's
+arithmetic is right and its tests are right; the inputs are wrong, and no
+refinement of a character-advance estimate fixes a bordered chip. The remaining
+choice is between measuring item widths (`get_client_rect`, which the popover
+anchor already uses) and accepting a reserved margin — and the measuring option
+carries the feedback-loop hazard that is exactly why the ribbon declares.
+
+**Not established:** whether measuring converges. The loop is measured width →
+drop decision → different layout → different measured width, damped but not
+precluded by the hysteresis band. *What would settle it:* drive the sitting
+harness across a slow width sweep and count drop-state changes per pixel; an
+oscillating resolver shows as changes that do not settle at a fixed width.
+
 ### T7.4 — the fallback, and the clause that was not conditional (closed, r109)
 
 **Not required, and that is the whole finding.** T7.4 fires only *if P1 says
@@ -1020,9 +1059,9 @@ kills the default-bytes test.
 | Task | Work |
 | --- | --- |
 | **T7.0** | **Done (r105) — P1 answers yes for the wheel.** Nested containers consume within their bounds and bubble the remainder, and a horizontal-only inner does **not** swallow a vertical gesture. T7.3 proceeds; T7.4's fallback is not needed on this evidence. Drag is **not** measured — see below. |
-| T7.1 | **Partial (r106).** The priority engine, the retention set and the width-driven drop are done and on screen; the overflow `Popover`'s trigger has **not** been observed rendering — see below. |
-| T7.2 | **Partial (r107).** The measure resolver (live font metrics) and the ambient cap the reflow width honours are done and mutation-tested. **Nothing installs a measure yet**, so behaviour is unchanged — see below. |
-| T7.3 | **Partial (r108).** The document no longer scrolls horizontally, and oversized images shrink to the column with aspect preserved. The **per-element expand** is not built and needs an architecture decision — see below. |
+| T7.1 | **Partial (r106); diagnosed r110.** The engine, retention set and width-driven drop are done and on screen. The overflow trigger **renders but is off-screen** — the declared widths under-count the painted ones. See the r110 diagnostic. |
+| T7.2 | **Partial (r107); superseded in direction by ADR-0017.** The resolver stays; the ambient cap is made moot by moving the reflow view to DOM, where the measure is a CSS `max-width`. Parked, not forgotten — see ADR-0017 §4. |
+| T7.3 | **Partial (r108).** The document no longer scrolls horizontally, and oversized images shrink to the column with aspect preserved. The **per-element expand** is unblocked by ADR-0017 (reflow becomes DOM) but not built. |
 | T7.4 | **Closed, not required (r109).** P1 routed green, so the modal fallback is not built — there is no deviation to record. Its unconditional clause is now enforced by a signature and a test rather than by prose. |
 
 **Acceptance.** No horizontal document scroll at any width with a 200%-width table present; status bar legible at 320 px; readable at default zoom on a phone without pinching.
