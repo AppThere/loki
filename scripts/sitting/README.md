@@ -29,7 +29,25 @@ scripts/sitting/run.sh wheelzoom      # Ctrl+wheel zooms, plain wheel scrolls
 scripts/sitting/run.sh highlight      # highlight: typed, clicked and custom
 scripts/sitting/run.sh ribbonoverflow # the More menu's controls are clickable
 scripts/sitting/run.sh save           # what the ribbon Save does (see r92)
+
+# Probe P1 (Spec 08 T7.0) — nested scroll input ROUTING. Different binary:
+cargo build -p appthere-ui --example nested_scroll_probe
+scripts/sitting/run.sh nestedscroll   # five readings; see the scenario's comments
 ```
+
+**Not every scenario drives `loki-text`.** `nestedscroll` runs a scratch scene
+(`appthere-ui/examples/nested_scroll_probe.rs`) and overrides `BIN`, because the
+question it answers — does a nested scroll container consume a gesture and bubble
+the remainder — is about the Blitz input stack, not about the word processor.
+Build that example, not the app, before running it.
+
+**`xdotool windowactivate` kills this X server.** Measured while building the P1
+probe: the activate call takes Xvfb down mid-run, the app logs `X connection to
+:99 broken`, and every later `xdotool` fails against a dead display with errors
+that read like the app crashed. `start_app` still activates by default — a
+scenario that sends keys has no choice, there being no window manager to assign
+focus — but a pointer-only scenario sets `NO_ACTIVATE=1` and skips it. If a new
+scenario dies right after `[win]` with `Can't open display`, this is why.
 
 Shots land in `target/sitting/`. `SETTLE` (default 10s) is how long to wait
 after the window maps — lavapipe is slow, and the app's CSS lands on the second

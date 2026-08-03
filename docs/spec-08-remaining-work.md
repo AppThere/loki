@@ -163,6 +163,74 @@ all exist. And the task list below over-states what remains:
 swapping left/right on even pages, with a Loro round-trip and tests. What did
 *not* exist was any ODF spelling of it.
 
+
+### T7.0 / Probe P1 — nested scroll input routing (done, r105)
+
+**Answer: yes, for the wheel.** A nested scroll container consumes a gesture
+inside its own bounds, leaves its scrolling ancestor alone while it can still
+use the gesture, and bubbles the remainder once it cannot. So T7.3 may build the
+per-element horizontal scroll container, and **T7.4's modal-viewer fallback is
+not needed on this evidence**.
+
+**The instrument.** `appthere-ui/examples/nested_scroll_probe.rs` — a scratch
+scene of three bands (a static strip, a vertically scrolling outer container,
+and a nested inner container), driven by `scripts/sitting/run.sh nestedscroll`
+under Xvfb + lavapipe. Each reading is a pixel diff of the *same* crop across two
+shots, and each is a **pair** of numbers rather than one: "the inner band
+changed" proves nothing on its own, because the inner box moves whenever the
+outer scrolls. Containment is `inner changed AND outer unchanged`.
+
+| Reading | Gesture | Result |
+| --- | --- | --- |
+| R1 control | wheel over an outer-only row | outer 131971, static 0 — the wheel reaches something |
+| R2 containment | wheel over the inner, from rest | inner 55246, **outer 0**, static 0 |
+| R3 bubbling | 20 more notches, past the inner's end | outer above 132000, below 123082, static 0 |
+| R4 **the T7.3 shape** | *vertical* wheel over a *horizontal-only* inner | outer 131971, static 0 — it bubbled |
+| R5 | *horizontal* wheel over the same inner | inner 26048, **outer 0**, static 0 |
+
+Every "0" above is a live band, not a dead one: the same crop reads 131971 in R1
+and 132000 in R3. A zero that could not have been non-zero is the null result
+this table would otherwise be full of.
+
+**R4 is the reading that actually gates T7.3**, and it is not the one the task
+line describes. R1–R3 nest two *vertical* scrollers, where the inner can use the
+gesture and the only question is who gets it first. T7.3 ships the other shape —
+a wide table in its own horizontal scroller inside the vertically scrolling
+document — where the inner container **cannot** use a vertical gesture. If it
+swallowed one anyway, the document would stop scrolling wherever the pointer
+happened to rest, which is a worse defect than the sideways scrolling T7.3
+exists to remove. It bubbles: confirmed in the shots as the outer advancing
+O0→O3 while the inner's own content stayed at W0–W3.
+
+**Not established: drag.** The task line says "wheel and drag"; only the wheel
+was measured. `xdotool` sends no touch events, and mouse drag is selection
+rather than scroll on this platform, so the touch path is unreachable from this
+harness. What *is* known is a code reading, not a measurement:
+`blitz-shell`'s `Touch` arm uses the **same** chain as the wheel —
+`get_hover_node_id()` → `scroll_node_within_collect` — differing only in that
+the hover node comes from the touch-start hit test (so it is never stale) and
+there is no focused-node fallback. That makes the routing question shared, but
+it is inference from the source, and it is the half of P1 that stays open.
+**What would settle it:** a touch-capable harness (an Android build, or an X11
+XInput2 touch device injected with `xdotool`'s unavailable touch API — neither
+exists here), driving R2 and R4 with a drag instead of a wheel.
+
+**Also not established:** one nesting level only, one platform (X11 + software
+Vulkan, no window manager), and pointer-driven only.
+
+**Two harness facts found while building this, both now in `run.sh`:**
+
+- `xdotool windowactivate` **takes the X server down** on this Xvfb. The app
+  logs `X connection to :99 broken` and every later `xdotool` call fails against
+  a dead display. Scenarios that send keys have no choice but to activate;
+  pointer-only ones now set `NO_ACTIVATE=1` and skip it.
+- **One wheel notch moves ~40 CSS px here, not the 20 the code implies.**
+  Reading `blitz-shell` gives `LineDelta * 20.0`, but three notches advanced the
+  probe's 40 px rows by three whole rows. Whatever X and winit agree a notch is,
+  it is not one line. The scenario's notch counts are calibrated against the
+  measurement and the comment says so, because the derived number is the kind of
+  wrong that reads as right.
+
 ### T6.7 — duplicate, delete, and margin entry (r104)
 
 Closes three of the five items the r97 close listed as not built. What r97 left
@@ -727,7 +795,7 @@ kills the default-bytes test.
 
 | Task | Work |
 | --- | --- |
-| **T7.0** | **Probe P1 first.** Build a scratch nested scroll container; check it consumes wheel and drag within its bounds and bubbles the remainder. **Test input routing, not layout** — `blitz-dom` models the geometry (`scroll_node_by_collect_inner`), so the plausible failure is that it renders right and routes wrong. Gates T7.3 |
+| **T7.0** | **Done (r105) — P1 answers yes for the wheel.** Nested containers consume within their bounds and bubble the remainder, and a horizontal-only inner does **not** swallow a vertical gesture. T7.3 proceeds; T7.4's fallback is not needed on this evidence. Drag is **not** measured — see below. |
 | T7.1 | Status bar priority order, dropping items by **measured width**. Minimum retention: page indicator and zoom, rest behind a `Popover`. The ribbon overflow menu is this task's future consumer |
 | T7.2 | Reflow typography decoupled from page metrics. Measure is a user setting defaulting to ~72–80 characters at body size, resolved against live font metrics (D-05) |
 | T7.3 | Oversized elements shrink to fit the content column, aspect preserved, per-element expand into its own horizontal scroll container. **The document never scrolls horizontally** |

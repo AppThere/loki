@@ -74,9 +74,16 @@ start_app() { # start_app [env assignments...]
       # No window manager on Xvfb, so nothing assigns the X input focus and
       # `xdotool key` would go to no client at all. Set it explicitly — this is
       # the harness's own precondition, not the app's behaviour.
-      xdotool windowactivate "$WIN" 2>/dev/null
-      xdotool windowfocus --sync "$WIN" 2>/dev/null
-      xdotool windowraise "$WIN" 2>/dev/null
+      # NO_ACTIVATE: a pointer-only scenario does not need X input focus, and
+      # on this Xvfb the activate call takes the server down outright (measured
+      # while building the T7.0 probe: the app logs "X connection ... broken"
+      # and every later xdotool call fails against a dead display). Scenarios
+      # that send keys still activate; they have no choice.
+      if [ -z "${NO_ACTIVATE:-}" ]; then
+        xdotool windowactivate "$WIN" 2>/dev/null
+        xdotool windowfocus --sync "$WIN" 2>/dev/null
+        xdotool windowraise "$WIN" 2>/dev/null
+      fi
       # **A smaller screen does not make a smaller window.** There is no window
       # manager on Xvfb, so the app keeps whatever size it asked for and simply
       # extends past the screen edge — which photographs as a clipped ribbon and
@@ -141,6 +148,29 @@ click_at() { # click_at <x> <y> <what>
 crop() { # crop <shot> <geometry>
   convert "$SHOT_DIR/$1.png" -crop "$2" +repage "$SHOT_DIR/$1-crop-${2//[^0-9]/_}.png"
   echo "$SHOT_DIR/$1-crop-${2//[^0-9]/_}.png"
+}
+
+
+# Wheel `n` notches in `dir` (4 = up, 5 = down) at the current pointer position.
+#
+# `xdotool click 4/5` is how X carries a vertical wheel notch (6/7 horizontal);
+# winit turns it into `MouseScrollDelta::LineDelta` and `blitz-shell` converts to
+# CSS pixels.
+#
+# **One notch moves ~40 CSS px here — measured, not derived.** Reading the code
+# gives 20 (`LineDelta * 20.0`), but three notches over the P1 probe's 40 px rows
+# advanced it by three whole rows, so whatever X and winit agree a notch is, it
+# is not one line. The notch counts below are calibrated against the measurement;
+# do not re-derive them from the multiplier.
+wheel() { # wheel <dir 4|5> <count>
+  local dir="$1" n="$2"
+  for _ in $(seq 1 "$n"); do xdotool click "$dir"; sleep 0.12; done
+  sleep "${WHEEL_SETTLE:-2}"
+}
+
+# `compare -metric AE` between the same crop of two shots, echoed as a number.
+band() { # band <geometry> <shotA> <shotB>
+  compare -metric AE "$(crop "$2" "$1")" "$(crop "$3" "$1")" null: 2>&1
 }
 
 # ---------------------------------------------------------------------------
@@ -635,6 +665,112 @@ save)
   shot v1-saved
   echo "  tab strip changed (0 = still dirty, which is correct for untitled): \
 $(compare -metric AE "$(crop v0-opened 200x40+0+0)" "$(crop v1-saved 200x40+0+0)" null: 2>&1)"
+  ;;
+
+nestedscroll)
+  # ── Probe P1 (Spec 08 T7.0) — does a nested scroll container ROUTE input? ──
+  #
+  # Gates T7.3, which wants an oversized element to expand into its own
+  # horizontal scroll container inside the vertically scrolling document. The
+  # scene is `appthere-ui/examples/nested_scroll_probe.rs`; see its module docs
+  # for why the failure this looks for is in routing rather than geometry.
+  #
+  # THE INSTRUMENT. Four bands, cropped from the same window position in every
+  # shot, compared pairwise with `compare -metric AE`:
+  #   static      — must never change; separates "a container consumed this"
+  #                 from "the whole window moved"
+  #   outer_above — outer rows above the inner box
+  #   inner_in    — the inside of the inner box, excluding its border
+  #   outer_below — outer rows below the inner box
+  #
+  # Each reading is a PAIR of numbers, and the pair is the answer. "inner_in
+  # changed" alone proves nothing: the inner box moves when the outer scrolls,
+  # so its crop would change either way. Containment is `inner_in != 0 AND
+  # outer_above == 0`.
+  #
+  # NO `windowactivate`. There is no window manager here and the activate call
+  # takes the X server down mid-run (measured: the app logs "X connection to :99
+  # broken" and every later xdotool fails). This scenario drives the pointer
+  # only, which needs no X input focus.
+  # Assigned outright, not `${BIN:-…}`: the top of this file already defaulted
+  # BIN to loki-text-desktop, so a defaulting assignment here never fires. This
+  # scenario is about a different binary, and PROBE_BIN is the override hook.
+  BIN="${PROBE_BIN:-$ROOT/target/debug/examples/nested_scroll_probe}"
+  NO_ACTIVATE=1
+  ST="880x40+10+14"; OA="880x150+10+68"; II="790x70+58+240"; OB="880x140+10+335"
+  IX="${IX:-450}"; IY="${IY:-280}"     # inside the inner box
+  OX="${OX:-450}"; OY="${OY:-400}"     # an outer row below the inner box
+
+  start_x || exit 1
+  start_app || exit 1
+  shot n0-rest
+
+  echo "== R1 control: wheel over an OUTER-only row =="
+  # Established first, and deliberately: if the wheel reaches nothing at all,
+  # "the inner did not scroll" is a null result from a dead instrument rather
+  # than a finding about nesting.
+  xdotool mousemove "$OX" "$OY"; sleep 1
+  wheel 5 3
+  shot n1-outer-wheeled
+  echo "  static      : $(band "$ST" n0-rest n1-outer-wheeled)   (want 0)"
+  echo "  outer_above : $(band "$OA" n0-rest n1-outer-wheeled)   (want >0 — the wheel reaches the outer)"
+
+  echo "== R2 containment: wheel over the INNER box, from rest =="
+  # Restart so R2 starts from the same state R1 did; otherwise it would be
+  # measuring against an outer that R1 already moved.
+  stop; sleep 1
+  start_x || exit 1
+  start_app || exit 1
+  shot n2-rest
+  xdotool mousemove "$IX" "$IY"; sleep 1
+  wheel 5 3
+  shot n3-inner-wheeled
+  echo "  static      : $(band "$ST" n2-rest n3-inner-wheeled)   (want 0)"
+  echo "  inner_in    : $(band "$II" n2-rest n3-inner-wheeled)   (want >0 — the inner consumed it)"
+  echo "  outer_above : $(band "$OA" n2-rest n3-inner-wheeled)   (want 0 — the outer did NOT move)"
+  echo "  outer_below : $(band "$OB" n2-rest n3-inner-wheeled)   (want 0 — the outer did NOT move)"
+
+  echo "== R3 bubbling: keep wheeling past the inner's end =="
+  # The inner holds 8 rows of 40 px in an 80 px view: 240 px of range, 12 notches
+  # at 20 px each. R2 spent 3, so 20 more is comfortably past the end.
+  wheel 5 20
+  shot n4-inner-exhausted
+  echo "  static      : $(band "$ST" n3-inner-wheeled n4-inner-exhausted)   (want 0)"
+  echo "  outer_above : $(band "$OA" n3-inner-wheeled n4-inner-exhausted)   (want >0 — the remainder bubbled)"
+  echo "  outer_below : $(band "$OB" n3-inner-wheeled n4-inner-exhausted)   (want >0 — the remainder bubbled)"
+
+  echo "== R4 the T7.3 configuration: vertical wheel over a HORIZONTAL-only inner =="
+  # This is the reading that actually gates T7.3. R1-R3 nest two vertical
+  # scrollers, where the inner *can* use the gesture. T7.3 ships the other
+  # shape: a wide table in its own horizontal scroller inside the vertically
+  # scrolling document. A vertical gesture there is one the inner container
+  # cannot use — and if it swallows it anyway, the document stops scrolling
+  # wherever the pointer happens to rest, which is worse than the sideways
+  # scrolling T7.3 exists to remove.
+  stop; sleep 1
+  start_x || exit 1
+  PROBE_SCENE=horizontal start_app env PROBE_SCENE=horizontal || exit 1
+  shot n5-h-rest
+  xdotool mousemove "$IX" "$IY"; sleep 1
+  wheel 5 3
+  shot n6-h-vwheel
+  echo "  static      : $(band "$ST" n5-h-rest n6-h-vwheel)   (want 0)"
+  echo "  outer_above : $(band "$OA" n5-h-rest n6-h-vwheel)   (want >0 — vertical bubbled past the horizontal inner)"
+
+  echo "== R5 horizontal wheel over the horizontal inner =="
+  # X buttons 6/7 are the horizontal wheel. If winit does not deliver them the
+  # inner will not move, and that is a real answer about this instrument rather
+  # than about Blitz — which is why R4 above, not this, is the gating reading.
+  stop; sleep 1
+  start_x || exit 1
+  PROBE_SCENE=horizontal start_app env PROBE_SCENE=horizontal || exit 1
+  shot n7-h-rest
+  xdotool mousemove "$IX" "$IY"; sleep 1
+  wheel 7 3
+  shot n8-h-hwheel
+  echo "  static      : $(band "$ST" n7-h-rest n8-h-hwheel)   (want 0)"
+  echo "  inner_in    : $(band "$II" n7-h-rest n8-h-hwheel)   (>0 = the inner took it)"
+  echo "  outer_above : $(band "$OA" n7-h-rest n8-h-hwheel)   (want 0 — the outer did NOT move)"
   ;;
 esac
 echo "DONE: $1"
