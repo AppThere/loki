@@ -30,9 +30,15 @@ pub const PX_TO_PT: f32 = 72.0 / 96.0;
 /// width capped at [`MAX_REFLOW_TILE_PX`] (the renderer centres the tile, so
 /// the cap centres the reading column). The single source of reflow width for
 /// paint, hit-testing, and keyboard navigation (Spec 01 A-1).
+///
+/// The cap is [`crate::measure::max_tile_width_px`] — the reading measure
+/// resolved against live font metrics (T7.2), falling back to
+/// [`MAX_REFLOW_TILE_PX`] when none is installed. It is read here rather than
+/// passed in so every caller of this function and its two derivatives gets the
+/// same answer; see that module for why a parameter would be the unsafe shape.
 #[must_use]
 pub fn reflow_tile_width_px(viewport_width_px: f32) -> f32 {
-    viewport_width_px.clamp(0.0, MAX_REFLOW_TILE_PX)
+    viewport_width_px.clamp(0.0, crate::measure::max_tile_width_px())
 }
 
 /// Compact-breakpoint threshold in CSS px. Must equal

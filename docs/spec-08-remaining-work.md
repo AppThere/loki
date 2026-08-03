@@ -165,6 +165,72 @@ swapping left/right on even pages, with a Loro round-trip and tests. What did
 
 
 
+
+### T7.2 — the reading measure, resolved against live font metrics (partial, r107)
+
+**The mechanism is built; the last mile is not wired, deliberately.**
+
+**What was there.** The reflow view capped its column at `MAX_REFLOW_TILE_PX =
+820` CSS px. That is a width, and measure is not a width — it is a *character
+count*. Typographers set it in characters because the width that delivers it
+depends on the face and the size: 76 characters of 11 pt Georgia and 76 of 11 pt
+Arial Narrow are not the same number of points, and neither is 76 of the same
+face at 14 pt. A constant is right for one face at one size and silently wrong
+everywhere else.
+
+**`loki_layout::measure`** resolves a character count to a width by *shaping* —
+it builds a real Parley layout for a prose sample in the requested family and
+size and reads its advance, so the answer goes through the same font resolution,
+fallback and shaping the document text does. That is what D-05's "live font
+metrics" has to mean; a character-advance estimate (the kind T7.1 uses for
+chrome, where no font context is at hand) would show up here as line length in
+the reader's own face. Default 76 characters, the middle of the stated 72–80
+band, clamped to 20..=160.
+
+**`loki_renderer::measure`** publishes the resolved width as ambient state, in
+the shape `spell` and `revision` already use — and here that is the *safe* shape
+rather than merely the convenient one. `reflow_layout_content_width_pt` is the
+single source of reflow width (Spec 01 A-1): paint, hit-testing, caret placement
+and keyboard navigation each call it, across two crates, and a layout built at a
+width the paint did not use puts the caret in the wrong place. A parameter would
+give four call sites the chance to pass four values, and three of them would be
+found as a mis-placed caret rather than as a compile error.
+
+The cap can only ever *narrow* the column — `min` against the old constant — so
+a bad measurement shortens lines, which is harmless, and can never lengthen them
+past the ceiling the reflow view already promised.
+
+**Not done: nothing installs a measure.** With no cap installed the tile is the
+old constant, so behaviour is bit-identical to before this landed. Two pieces
+remain, and the second is why this stopped here rather than being finished:
+
+- **The user setting.** No UI, and no field in the app-scoped store. The measure
+  is a reading preference and belongs beside T6.3's `DocumentDefaults`.
+- **The install point, which has a real ordering hazard.** The cap must be set
+  *before* the width that consumes it is computed, and the natural home
+  (`doc_page_source`, which has both the fonts and the document) computes the
+  reflow width in the same pass. Getting that order wrong yields a first frame
+  laid out at the previous cap — one frame of wrong line length, and a caret
+  that disagrees with the paint for exactly that frame. That is the shape the
+  ledger's rule 5 says to make unavailable rather than to document, and doing it
+  properly means deciding where resolution belongs in the frame, not adding a
+  call at the end of a session. `TODO(measure-install)`.
+
+**Mutation-tested four ways:** ignoring the character count, dropping the clamp,
+letting the cap widen the tile, and storing an unusable cap each kill a specific
+test.
+
+**Known bound, recorded in-code:** the prose sample is English. Measure is a
+Latin-script concept; CJK sets lines by character count directly at roughly one
+em each, so a Latin sample under-states their width by about half.
+`TODO(measure-cjk)`.
+
+**Also unaddressed from the task line:** "decoupled from page metrics". The
+reflow width already derives from the viewport rather than the page, so nothing
+here was coupled — but the *body size* the measure resolves against still has no
+source; it will need the document's default character style, which is the same
+lookup the install point needs.
+
 ### T7.1 — status-bar priority order (partial, r106)
 
 **Done: the drop itself.** `responsive::status_priority` is a pure, hysteretic
@@ -861,7 +927,7 @@ kills the default-bytes test.
 | --- | --- |
 | **T7.0** | **Done (r105) — P1 answers yes for the wheel.** Nested containers consume within their bounds and bubble the remainder, and a horizontal-only inner does **not** swallow a vertical gesture. T7.3 proceeds; T7.4's fallback is not needed on this evidence. Drag is **not** measured — see below. |
 | T7.1 | **Partial (r106).** The priority engine, the retention set and the width-driven drop are done and on screen; the overflow `Popover`'s trigger has **not** been observed rendering — see below. |
-| T7.2 | Reflow typography decoupled from page metrics. Measure is a user setting defaulting to ~72–80 characters at body size, resolved against live font metrics (D-05) |
+| T7.2 | **Partial (r107).** The measure resolver (live font metrics) and the ambient cap the reflow width honours are done and mutation-tested. **Nothing installs a measure yet**, so behaviour is unchanged — see below. |
 | T7.3 | Oversized elements shrink to fit the content column, aspect preserved, per-element expand into its own horizontal scroll container. **The document never scrolls horizontally** |
 | T7.4 | If P1 says nested containers do not route, fall back to a modal full-screen viewer and record the deviation. Never ship a version where the document scrolls sideways |
 

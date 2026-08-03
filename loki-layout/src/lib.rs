@@ -35,6 +35,7 @@ pub mod items;
 mod layout_entry;
 mod list_marker;
 mod math;
+pub mod measure;
 pub mod mode;
 mod options;
 mod paginate_blanks;

@@ -33,6 +33,7 @@ pub(crate) mod page_tile;
 mod view_types;
 // The HTML-flow fallback view is only compiled on the Android CPU path; GPU
 // targets render reflow mode through the layout engine (RenderMode::Reflow).
+pub mod measure;
 #[cfg(all(target_os = "android", not(android_gpu)))]
 pub(crate) mod reflow_view;
 pub mod render_layout;
