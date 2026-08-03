@@ -475,6 +475,119 @@ ribbonoverflow)
     "$SHOT_DIR/r3-clicked-btn.png" null: 2>&1)"
   ;;
 
+ribbonclearance)
+  # **Does the overflow menu cover the button that opened it?** (r93.)
+  #
+  # `present` grows a floored overlay to the usable minimum, and grew it
+  # *downward* whatever side it was placed on. The ribbon is at the window
+  # bottom, so its menu is placed `Above` — and downward growth is growth
+  # straight across the trigger. The unit suite could not see it: the
+  # no-overlap invariant was asserted against `place`, and every consumer
+  # reaches geometry through `present`.
+  #
+  # # The height is the whole experiment, and it has a computable threshold
+  #
+  # `place` measures room above the anchor as `anchor.y - viewport.y - gap -
+  # margin` (4 + 8 here), and only returns a short overlay when that is under
+  # `MIN_ANCHORED_MENU_PX` (88). With the More button ~55 px above the window
+  # bottom, the floor binds at roughly **H < 155** — which is a landscape phone
+  # with the keyboard up, the case the unit fixture models at 150.
+  #
+  # So HEIGHT is a parameter and the run is meant to be repeated across it: a
+  # tall window exercises the ordinary path (regression cover for the same
+  # change) and a very short one exercises the floor. The script does not
+  # decide which it got — it prints the room it measured so the reader can.
+  #
+  # # What the sweep actually reached, measured (r93)
+  #
+  # | HEIGHT | menu rows | height | reading |
+  # | --- | --- | ---: | --- |
+  # | 420 | 103..326 | 224 | ordinary: fits, no clamp |
+  # | 200 | 5..120 | 116 | clamped by `place` to the room; floor not reached |
+  # | 160 | 0..92 | 93 | at the floor |
+  # | 150 | 0..92 | 93 | at the floor; **anchor top is 96, so the 4 px gap holds** |
+  # | 140 | — | — | **no More button**: the ribbon drops its control row first |
+  #
+  # Built against the pre-fix `present`, HEIGHT=150 gives rows **5..98** — six
+  # pixels lower, past the anchor's top edge. That is the whole discriminating
+  # band this harness can produce, and it is a sliver of the trigger's box rather
+  # than the trigger's glyph. The dramatic case (a menu across the whole control)
+  # needs room well under 84 px, and the ribbon's own responsive collapse removes
+  # the More button before a desktop window gets that short. **The reachable form
+  # of this defect is the landscape-phone-with-IME viewport the unit fixture
+  # models at 150 px, and no X11 harness can produce it** — there is no soft
+  # keyboard and `current_safe_area` is Android-only, so `viewport.y` is always 0
+  # here. Treat this scenario as regression cover for the ordinary path plus a
+  # 6 px confirmation, not as the reading that settles the floor.
+  #
+  # # Measured with the pointer parked, both times
+  #
+  # Blitz tints a hovered control, and `click_at` leaves the pointer on the More
+  # button. Comparing a hovered button against an unhovered one reports the tint
+  # and calls it an overlap. Both snapshots below are taken with the pointer
+  # moved away, so the only thing that can differ in that crop is what is
+  # painted over it.
+  H="${HEIGHT:-420}"
+  W="${WIDTH:-560}"
+  export WINSIZE="${W}x${H}"
+  SCREEN="$WINSIZE" start_x || exit 1
+  start_app env LOKI_DEVICE_PROFILE="${PROFILE:-pointer=fine}" || exit 1
+  for i in $(seq 1 "${TABS:-7}"); do key Tab; done
+  key Return
+  sleep "${OPEN_SETTLE:-12}"
+  shot c0-opened
+  # The More button: last in the strip, and the strip sits above the status bar.
+  # Both offsets are from the window bottom, so they follow HEIGHT.
+  MX="${MX:-$((W - 48))}"
+  MY="${MY:-$((H - 55))}"
+  echo "  [geom] window ${W}x${H}, More button at ${MX},${MY}"
+  echo "  [geom] room above the anchor = $((MY - 12)) px against an 88 px floor"
+  BTNCROP="${BTNCROP:-56x56+$((MX - 28))+$((MY - 28))}"
+  # Park the pointer, then photograph the trigger with the menu closed.
+  xdotool mousemove "$((W / 2))" "$((H / 3))"; sleep 1
+  shot c1-closed
+  CLICK_SETTLE=2 click_at "$MX" "$MY" "More button"
+  shot c2-menu-hovered
+  # Park again: the menu stays open (nothing dismisses on a move — the overflow
+  # request carries no `on_outside_move`), so this is the same scene minus the
+  # hover tint.
+  xdotool mousemove "$((W / 2))" "$((H / 3))"; sleep 1
+  shot c3-menu-parked
+  # **A control crop, taken from inside the menu.** Without it a near-zero on the
+  # trigger says nothing: an instrument that cannot report occlusion anywhere
+  # reports none everywhere (evidence rule 3). This box sits one menu-row above
+  # the trigger — derived from the same coordinate, so the two cannot go stale
+  # apart — and the menu is over it by construction when the menu is open.
+  # Clamped: at a very short HEIGHT one menu-row above the trigger is off the top
+  # of the window, and a negative crop offset silently becomes a box somewhere
+  # else. The clamp keeps it inside the frame; whether it is inside the *menu* is
+  # what the printed number reports, which is the point of having it.
+  CTL_Y=$((MY - 84)); [ "$CTL_Y" -lt 4 ] && CTL_Y=4
+  CTLCROP="56x56+$((MX - 28))+${CTL_Y}"
+  for st in c1-closed c3-menu-parked; do
+    convert "$SHOT_DIR/$st.png" -crop "$BTNCROP" +repage "$SHOT_DIR/$st-btn.png" 2>/dev/null
+    convert "$SHOT_DIR/$st.png" -crop "$CTLCROP" +repage "$SHOT_DIR/$st-ctl.png" 2>/dev/null
+  done
+  echo "== diffs (of 3136 px per crop) =="
+  echo "  menu opened at all:   $(compare -metric AE "$SHOT_DIR/c1-closed.png" \
+    "$SHOT_DIR/c3-menu-parked.png" null: 2>&1)"
+  # **Fuzzed, and the fuzz is the finding.** A dismissible popover renders a
+  # window-wide backdrop, which darkens every pixel by ~4/255 — including the
+  # trigger's. A plain `AE` therefore reported 2552 of 3136 "changed" on a
+  # trigger that was demonstrably untouched, which is the instrument answering a
+  # question adjacent to the one asked. 2% clears the tint and nothing else: an
+  # opaque panel over this box moves it to 3136, as the control below shows.
+  echo "  trigger overpainted:  $(compare -metric AE -fuzz 2% "$SHOT_DIR/c1-closed-btn.png" \
+    "$SHOT_DIR/c3-menu-parked-btn.png" null: 2>&1)  <- near 0 = trigger clear"
+  echo "  control, inside menu: $(compare -metric AE -fuzz 2% "$SHOT_DIR/c1-closed-ctl.png" \
+    "$SHOT_DIR/c3-menu-parked-ctl.png" null: 2>&1)  <- must be ~3136, or the"
+  echo "                        measurement cannot see occlusion at all"
+  # Contrast collapse is the second reading of the same thing: a box the menu
+  # covers becomes the panel's flat surface.
+  echo "  contrast  trigger:    $(convert "$SHOT_DIR/c1-closed-btn.png" -format '%[fx:maxima-minima]' info:) -> $(convert "$SHOT_DIR/c3-menu-parked-btn.png" -format '%[fx:maxima-minima]' info:)"
+  echo "  contrast  control:    $(convert "$SHOT_DIR/c1-closed-ctl.png" -format '%[fx:maxima-minima]' info:) -> $(convert "$SHOT_DIR/c3-menu-parked-ctl.png" -format '%[fx:maxima-minima]' info:)"
+  ;;
+
 save)
   # **What the ribbon's Save does on the document this harness can open.**
   #

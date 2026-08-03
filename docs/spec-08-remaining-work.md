@@ -49,6 +49,22 @@ and then reproduced:
 | `loki-spreadsheet` and `loki-presentation` mounted `AtPopoverHost` without `use_provide_window_size`, so every menu placed against an **unbounded** viewport — never flips, never clamps | Both now feed the context from the `AtWindowSizeSensor` they already had |
 | `anchor_scope::reposition` had a second idempotence guard comparing a pair `on_anchor_change` has already proved differs | Removed. A guard that cannot fire reads as the obligation being met there, so the next reader finds a decoy instead of the arm that enforces it |
 
+**Sat on a screen** (`scripts/sitting/run.sh ribbonclearance`, new). At
+HEIGHT=420 the menu clears its trigger (12 of 3136 px changed, against a control
+crop inside the menu at 3136 — an instrument that could not report occlusion
+would report none everywhere). At HEIGHT=150 the placement is pinned at the 88 px
+floor and still leaves the 4 px gap; the pre-fix build at the same geometry puts
+it six pixels lower, past the anchor's top edge.
+
+**And the reading has a stated limit.** Six pixels is the whole discriminating
+band this harness can produce: below HEIGHT≈145 the ribbon drops its control row
+and the More button stops existing, so the case where the menu covers the whole
+trigger is unreachable on X11. It needs `viewport.y > 0`, which only the Android
+safe-area path produces. The plain-`AE` first draft of the measurement was also
+wrong — a dismissible popover tints every pixel in the window, so it reported
+2552 of 3136 "overpainted" on a trigger that was demonstrably clear. 2% fuzz
+clears the tint and nothing else.
+
 Not fixed, and not this branch's: the macro trust/signature stack, `loki-layout`'s
 squiggle clamp, and the gate-script bypasses.
 
