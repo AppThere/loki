@@ -53,13 +53,21 @@ pub(super) fn css_layout_color(c: LayoutColor) -> String {
 }
 
 /// The CSS declarations for one resolved run.
+///
+/// `families` maps a requested family to the one `loki-layout` substitutes for
+/// it. Emitting the requested name instead would leave Blitz to fall back by its
+/// own policy, which is not ours — see [`super::content::FamilyMap`].
 #[must_use]
-pub(super) fn span_css(s: &StyleSpan) -> String {
+pub(super) fn span_css(s: &StyleSpan, families: &super::content::FamilyMap) -> String {
     let mut css = String::new();
     if let Some(name) = &s.font_name {
+        // The substituted family, falling back to the requested one when the map
+        // has no entry — which means nothing asked for it during collection, so
+        // there is nothing better to say.
+        let resolved = families.get(name).unwrap_or(name);
         // Quoted: family names contain spaces, and an unquoted `Liberation Sans`
         // is two keywords rather than one family.
-        css.push_str(&format!("font-family: '{}'; ", name.replace('\'', "")));
+        css.push_str(&format!("font-family: '{}'; ", resolved.replace('\'', "")));
     }
     css.push_str(&format!("font-size: {}pt; ", s.font_size));
     // The **numeric** weight, not `bold`. `StyleSpan` carries both and its own

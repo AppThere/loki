@@ -101,6 +101,12 @@ pub(super) fn dom_reflow_view(
         return rsx! {};
     };
     let max_w = column_max_width_pt();
+    // Substitution is `loki-layout`'s, applied here so both paths pick the same
+    // face for a font the host does not have. Resolved once per render into a
+    // map rather than per run: `resolve_font_name` takes `&mut FontResources`,
+    // and holding that lock across the render would put a shaping mutex in the
+    // middle of the UI thread's tree build.
+    let families = resolve_families(&state, doc);
 
     rsx! {
         div {
@@ -125,10 +131,35 @@ pub(super) fn dom_reflow_view(
                 ),
                 for (si, section) in doc.sections.iter().enumerate() {
                     for (bi, block) in section.blocks.iter().enumerate() {
-                        { rsx! { div { key: "{si}-{bi}", { content::block_el(block, &doc.styles) } } } }
+                        { rsx! { div { key: "{si}-{bi}", { content::block_el(block, &doc.styles, &families) } } } }
                     }
                 }
             }
         }
     }
+}
+
+/// Resolves every family the document asks for through `loki-layout`'s
+/// substitution, so a font the host lacks lands on the same face here as on the
+/// canvas path.
+///
+/// Returns an empty map when the font lock is unavailable: the requested names
+/// are then emitted as-is, which is the pre-substitution behaviour and visibly
+/// wrong in the same way for every run, rather than wrong for some.
+fn resolve_families(
+    state: &DocumentState,
+    doc: &loki_doc_model::document::Document,
+) -> content::FamilyMap {
+    let requested = content::requested_families(doc);
+    if requested.is_empty() {
+        return content::FamilyMap::new();
+    }
+    let mut fonts = state.shared_font_resources.lock();
+    requested
+        .into_iter()
+        .map(|name| {
+            let resolved = fonts.resolve_font_name(&name);
+            (name, resolved)
+        })
+        .collect()
 }

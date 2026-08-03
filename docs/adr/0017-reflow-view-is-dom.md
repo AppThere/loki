@@ -184,24 +184,37 @@ cascade, so Stylo's cascade does not have to agree with ours.
 **Measured after:** alignment, centring, the right-aligned `CUT TO:`, indents and
 paragraph spacing all now match the canvas path.
 
-### 5.1a One difference remains: font substitution
+### 5.1a Font substitution, and the last two block kinds (done, same day)
 
-The canvas path renders the screenplay monospaced; the DOM path renders it
-proportional. The status bar says "1 font substituted" in both — which is the
-clue. `loki-layout` resolves a missing family to a metric-compatible substitute
-through `FontResources::resolve_font_name`; the DOM path emits the family the
-document *asked* for and lets Blitz fall back its own way. Two different
-substitution policies for the same missing font.
+Two further differences, both the same shape — a `loki-layout` service the DOM
+path was bypassing rather than a mapping error.
 
-**This is a service the DOM path bypasses, not a mapping error.** The fix is to
-run each span's family through the same `resolve_font_name` before emitting it,
-which needs the `FontResources` handle the view does not currently take —
-`DocumentState::shared_font_resources` has it. `TODO(dom-reflow-font-sub)`.
+**Substitution.** The canvas path rendered the screenplay monospaced and the DOM
+path proportional, with "1 font substituted" in the status bar on both.
+`loki-layout` resolves a missing family to a metric-compatible face through
+`FontResources::resolve_font_name`; the DOM path was emitting the family the
+document *asked* for and letting Blitz fall back by its own policy. Two
+substitution policies for one missing font.
 
-Worth noting for §3.2: the line-break comparison was run with a family both
-paths could resolve, so it never exercised this. A substituted font has
-different metrics, so line breaks would differ — which makes this the **first**
-thing to fix before re-running that comparison on a styled document.
+Every requested family is now routed through that same resolver. Resolved once
+per render into a map rather than per run: `resolve_font_name` takes
+`&mut FontResources`, and holding that lock across the render would put a
+shaping mutex in the middle of the UI thread's tree build.
+
+**Headings and bare paragraphs.** `Block::Heading` and `Block::Para` are not
+`StyledPara`, so they never reached the resolver — the heading stayed
+proportional after the body went monospaced. The canvas path converts them with
+`synthesize_heading_para` / `synthesize_plain_para` before resolving; those are
+now `pub` and the DOM path calls the same two. Re-deriving them would have been
+a second statement of which style a heading level names.
+
+The family collector walks the synthesised forms too. Collecting only
+`StyledPara` would have left every heading emitting its requested family
+unsubstituted — the one run still rendered by a policy that is not ours.
+
+**Measured after:** the heading, the body, the centred dialogue and the
+right-aligned `CUT TO:` all match, and **every line breaks at the same word on
+both paths**.
 
 ### 5.2 What it deliberately does not do
 
@@ -213,9 +226,9 @@ which is the one failure mode a comparison instrument must not have.
 ### 5.3 Revised sequencing
 
 1. ~~Resolve through `StyleCatalog`.~~ **Done — §5.1.**
-2. Route families through `resolve_font_name` (§5.1a). Until then a document
-   with a substituted font sets differently on the two paths, so a line-break
-   comparison on a styled document would measure that rather than the mapping.
-3. Re-run the line-break comparison on a styled document, and extend it to mixed
-   style runs (§3.2's open item).
+2. ~~Route families through `resolve_font_name`.~~ **Done — §5.1a.**
+3. Re-run the line-break comparison on a styled document as a *measurement*
+   rather than by eye, and extend it to mixed style runs (§3.2's open item).
+   The screenplay's lines break identically on both paths by inspection, which
+   is encouraging and is not the same as a swept comparison.
 4. Then T7.3's per-element scroller, and the virtualisation measurement.

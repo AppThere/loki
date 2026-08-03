@@ -16,9 +16,21 @@
 use dioxus::prelude::*;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::Inline;
+use std::collections::BTreeMap;
+
 use loki_doc_model::style::catalog::StyleCatalog;
 
 use super::style::{resolved_para_css, span_css};
+
+/// Requested family name → the family that will actually be used.
+///
+/// Built once per render by [`super::resolve_families`] from
+/// `FontResources::resolve_font_name`, which is the substitution policy the
+/// canvas path applies. Emitting the *requested* family instead lets Blitz fall
+/// back its own way, so a document with a missing font sets differently on the
+/// two paths — measured on a screenplay, where one path was monospaced and the
+/// other proportional.
+pub(super) type FamilyMap = BTreeMap<String, String>;
 
 /// A visible marker for content this view cannot yet render.
 ///
@@ -88,37 +100,28 @@ pub(super) fn inlines(items: &[Inline]) -> Element {
 }
 
 /// One block.
-pub(super) fn block_el(block: &Block, catalog: &StyleCatalog) -> Element {
+pub(super) fn block_el(block: &Block, catalog: &StyleCatalog, families: &FamilyMap) -> Element {
     match block {
-        Block::Para(items) | Block::Plain(items) => rsx! {
-            p { style: "margin: 0 0 6pt 0;", { inlines(items) } }
-        },
-        Block::StyledPara(p) => styled_para_el(p, catalog),
-        Block::Heading(level, _, items) => {
-            // One element with a size, rather than `h1`..`h6`: the document's
-            // own heading styles decide the size, and borrowing the browser's
-            // default scale would make this path disagree with the canvas one
-            // for a reason that has nothing to do with the document.
-            let size_pt = match level {
-                1 => 24.0,
-                2 => 18.0,
-                3 => 14.0,
-                _ => 12.0,
-            };
-            rsx! {
-                p {
-                    style: format!(
-                        "margin: 12pt 0 6pt 0; font-weight: bold; font-size: {size_pt}pt;"
-                    ),
-                    { inlines(items) }
-                }
-            }
-        }
+        // Synthesised into the styled paragraph the resolver understands, then
+        // resolved — the same two steps the canvas path takes for these blocks.
+        // Rendering them from their raw inlines instead is what left the heading
+        // proportional while the body came out monospaced.
+        Block::Para(items) | Block::Plain(items) => styled_para_el(
+            &loki_layout::flow::synthesize_plain_para(items),
+            catalog,
+            families,
+        ),
+        Block::StyledPara(p) => styled_para_el(p, catalog, families),
+        Block::Heading(level, attr, items) => styled_para_el(
+            &loki_layout::flow::synthesize_heading_para(*level, attr, items),
+            catalog,
+            families,
+        ),
         Block::BlockQuote(kids) => rsx! {
             div {
                 style: "margin: 6pt 0 6pt 24pt;",
                 for (i, b) in kids.iter().enumerate() {
-                    { rsx! { div { key: "{i}", { block_el(b, catalog) } } } }
+                    { rsx! { div { key: "{i}", { block_el(b, catalog, families) } } } }
                 }
             }
         },
@@ -158,6 +161,7 @@ pub(super) fn block_el(block: &Block, catalog: &StyleCatalog) -> Element {
 fn styled_para_el(
     para: &loki_doc_model::content::block::StyledParagraph,
     catalog: &StyleCatalog,
+    families: &FamilyMap,
 ) -> Element {
     let resolved = loki_layout::resolve::resolve_para_props(para, catalog);
     // The note counter is local and discarded: this view does not render
@@ -180,9 +184,56 @@ fn styled_para_el(
                     // panic inside a render, and a missing run is a visibly
                     // shorter paragraph rather than a dead application.
                     let slice = text.get(span.range.clone()).unwrap_or_default().to_string();
-                    rsx! { span { key: "{i}", style: span_css(span), "{slice}" } }
+                    rsx! { span { key: "{i}", style: span_css(span, families), "{slice}" } }
                 }
             }
         }
     }
+}
+
+/// Every font family the document's runs ask for.
+///
+/// Uses the same flattener the renderer does, so the set is exactly the families
+/// that will be emitted — a collector that walked the catalog instead could miss
+/// one a direct run introduced, and a family that missed the map would be the
+/// only one still emitted unsubstituted.
+pub(super) fn requested_families(doc: &loki_doc_model::document::Document) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for section in &doc.sections {
+        for block in &section.blocks {
+            // The same synthesis the renderer applies, so a heading's family
+            // reaches the map. Collecting only `StyledPara` would leave every
+            // heading emitting its requested family unsubstituted — the one run
+            // still rendered with a policy that is not ours.
+            let owned;
+            let para = match block {
+                Block::StyledPara(p) => p,
+                Block::Para(items) | Block::Plain(items) => {
+                    owned = loki_layout::flow::synthesize_plain_para(items);
+                    &owned
+                }
+                Block::Heading(level, attr, items) => {
+                    owned = loki_layout::flow::synthesize_heading_para(*level, attr, items);
+                    &owned
+                }
+                _ => continue,
+            };
+            let mut notes = 0u32;
+            let (_, spans, _, _) = loki_layout::resolve::flatten_paragraph_with_base(
+                para,
+                &doc.styles,
+                &mut notes,
+                None,
+                loki_layout::RevisionDisplay::default(),
+            );
+            for span in &spans {
+                if let Some(name) = &span.font_name
+                    && !out.iter().any(|n| n == name)
+                {
+                    out.push(name.clone());
+                }
+            }
+        }
+    }
+    out
 }

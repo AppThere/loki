@@ -195,8 +195,12 @@ fn footnote_mark(n: u32) -> String {
 }
 
 // ── Paragraph synthesisers ────────────────────────────────────────────────────
+//
+// `pub`, not `pub(super)`: ADR-0017's DOM reflow view needs the same block →
+// styled-paragraph mapping before it can resolve, and a second copy would decide
+// which style a heading level names for a second time.
 
-pub(super) fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
+pub fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
     StyledParagraph {
         style_id: None,
         direct_para_props: None,
@@ -206,11 +210,7 @@ pub(super) fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
     }
 }
 
-pub(super) fn synthesize_heading_para(
-    level: u8,
-    attr: &NodeAttr,
-    inlines: &[Inline],
-) -> StyledParagraph {
+pub fn synthesize_heading_para(level: u8, attr: &NodeAttr, inlines: &[Inline]) -> StyledParagraph {
     use loki_doc_model::style::catalog::StyleId;
     use loki_doc_model::style::props::para_props::{ParaProps, ParagraphAlignment};
     // Prefer the style name carried in NodeAttr (set by the ODF mapper from

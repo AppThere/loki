@@ -7,6 +7,7 @@
 //! under test are the same ones the canvas path shapes with, so a mapping error
 //! here is a difference between the two paths and nothing else.
 
+use super::super::content::FamilyMap;
 use super::{css_layout_color, resolved_para_css, span_css};
 use loki_layout::color::LayoutColor;
 use loki_layout::para::{ResolvedParaProps, StyleSpan};
@@ -46,7 +47,7 @@ fn resolved_span() -> StyleSpan {
 /// cascade and ours having to agree.
 #[test]
 fn a_resolved_run_emits_every_property_it_carries() {
-    let css = span_css(&resolved_span());
+    let css = span_css(&resolved_span(), &FamilyMap::new());
     for decl in [
         "font-size:",
         "font-weight:",
@@ -68,7 +69,7 @@ fn the_numeric_weight_is_used_not_the_bold_flag() {
         bold: false,
         ..resolved_span()
     };
-    assert!(span_css(&semibold).contains("font-weight: 600"));
+    assert!(span_css(&semibold, &FamilyMap::new()).contains("font-weight: 600"));
 
     // And the boolean does not override it: a span flagged bold but resolved to
     // 600 is still 600.
@@ -78,7 +79,7 @@ fn the_numeric_weight_is_used_not_the_bold_flag() {
         ..resolved_span()
     };
     assert!(
-        span_css(&both).contains("font-weight: 600"),
+        span_css(&both, &FamilyMap::new()).contains("font-weight: 600"),
         "the boolean overrode the resolved numeric weight"
     );
 }
@@ -92,7 +93,7 @@ fn underline_and_strikethrough_combine_into_one_declaration() {
         strikethrough: Some(loki_layout::para::StrikethroughStyle::Single),
         ..resolved_span()
     };
-    let css = span_css(&s);
+    let css = span_css(&s, &FamilyMap::new());
     assert_eq!(
         css.matches("text-decoration").count(),
         1,
@@ -105,7 +106,7 @@ fn underline_and_strikethrough_combine_into_one_declaration() {
 
     // The inverse: a run with neither says `none` explicitly rather than
     // omitting it, so an ancestor's decoration cannot leak in.
-    assert!(span_css(&resolved_span()).contains("text-decoration: none"));
+    assert!(span_css(&resolved_span(), &FamilyMap::new()).contains("text-decoration: none"));
 }
 
 /// **Alpha survives.** A run at less than full opacity is a real thing in the
@@ -131,14 +132,14 @@ fn a_family_name_is_quoted() {
         font_name: Some("Liberation Sans".into()),
         ..resolved_span()
     };
-    assert!(span_css(&s).contains("font-family: 'Liberation Sans'"));
+    assert!(span_css(&s, &FamilyMap::new()).contains("font-family: 'Liberation Sans'"));
 }
 
 /// **Sizes stay in points.** Converting to px would restate the 96/72 ratio
 /// Blitz already applies, and the two copies would drift.
 #[test]
 fn sizes_are_emitted_in_points() {
-    let css = span_css(&resolved_span());
+    let css = span_css(&resolved_span(), &FamilyMap::new());
     assert!(css.contains("12pt"), "{css}");
     assert!(!css.contains("px"), "a size was converted to px: {css}");
 }
@@ -189,4 +190,43 @@ fn a_hanging_indent_beats_a_first_line_one() {
     // ancestor's.
     let none = resolved_para_css(&ResolvedParaProps::default());
     assert!(!none.contains("text-indent"), "{none}");
+}
+
+/// **A requested family is emitted as the one that will actually be used.**
+///
+/// `loki-layout` substitutes a metric-compatible face for a font the host lacks
+/// (`FontResources::resolve_font_name`). Emitting the requested name instead
+/// leaves Blitz to fall back by its own policy, and the two policies disagree —
+/// measured on a screenplay, where the canvas path set monospaced and this one
+/// set proportional.
+#[test]
+fn a_family_is_emitted_substituted_not_as_requested() {
+    let s = StyleSpan {
+        font_name: Some("Courier Prime".into()),
+        ..resolved_span()
+    };
+    let map: FamilyMap = [("Courier Prime".to_string(), "Liberation Mono".to_string())]
+        .into_iter()
+        .collect();
+    let css = span_css(&s, &map);
+    assert!(
+        css.contains("font-family: 'Liberation Mono'"),
+        "the requested family was emitted instead of the substitute: {css}"
+    );
+    assert!(
+        !css.contains("Courier Prime"),
+        "the requested family survived into the CSS: {css}"
+    );
+}
+
+/// A family with no map entry falls back to the requested name — nothing asked
+/// for it during collection, so there is nothing better to say, and dropping the
+/// declaration would be worse than an unsubstituted one.
+#[test]
+fn an_unmapped_family_falls_back_to_the_requested_name() {
+    let s = StyleSpan {
+        font_name: Some("Some Face".into()),
+        ..resolved_span()
+    };
+    assert!(span_css(&s, &FamilyMap::new()).contains("font-family: 'Some Face'"));
 }
