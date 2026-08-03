@@ -38,6 +38,11 @@ pub(crate) mod reflow_view;
 pub mod render_layout;
 pub mod renderer_state;
 pub mod revision;
+// Gated with `tile_plan`, which `zoom_capability::apply_to` reads page sizes
+// from, and whose only caller is `document_view`'s GPU branch. Ungated, it broke
+// the Android CPU build — the same "a module was ungated and its import was
+// not" shape this file warns about above, repeated in the module added for T5.4.
+#[cfg(any(not(target_os = "android"), android_gpu))]
 mod scale_resolve;
 pub mod spell;
 #[cfg(any(not(target_os = "android"), android_gpu))]

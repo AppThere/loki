@@ -87,6 +87,11 @@ pub fn capability_limit_permille(
 /// from the live generation, limit applied, effective zoom read back — lives
 /// next to the reasoning for it rather than inline in a render body where a
 /// later edit can slide a line past the read-back.
+/// Gated with [`crate::tile_plan`], which it reads page sizes from. The pure
+/// half of this module — [`largest_page`] and [`capability_limit_permille`] —
+/// stays available everywhere, because `loki-text`'s status bar calls it on
+/// every platform.
+#[cfg(any(not(target_os = "android"), android_gpu))]
 pub fn apply_to(
     source: &std::sync::Arc<crate::doc_page_source::DocPageSource>,
     device_scale_factor: f64,
