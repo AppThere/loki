@@ -165,3 +165,44 @@ fn names_are_escaped_in_the_serialised_part() {
         "raw ampersand survived: {xml}"
     );
 }
+
+/// **Whatever the writer produces, the reader must accept — on the same
+/// document.** This is the property, not a case: the two halves were written
+/// against different sources (`styles` from the catalog, `sections` from the
+/// section references) and disagreed whenever those two disagreed, so the
+/// exporter emitted a map guaranteed to be discarded on reimport. Found by a
+/// DOCX → ODT → DOCX probe during T6.8, not by any of T6.5's own tests, every
+/// one of which used a document whose catalog and sections already agreed.
+#[test]
+fn every_map_the_writer_produces_is_one_the_reader_accepts() {
+    // A section naming a style the catalog has no entry for — the exact
+    // disagreement the two sources allowed.
+    let mut uncatalogued = two_section_doc();
+    uncatalogued.styles.page_styles.clear();
+
+    // ...and one where the catalog holds *extra* styles no section uses, which
+    // must not make the map inconsistent either.
+    let mut extra = two_section_doc();
+    extra.styles.page_styles.insert(
+        StyleId::new("Unused"),
+        loki_doc_model::style::page_style::PageStyle::new(
+            StyleId::new("Unused"),
+            PageLayout::default(),
+        ),
+    );
+
+    for (mut doc, why) in [
+        (two_section_doc(), "catalog and sections agree"),
+        (uncatalogued, "sections name uncatalogued styles"),
+        (extra, "catalog holds unused styles"),
+    ] {
+        let map = PageStyleMap::from_document(&doc).expect("has names");
+        assert!(
+            apply_page_style_part(&mut doc, &map),
+            "the writer produced a map its own reader rejects ({why})"
+        );
+        // And the names really did survive the round trip through the map.
+        assert_eq!(doc.sections[0].page_style, Some(StyleId::new("Body")));
+        assert_eq!(doc.sections[1].page_style, Some(StyleId::new("Cover")));
+    }
+}

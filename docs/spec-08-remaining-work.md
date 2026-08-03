@@ -156,12 +156,64 @@ all exist. And the task list below over-states what remains:
 | T6.5 advisory DOCX part | remaining | **Done, r101.** See below. |
 | T6.6 odd/even + first page | remaining | **Already built.** DOCX reader, writer, `settings.xml` assembly, model fields, and `flow_headers::assign_headers_footers` selecting the first/even/default variant. The spec's "mirrored margins are near-useless without it" was already satisfied. |
 | T6.7 UI panel + manager | remaining | **Was half built — the editing half is done, r97.** See the correction below: the r96 row was wrong about rename. |
-| T6.8 conformance | remaining | **Remaining** for page styles specifically; the ODF round-trip suites exist to extend. |
+| T6.8 conformance | remaining | **Done, r102** — and it found a defect in T6.5. See below. |
 
 **T6.1's premise checked out.** `mirror_margins` really is wired end to end —
 `w:mirrorMargins` → `DocumentSettings` → `LayoutOptions` → `mirrored_margins()`
 swapping left/right on even pages, with a Loro round-trip and tests. What did
 *not* exist was any ODF spelling of it.
+
+### T6.8 — cross-format page-geometry conformance (done, r102)
+
+`loki-convert/tests/page_geometry_conformance.rs` asserts T6.8's four properties
+— mirrored margins, a custom page size, a three-column section with a separator,
+and multiple named page styles — along its fifth, the **DOCX → ODF → DOCX**
+path. The fifth is not a sixth case: it is the route the other four travel.
+
+**It lives in `loki-convert` because neither format crate can see the other.**
+`loki-odf`'s tests do not link `loki-ooxml`, so each can only assert a
+same-format round trip — and a same-format round trip cannot catch a property
+both halves of one crate agree to drop. `loki-convert` is the crate whose job is
+the crossing.
+
+**Measured before asserted.** A throwaway probe ran the path and printed what
+survived, rather than writing assertions from what the code looked like it
+should do. Four properties crossed intact. The fifth did not.
+
+**The defect it found is in T6.5, three commits old.** `PageStyleMap::
+from_document` built its *declared styles* from the document catalog and its
+*section mapping* from the section references. When those two disagreed — a
+section naming a style the catalog has no entry for — the exporter emitted a map
+referencing ids it had not declared, which the reader correctly discarded as
+inconsistent. The names were lost, and the loss was indistinguishable from the
+feature not existing. Two sources for one fact, drifting silently: the ledger's
+rule 4, in the code I wrote to satisfy rule 4 elsewhere.
+
+Every T6.5 test used a document whose catalog and sections already agreed, so
+none of them could see it. The guard is now an invariant rather than a case:
+`every_map_the_writer_produces_is_one_the_reader_accepts` asserts that whatever
+`from_document` produces, `apply_page_style_part` accepts **on the same
+document**, across three fixtures — agreeing, catalog-empty, and catalog-with-
+extras.
+
+**And the conformance suite had the same blind spot on its first draft.**
+Reverting the fix left all seven of its tests passing, because its own `seed()`
+populates the catalog too. That is the exact shape this suite exists to catch, so
+it now carries `names_cross_even_when_the_catalog_is_empty`; with that, the
+revert kills both the unit invariant and the cross-format case. A conformance
+suite that cannot fail is decoration, and this one was, briefly, for the property
+it was written to defend.
+
+**A fixed-point test rides along**: crossing twice must change nothing the first
+crossing did not. A property that degrades a little each pass — a margin rounded,
+a name suffixed — looks stable in a single-crossing test.
+
+**Not established:** the crossing is asserted through Loki's own importers on
+both ends, so it shows that Loki's DOCX and ODF halves agree with each other, not
+that either agrees with Word or LibreOffice. XLSX/ODS and the presentation
+formats are untouched; T6.8's list is word-processing page geometry. The suite
+covers the properties T6.8 names and not the whole `PageLayout` — header/footer
+distances, gutters, borders and line numbering cross untested.
 
 ### T6.5 — the advisory DOCX page-style part (done, r101)
 

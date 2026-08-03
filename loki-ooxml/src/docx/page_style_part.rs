@@ -87,15 +87,31 @@ impl PageStyleMap {
         if sections.iter().all(Option::is_none) {
             return None;
         }
-        let styles = doc
-            .styles
-            .page_styles
-            .iter()
-            .map(|(id, ps)| PartStyle {
-                id: id.as_str().to_string(),
-                display_name: ps.display_name.clone().filter(|n| n != id.as_str()),
-            })
-            .collect();
+        // Declared from what the **sections reference**, not from the catalog.
+        //
+        // The two can disagree: a section may name a style the catalog has no
+        // entry for (an importer that set the reference without registering it,
+        // or a catalog trimmed since). Building `styles` from the catalog alone
+        // then emitted a map naming ids it had not declared — which
+        // `apply_page_style_part` correctly rejects, so the writer produced a
+        // part guaranteed to be discarded. The section reference is the fact
+        // being carried; the catalog only supplies the human name.
+        let mut styles: Vec<PartStyle> = Vec::new();
+        for id in sections.iter().flatten() {
+            if styles.iter().any(|s| s.id == *id) {
+                continue;
+            }
+            let display_name = doc
+                .styles
+                .page_styles
+                .get(&StyleId::new(id.as_str()))
+                .and_then(|ps| ps.display_name.clone())
+                .filter(|n| n != id);
+            styles.push(PartStyle {
+                id: id.clone(),
+                display_name,
+            });
+        }
         Some(Self { styles, sections })
     }
 
