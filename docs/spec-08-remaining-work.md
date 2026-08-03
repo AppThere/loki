@@ -167,6 +167,40 @@ swapping left/right on even pages, with a Loro round-trip and tests. What did
 
 
 
+
+### T7.4 — the fallback, and the clause that was not conditional (closed, r109)
+
+**Not required, and that is the whole finding.** T7.4 fires only *if P1 says
+nested containers do not route*. P1 (T7.0) says they do — including the
+horizontal-inside-vertical configuration T7.3 actually ships — so the modal
+full-screen viewer is not built and **there is no deviation to record**. This
+entry is the record that there is none.
+
+**But the task's second sentence was never conditional.** "Never ship a version
+where the document scrolls sideways" stands whatever P1 said, and it had already
+been broken: `doc_page_source` sized the reflow tile to
+`content_max_x(&layout).max(content_width)`, with a comment presenting sideways
+scrolling as the feature that reached an oversized element. T7.3 removed it.
+
+What T7.4 adds is that the prohibition is no longer prose.
+`reflow_tile_width_for_content_pt` takes **only** the content width, so it has no
+access to the laid-out content and cannot size the tile to it; reintroducing the
+old behaviour would mean adding a parameter, which is a visible act rather than
+a quiet `.max()`. That is rule 5 (make the wrong thing unavailable rather than
+documented) and rule 6's requirement that a marking be mechanical, because a
+comment decays — and this particular comment did worse than decay, it argued for
+the defect.
+
+Mutation-tested two ways: dropping the insets and ignoring the column each fail
+`the_reflow_tile_is_the_measure_plus_its_insets`.
+
+**Where the modal viewer is still the nearest answer.** T7.3's per-element
+scroller is unbuilt, so a fixed-width table is clipped. T7.4's mechanism —
+open the thing full-screen, on its own terms — is one of the three candidate
+shapes recorded there, applied per element rather than per document. It is not
+being built now because which shape is right depends on the canvas-vs-DOM
+decision T7.3 records, not because P1 ruled it out.
+
 ### T7.3 — the document never scrolls horizontally (partial, r108)
 
 P1 (T7.0) cleared this to proceed, so T7.4's modal-viewer fallback stays unused.
@@ -989,7 +1023,7 @@ kills the default-bytes test.
 | T7.1 | **Partial (r106).** The priority engine, the retention set and the width-driven drop are done and on screen; the overflow `Popover`'s trigger has **not** been observed rendering — see below. |
 | T7.2 | **Partial (r107).** The measure resolver (live font metrics) and the ambient cap the reflow width honours are done and mutation-tested. **Nothing installs a measure yet**, so behaviour is unchanged — see below. |
 | T7.3 | **Partial (r108).** The document no longer scrolls horizontally, and oversized images shrink to the column with aspect preserved. The **per-element expand** is not built and needs an architecture decision — see below. |
-| T7.4 | If P1 says nested containers do not route, fall back to a modal full-screen viewer and record the deviation. Never ship a version where the document scrolls sideways |
+| T7.4 | **Closed, not required (r109).** P1 routed green, so the modal fallback is not built — there is no deviation to record. Its unconditional clause is now enforced by a signature and a test rather than by prose. |
 
 **Acceptance.** No horizontal document scroll at any width with a 200%-width table present; status bar legible at 320 px; readable at default zoom on a phone without pinching.
 

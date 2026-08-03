@@ -78,6 +78,29 @@ pub fn reflow_layout_tile_width_pt(viewport_width_px: f32) -> f32 {
     reflow_tile_width_px(viewport_width_px) * PX_TO_PT / reflow_type_scale(viewport_width_px)
 }
 
+/// The reflow **tile** width in points for a given content width — the tile the
+/// renderer hands the canvas.
+///
+/// # Why this takes only the content width (Spec 08 T7.4)
+///
+/// T7.4's standing clause is *never ship a version where the document scrolls
+/// sideways*, and the way that clause was broken was a tile sized to
+/// `content_max_x(&layout).max(content_width)` — the widest **content**, so that
+/// an oversized element "could be reached by horizontal scrolling". One wide
+/// table then made the whole reading view scroll, and ordinary prose sat in a
+/// tile far wider than its measure.
+///
+/// So the prohibition is expressed as a signature rather than a comment: this
+/// function has no access to the laid-out content, and therefore cannot size the
+/// tile to it. A future change that wants to would have to add a parameter,
+/// which is a visible act rather than a quiet `.max()`. That is the ledger's
+/// rule 5 — make the wrong thing unavailable, not documented — and rule 6's
+/// requirement that the marking be mechanical, because a comment decays.
+#[must_use]
+pub fn reflow_tile_width_for_content_pt(content_width_pt: f32) -> f32 {
+    content_width_pt + 2.0 * REFLOW_PADDING_PT
+}
+
 /// The reflow **content** width the layout engine fills (the reading measure,
 /// in points): the layout tile minus the [`REFLOW_PADDING_PT`] side insets,
 /// floored at [`MIN_REFLOW_CONTENT_PT`]. Hit-testing and navigation must

@@ -32,6 +32,7 @@ use loki_doc_model::document::Document;
 use loki_layout::{DocumentLayout, FontResources, LayoutMode, LayoutOptions, PaginatedLayout};
 use loki_vello::FontDataCache;
 
+use crate::render_layout::reflow_tile_width_for_content_pt as tile_for;
 use crate::render_layout::{MIN_REFLOW_CONTENT_PT, REFLOW_PADDING_PT, RenderLayout, RenderMode};
 
 // ── A4 page size at 96 dpi ────────────────────────────────────────────────────
@@ -271,11 +272,10 @@ impl DocPageSource {
                         &options,
                     ) {
                         DocumentLayout::Continuous(cl) => {
-                            // **The document never scrolls horizontally** (T7.3):
-                            // the tile is the measure, never the widest content.
-                            // See `LayoutMode::fits_oversized_to_column`.
-                            // TODO(t7.3-element-scroller).
-                            let tile_width_pt = content_width + 2.0 * REFLOW_PADDING_PT;
+                            // T7.3/T7.4: the tile is the measure. The helper
+                            // cannot see the content, so it cannot be sized to
+                            // it. TODO(t7.3-element-scroller).
+                            let tile_width_pt = tile_for(content_width);
                             RenderLayout::Reflow {
                                 layout: cl,
                                 tile_width_pt,
