@@ -29,7 +29,7 @@ use super::StyleEditorSync;
 use super::page_presets::{PagePreset, apply_preset, column_count, is_active};
 use super::page_rename::PageRenameField;
 use super::page_size_picker::size_section;
-use super::panel_data_page::{caret_section_index, page_edit_target};
+use super::panel_data_page::{caret_section_index, page_edit_target, page_measurement_unit};
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
 /// Shared button chrome; `active` gives the pressed/selected look.
@@ -233,6 +233,7 @@ pub(super) fn page_style_form(
             );
         }
     };
+    let unit = page_measurement_unit();
     let count = column_count(&layout);
     rsx! {
         div {
@@ -244,7 +245,7 @@ pub(super) fn page_style_form(
                 { btn(fl!("ribbon-orientation-portrait-aria"), PagePreset::Portrait) }
                 { btn(fl!("ribbon-orientation-landscape-aria"), PagePreset::Landscape) }
             }) }
-            { size_section(&layout, &btn, on_custom_size) }
+            { size_section(&layout, unit, &btn, on_custom_size) }
             { preset_row(fl!("style-page-margins"), rsx! {
                 { btn(fl!("ribbon-margin-normal-aria"), PagePreset::MarginsNormal) }
                 { btn(fl!("ribbon-margin-narrow-aria"), PagePreset::MarginsNarrow) }

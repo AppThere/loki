@@ -152,7 +152,7 @@ all exist. And the task list below over-states what remains:
 | T6.1 `style:page-usage` | remaining | **Was remaining — done, r96.** |
 | T6.2 page-size catalogue | remaining | **Done, r98.** 28 papers, plus user-defined. See below. |
 | T6.3 app-scoped defaults | remaining | **Remaining.** Only `default_page_size_for_locale` (A4 vs Letter off `LC_PAPER`) exists. |
-| T6.4 unit resolution | remaining | **Remaining.** No measurement-unit type anywhere in the tree. |
+| T6.4 unit resolution | remaining | **Done, r99** for the page surfaces; the rest of the panel still shows pt. See below — and the r96 wording was loose: typed `Length<U>` units existed all along, what was missing was a *runtime* one. |
 | T6.5 advisory DOCX part | remaining | **Remaining.** No custom-part writer. |
 | T6.6 odd/even + first page | remaining | **Already built.** DOCX reader, writer, `settings.xml` assembly, model fields, and `flow_headers::assign_headers_footers` selecting the first/even/default variant. The spec's "mirrored margins are near-useless without it" was already satisfied. |
 | T6.7 UI panel + manager | remaining | **Was half built — the editing half is done, r97.** See the correction below: the r96 row was wrong about rename. |
@@ -162,6 +162,61 @@ all exist. And the task list below over-states what remains:
 `w:mirrorMargins` → `DocumentSettings` → `LayoutOptions` → `mirrored_margins()`
 swapping left/right on even pages, with a Loro round-trip and tests. What did
 *not* exist was any ODF spelling of it.
+
+### T6.4 — measurement units (done for the page surfaces, r99)
+
+`loki_primitives::units::MeasurementUnit` — mm, cm, in, pt, pica — with D-03's
+chain, formatting, and parsing.
+
+**The r96 row was loosely worded.** It said "no measurement-unit type anywhere in
+the tree", and the *typed* units (`Length<Mm>`, `Length<Inch>`, the whole
+`UnitConversion` table) were there all along. What was missing is a **runtime**
+unit: the user's choice of what to read and type in. Compile-time unit safety and
+a display preference are different things, and the row conflated them.
+
+**Precedence is structural, not documented.** `effective_measurement_unit` takes
+the explicit setting as its argument and the environment-derived answer is
+private, so there is no way to ask the environment while forgetting the user —
+rule 5 applied to a four-rung chain. The chain itself is a pure function over
+already-read values, so all four rungs are tested without touching the process
+environment.
+
+**The two locale tables stay apart.** `default_page_size_for_locale` reads the
+same locale variables to pick A4 vs US Letter, and its region list is
+deliberately *not* this one: Mexico, Canada and the Philippines take US Letter
+paper and are metric. `mexico_uses_letter_paper_but_metric_units` asserts the
+measurement table has not adopted the paper one's regions — a merge that looks
+like tidying and gets one of the two answers wrong for all three countries.
+
+**Display and entry only.** Nothing stored changes. The seed-then-read-back path
+is asserted for **every paper × every unit**, because the panel seeds its custom
+fields with `format_bare` and reads them with `parse`: if those two disagreed,
+opening the panel and pressing Set without typing would resize the page, and only
+in units the developer does not run in. That test is what fixes the decimal
+places — coarsening mm/pt to 0 decimals kills it.
+
+**Two rules that had to be decided rather than inherited.** The range check on a
+custom size is applied *after* conversion, because 36 pt … 14400 pt is a property
+of the page rather than of the number typed — checking the raw number would
+reject every millimetre entry (A4 is 210 mm, under a floor of 36) and wave
+through absurd inch ones. And margin equality is decided in points *before*
+rounding, so whether the inspector shows one value or four does not depend on the
+user's unit.
+
+Mutation-tested six ways: swapping the OS and locale rungs, demoting the explicit
+setting, adopting the paper-size regions, coarsening the decimals, ignoring a
+typed suffix, and checking the range before conversion — each kills a specific
+test.
+
+**Not established, and deliberately bounded:** only the **page** surfaces follow
+the unit — the page inspector's size and margins rows, and the custom-size entry.
+The paragraph, list and character inspectors still print `pt` (`style_inspector`,
+`style_list_inspector`, `style_char_inspector`). Font size is *correct* to leave
+in points, as LibreOffice and Word both do; paragraph spacing, indents and tab
+stops are **not**, and are a follow-up. There is also still no UI to *choose* a
+unit and nowhere to persist one — `effective_measurement_unit(None)` is what
+every caller passes today, so in practice the environment decides. The settings
+store is T6.3, and the signature is already the shape that will take it.
 
 ### T6.2 — the paper catalogue (done, r98)
 

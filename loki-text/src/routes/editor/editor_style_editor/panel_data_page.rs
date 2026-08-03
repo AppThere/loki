@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use loki_doc_model::document::Document;
 use loki_doc_model::layout::page::PageLayout;
+use loki_doc_model::loki_primitives::units::{MeasurementUnit, effective_measurement_unit};
 use loki_doc_model::style::StyleId;
 
 use super::super::style_page_inspector::{PagePropRow, page_inspector_rows};
@@ -125,14 +126,29 @@ pub(super) fn page_data(
         })
         .collect();
 
+    // T6.4: resolved once per render and passed down — the inspector and the
+    // size field must agree about which unit they are speaking, and a second
+    // call site is a second chance for them to disagree.
+    let unit = page_measurement_unit();
     let selected_rows = selected.and_then(|sel| {
         let p = styles.iter().find(|p| p.id.as_str() == sel)?;
         Some((
             page_display_name(doc, &p.id),
-            page_inspector_rows(&p.layout),
+            page_inspector_rows(&p.layout, unit),
         ))
     });
     (list, selected_rows)
+}
+
+/// The measurement unit the page surfaces display and parse in (D-03).
+///
+/// `None` is passed for the explicit user setting because no settings store
+/// exists to hold one yet — that is T6.3. The argument is threaded rather than
+/// dropped so the override arrives at one place when it lands, and
+/// `effective_measurement_unit` is the only way to ask, so the environment
+/// cannot be consulted without it.
+pub(super) fn page_measurement_unit() -> MeasurementUnit {
+    effective_measurement_unit(None)
 }
 
 /// The current geometry for the page style `name` — what the edit form needs

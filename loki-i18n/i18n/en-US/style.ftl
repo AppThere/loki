@@ -41,9 +41,9 @@ style-page-family-heading = Page styles
 style-page-name-label = Name
 style-page-rename = Rename
 style-page-size = Size
-# Custom (user-defined) page size entry — width x height, in points
+# Custom (user-defined) page size entry — width x height. The unit suffix is
+# not a string: it comes from MeasurementUnit::abbreviation (T6.4).
 style-page-size-custom = Custom
-style-page-size-unit-pt = pt
 style-page-size-apply = Set
 style-page-orientation = Orientation
 style-page-margins = Margins

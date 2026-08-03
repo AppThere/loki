@@ -19,7 +19,7 @@ use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_doc_model::layout::page::{PageLayout, PageSize};
 use loki_doc_model::layout::paper_catalog::PAPERS;
-use loki_doc_model::loki_primitives::units::Points;
+use loki_doc_model::loki_primitives::units::MeasurementUnit;
 use loki_i18n::fl;
 
 use super::page_form::button_css;
@@ -34,22 +34,28 @@ use super::page_presets::PagePreset;
 const MIN_EDGE_PT: f64 = 36.0;
 const MAX_EDGE_PT: f64 = 14400.0;
 
-/// Parses a custom `width` × `height` entry (points) into a [`PageSize`],
-/// or `None` when either edge is unparseable or outside `MIN_EDGE_PT
-/// ..=MAX_EDGE_PT`.
+/// Parses a custom `width` × `height` entry into a [`PageSize`], reading bare
+/// numbers in `unit` (T6.4) and honouring an explicit suffix such as `"8.5in"`.
+/// `None` when either edge is unparseable or outside `MIN_EDGE_PT..=MAX_EDGE_PT`.
+///
+/// The range check is applied in **points**, after conversion: the limits are a
+/// property of the page, not of the unit it was typed in, so 0.5 in and 12.7 mm
+/// must be accepted or rejected alike.
 ///
 /// Pure, so the acceptance rule is testable without a Dioxus scope.
 #[must_use]
-pub(super) fn parse_custom_size(width: &str, height: &str) -> Option<PageSize> {
+pub(super) fn parse_custom_size(
+    width: &str,
+    height: &str,
+    unit: MeasurementUnit,
+) -> Option<PageSize> {
     let ok = |s: &str| {
-        s.trim()
-            .parse::<f64>()
-            .ok()
-            .filter(|v| v.is_finite() && (MIN_EDGE_PT..=MAX_EDGE_PT).contains(v))
+        unit.parse(s)
+            .filter(|p| p.value().is_finite() && (MIN_EDGE_PT..=MAX_EDGE_PT).contains(&p.value()))
     };
     Some(PageSize {
-        width: Points::new(ok(width)?),
-        height: Points::new(ok(height)?),
+        width: ok(width)?,
+        height: ok(height)?,
     })
 }
 
@@ -60,13 +66,17 @@ pub(super) fn parse_custom_size(width: &str, height: &str) -> Option<PageSize> {
 /// Two text inputs and a text button at the shared 24 px input height — the
 /// same posture caveat as the rest of the form (see [`button_css`]).
 #[component]
-pub(super) fn CustomSizeField(current: PageSize, on_apply: EventHandler<PageSize>) -> Element {
+pub(super) fn CustomSizeField(
+    current: PageSize,
+    unit: MeasurementUnit,
+    on_apply: EventHandler<PageSize>,
+) -> Element {
     // Seeded from the page's current dimensions and keyed on them by the caller,
     // so selecting a different page style reseeds the fields rather than leaving
     // the previous style's numbers sitting in them.
-    let mut w = use_signal(|| format!("{:.0}", current.width.value()));
-    let mut h = use_signal(|| format!("{:.0}", current.height.value()));
-    let parsed = parse_custom_size(&w.read(), &h.read());
+    let mut w = use_signal(|| unit.format_bare(current.width));
+    let mut h = use_signal(|| unit.format_bare(current.height));
+    let parsed = parse_custom_size(&w.read(), &h.read(), unit);
     rsx! {
         div {
             style: "display: flex; flex-direction: row; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: 4px;",
@@ -104,7 +114,7 @@ pub(super) fn CustomSizeField(current: PageSize, on_apply: EventHandler<PageSize
                     fs = tokens::FONT_SIZE_LABEL,
                     fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                 ),
-                { fl!("style-page-size-unit-pt") }
+                { unit.abbreviation() }
             }
             // Withheld rather than disabled while the entry is unusable: a
             // button that looks pressable and does nothing is the shape this
@@ -128,12 +138,20 @@ pub(super) fn CustomSizeField(current: PageSize, on_apply: EventHandler<PageSize
 /// so a by-value parameter would move it out from under them.
 pub(super) fn size_section(
     layout: &PageLayout,
+    unit: MeasurementUnit,
     btn: &dyn Fn(String, PagePreset) -> Element,
     on_custom: impl FnMut(PageSize) + 'static,
 ) -> Element {
     let current = layout.page_size.clone();
-    // The key: reseed the custom fields when the selected style's size changes.
-    let key = format!("{:.0}x{:.0}", current.width.value(), current.height.value());
+    // Reseed the custom fields when the selected style's size changes **or the
+    // unit does** — the seeded text is written in the unit, so a unit change
+    // that did not reseed would leave millimetres sitting under an `in` label.
+    let key = format!(
+        "{:.0}x{:.0}@{}",
+        current.width.value(),
+        current.height.value(),
+        unit.abbreviation()
+    );
     rsx! {
         div {
             style: "display: flex; flex-direction: row; align-items: flex-start; gap: 6px; flex-wrap: wrap; margin-bottom: 4px;",
@@ -156,7 +174,7 @@ pub(super) fn size_section(
         // Dioxus only honours `key` there, and a `key` it ignores would leave
         // the custom fields holding the previously selected style's numbers.
         div {
-            CustomSizeField { key: "{key}", current, on_apply: EventHandler::new(on_custom) }
+            CustomSizeField { key: "{key}", current, unit, on_apply: EventHandler::new(on_custom) }
         }
     }
 }

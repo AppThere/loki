@@ -15,6 +15,7 @@
 //! localises the surrounding field labels via each row's [`label_key`].
 
 use loki_doc_model::layout::page::{PageLayout, PageMargins, PageOrientation, PageSize};
+use loki_doc_model::loki_primitives::units::MeasurementUnit;
 
 /// One display row of a page style: an i18n field-label key + its baked value.
 pub struct PagePropRow {
@@ -27,11 +28,11 @@ pub struct PagePropRow {
 /// Builds the inspector rows for a page style's `layout`, in display order:
 /// size, orientation, margins, columns.
 #[must_use]
-pub fn page_inspector_rows(layout: &PageLayout) -> Vec<PagePropRow> {
+pub fn page_inspector_rows(layout: &PageLayout, unit: MeasurementUnit) -> Vec<PagePropRow> {
     vec![
         PagePropRow {
             label_key: "style-page-size",
-            value: size_display(&layout.page_size),
+            value: size_display(&layout.page_size, unit),
         },
         PagePropRow {
             label_key: "style-page-orientation",
@@ -39,7 +40,7 @@ pub fn page_inspector_rows(layout: &PageLayout) -> Vec<PagePropRow> {
         },
         PagePropRow {
             label_key: "style-page-margins",
-            value: margins_display(&layout.margins),
+            value: margins_display(&layout.margins, unit),
         },
         PagePropRow {
             label_key: "style-page-columns",
@@ -54,13 +55,15 @@ pub fn page_inspector_rows(layout: &PageLayout) -> Vec<PagePropRow> {
 /// The naming rule and the dimensions both come from
 /// [`loki_doc_model::layout::paper_catalog`] — this used to carry its own copy
 /// of both, and could name only the two sizes it had literals for.
-fn size_display(size: &PageSize) -> String {
+fn size_display(size: &PageSize, unit: MeasurementUnit) -> String {
     match size.paper() {
         Some(paper) => paper.display_name.to_string(),
-        None => {
-            let (w, h) = (size.width.value(), size.height.value());
-            format!("{w:.0} × {h:.0} pt")
-        }
+        None => format!(
+            "{} × {} {}",
+            unit.format_bare(size.width),
+            unit.format_bare(size.height),
+            unit.abbreviation()
+        ),
     }
 }
 
@@ -72,8 +75,13 @@ fn orientation_display(o: PageOrientation) -> String {
     .to_string()
 }
 
-/// A single `N pt` when all four edges are equal, else `T / B / L / R pt`.
-fn margins_display(m: &PageMargins) -> String {
+/// A single `N <unit>` when all four edges are equal, else `T / B / L / R <unit>`.
+///
+/// The equality test stays in **points** rather than in the display unit: two
+/// margins that differ by a hair are the same margin whichever unit is on
+/// screen, and testing after rounding would make the "all four equal" answer
+/// depend on the user's measurement setting.
+fn margins_display(m: &PageMargins, unit: MeasurementUnit) -> String {
     let (t, b, l, r) = (
         m.top.value(),
         m.bottom.value(),
@@ -81,10 +89,18 @@ fn margins_display(m: &PageMargins) -> String {
         m.right.value(),
     );
     let eq = |a: f64, c: f64| (a - c).abs() < 0.5;
+    let n = |v: f64| unit.format_bare(loki_doc_model::loki_primitives::units::Points::new(v));
     if eq(t, b) && eq(t, l) && eq(t, r) {
-        format!("{t:.0} pt")
+        format!("{} {}", n(t), unit.abbreviation())
     } else {
-        format!("{t:.0} / {b:.0} / {l:.0} / {r:.0} pt")
+        format!(
+            "{} / {} / {} / {} {}",
+            n(t),
+            n(b),
+            n(l),
+            n(r),
+            unit.abbreviation()
+        )
     }
 }
 
