@@ -4,12 +4,12 @@
 //! [`super::page_form`]'s component so the applier stays under the 300-line
 //! ceiling and the transform stays unit-testable without a Dioxus scope.
 
-use loki_doc_model::layout::page::{PageLayout, PageOrientation, PageSize, SectionColumns};
+use loki_doc_model::layout::page::{PageLayout, PageSize, SectionColumns};
 use loki_doc_model::layout::paper_catalog::Paper;
 use loki_doc_model::loki_primitives::units::Points;
 
 /// A page-geometry preset the form can apply to a page style.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub(super) enum PagePreset {
     Portrait,
     Landscape,
@@ -66,37 +66,35 @@ pub(super) fn apply_preset(current: &PageLayout, preset: PagePreset) -> PageLayo
     match preset {
         PagePreset::Portrait | PagePreset::Landscape => {
             let want = preset == PagePreset::Landscape;
-            l.orientation = if want {
-                PageOrientation::Landscape
-            } else {
-                PageOrientation::Portrait
-            };
             if is_landscape != want {
                 let (w, h) = (l.page_size.width, l.page_size.height);
-                l.page_size = PageSize {
+                l.set_page_size(PageSize {
                     width: h,
                     height: w,
-                };
+                });
+            } else {
+                // Already the requested way round, but the flag may still
+                // disagree with the dimensions on a layout built before
+                // `set_page_size` existed; re-assert it.
+                let size = l.page_size.clone();
+                l.set_page_size(size);
             }
         }
         PagePreset::Size(paper) => {
-            l.page_size = paper.oriented_like(&l.page_size);
+            l.set_page_size(paper.oriented_like(&l.page_size));
         }
         PagePreset::ExactSize(w, h) => {
-            // Oriented like the current page, exactly as a catalogued paper is:
-            // choosing a size must not silently rotate the document.
-            let portrait = PageSize {
-                width: Points::new(w.min(h)),
-                height: Points::new(w.max(h)),
-            };
-            l.page_size = if is_landscape {
-                PageSize {
-                    width: portrait.height,
-                    height: portrait.width,
-                }
-            } else {
-                portrait
-            };
+            // **Exactly as given, not oriented like the current page.** A
+            // catalogued paper is orientation-free — "A4" means the same sheet
+            // either way round, so `Size` keeps the page's orientation. A
+            // remembered custom size is not: the user typed a width and a
+            // height, the button is labelled with those two numbers in that
+            // order, and normalising to short/long would apply 200 × 300 for a
+            // button reading "300 × 200 pt".
+            l.set_page_size(PageSize {
+                width: Points::new(w),
+                height: Points::new(h),
+            });
         }
         PagePreset::MarginsNormal | PagePreset::MarginsNarrow | PagePreset::MarginsWide => {
             let (tb, lr) = match preset {
@@ -167,16 +165,20 @@ pub(super) fn is_active(layout: &PageLayout, preset: PagePreset) -> bool {
         PagePreset::Portrait => !landscape,
         PagePreset::Landscape => landscape,
         PagePreset::Size(paper) => paper.matches(&layout.page_size),
+        // Width against width, height against height — **not** normalised to
+        // short/long. The apply arm sets the two numbers in the order the button
+        // is labelled with, so a lit-check that ignored the order would light
+        // "300 × 200 pt" for a 200 × 300 page, and light both remembered sizes
+        // whenever the user had kept a size and its transpose.
         PagePreset::ExactSize(w, h) => {
-            let (pw, ph) = (
-                layout.page_size.width.value(),
-                layout.page_size.height.value(),
-            );
-            let (short, long) = (pw.min(ph), pw.max(ph));
-            (short - w.min(h)).abs() < 1.0 && (long - w.max(h)).abs() < 1.0
+            (layout.page_size.width.value() - w).abs() < 1.0
+                && (layout.page_size.height.value() - h).abs() < 1.0
         }
-        PagePreset::MarginsNormal => all(72.0),
-        PagePreset::MarginsNarrow => all(36.0),
+        // Each preset checks **all four** edges. `MarginsNormal` used to test
+        // only top/bottom, which Wide (72 / 144) also satisfies — so a Wide
+        // page lit both buttons.
+        PagePreset::MarginsNormal => all(72.0) && lr(72.0),
+        PagePreset::MarginsNarrow => all(36.0) && lr(36.0),
         PagePreset::MarginsWide => all(72.0) && lr(144.0),
         PagePreset::Columns(n) => count == n,
         // A step is an action, not a state: it is never the "current" value.

@@ -105,10 +105,17 @@ pub(super) fn style_editor_panel(
     let list_selected = editing_list_style.read().clone();
     let (list_list, list_selected_rows) =
         panel_data::list_data(&doc_state, list_selected.as_deref());
+    // The app-scoped settings, read **once** per render — and reading them here
+    // is what subscribes this scope to `settings_generation`, so writing a
+    // setting redraws the panel (T6.3/T6.4). Every length on screen and the
+    // size field must speak the same unit, and a second load is a second chance
+    // for them to disagree.
+    let settings =
+        crate::routes::editor::editor_defaults::PanelSettings::load(sync.settings_generation);
     // Page styles (§9 page family) are derived on demand from the sections.
     let page_selected = editing_page_style.read().clone();
     let (page_list, page_selected_rows) =
-        panel_data_page::page_data(&doc_state, page_selected.as_deref());
+        panel_data_page::page_data(&doc_state, page_selected.as_deref(), settings.unit);
 
     let styles = catalog_style_tree(&doc_state);
     let active_id = draft.id.clone();
@@ -273,7 +280,7 @@ pub(super) fn style_editor_panel(
                         { table_form::table_style_form(ds_table_form, editing_table_draft, tdraft, sync) }
                     }
                     if let Some((pname, playout)) = page_edit {
-                        { page_form::page_style_form(&ds_page_form, pname, playout, editing_page_style, sync) }
+                        { page_form::page_style_form(&ds_page_form, pname, playout, editing_page_style, sync, &settings) }
                     }
                     { family_inspector::family_inspector_columns(char_selected_rows, list_selected_rows, page_selected_rows, posture) }
                 }

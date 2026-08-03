@@ -24,13 +24,14 @@ use loki_doc_model::layout::page::{PageLayout, PageSize};
 use loki_doc_model::{rename_page_style, set_page_style_geometry, set_section_page_style};
 use loki_i18n::fl;
 
+use super::super::editor_defaults::PanelSettings;
 use super::super::editor_keydown_ctrl::post_mutation_sync;
 use super::StyleEditorSync;
 use super::page_defaults_row::{new_document_defaults_row, unit_row};
 use super::page_presets::{PagePreset, apply_preset, column_count, is_active};
 use super::page_rename::PageRenameField;
 use super::page_size_picker::size_section;
-use super::panel_data_page::{caret_section_index, page_edit_target, page_measurement_unit};
+use super::panel_data_page::{caret_section_index, page_edit_target};
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
 /// Shared button chrome; `active` gives the pressed/selected look.
@@ -177,6 +178,7 @@ pub(super) fn page_style_form(
     layout: PageLayout,
     mut editing_page_style: Signal<Option<String>>,
     sync: StyleEditorSync,
+    settings: &PanelSettings,
 ) -> Element {
     let btn = |label: String, preset: PagePreset| {
         preset_button(
@@ -222,7 +224,7 @@ pub(super) fn page_style_form(
         // offer it again. Recorded before the mutation rather than after, so a
         // size the user typed is kept even if the document write fails.
         super::super::editor_defaults::remember_custom_size(&size);
-        next.page_size = size;
+        next.set_page_size(size);
         let guard = sync.loro_doc.read();
         let Some(ldoc) = guard.as_ref() else { return };
         if set_page_style_geometry(ldoc, &size_name, &next).is_ok() {
@@ -238,7 +240,7 @@ pub(super) fn page_style_form(
             );
         }
     };
-    let unit = page_measurement_unit();
+    let unit = settings.unit;
     let count = column_count(&layout);
     rsx! {
         div {
@@ -250,7 +252,7 @@ pub(super) fn page_style_form(
                 { btn(fl!("ribbon-orientation-portrait-aria"), PagePreset::Portrait) }
                 { btn(fl!("ribbon-orientation-landscape-aria"), PagePreset::Landscape) }
             }) }
-            { size_section(&layout, unit, &btn, on_custom_size) }
+            { size_section(&layout, settings, &btn, on_custom_size) }
             { preset_row(fl!("style-page-margins"), rsx! {
                 { btn(fl!("ribbon-margin-normal-aria"), PagePreset::MarginsNormal) }
                 { btn(fl!("ribbon-margin-narrow-aria"), PagePreset::MarginsNarrow) }
@@ -270,11 +272,18 @@ pub(super) fn page_style_form(
                     "{count}"
                 }
                 { btn(fl!("style-page-columns-more"), PagePreset::ColumnCountDelta(1)) }
-                { btn(fl!("style-page-column-separator"), PagePreset::ToggleSeparator) }
+                // Withheld on a single-column style, where `ToggleSeparator` is
+                // a no-op: there is no `SectionColumns` to flip, so the button
+                // was clickable and inert. The panel's `apply here` control
+                // already takes this line — a control that looks pressable and
+                // does nothing is worse than an absent one.
+                if count > 1 {
+                    { btn(fl!("style-page-column-separator"), PagePreset::ToggleSeparator) }
+                }
             }) }
             { preset_row(fl!("style-page-apply-label"), apply_here_button(doc_state, name.clone(), sync)) }
             { unit_row(unit, sync.settings_generation) }
-            { new_document_defaults_row(&layout, sync.settings_generation) }
+            { new_document_defaults_row(&layout, settings, sync.settings_generation) }
         }
     }
 }

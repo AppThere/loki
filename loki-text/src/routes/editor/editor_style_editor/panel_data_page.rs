@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use loki_doc_model::document::Document;
 use loki_doc_model::layout::page::PageLayout;
-use loki_doc_model::loki_primitives::units::{MeasurementUnit, effective_measurement_unit};
+use loki_doc_model::loki_primitives::units::MeasurementUnit;
 use loki_doc_model::style::StyleId;
 
 use super::super::style_page_inspector::{PagePropRow, page_inspector_rows};
@@ -107,6 +107,7 @@ pub(super) type PageListEntry = (String, String, bool);
 pub(super) fn page_data(
     doc_state: &Arc<Mutex<DocumentState>>,
     selected: Option<&str>,
+    unit: MeasurementUnit,
 ) -> (Vec<PageListEntry>, PageSelection) {
     let Ok(state) = doc_state.lock() else {
         return (Vec::new(), None);
@@ -126,10 +127,6 @@ pub(super) fn page_data(
         })
         .collect();
 
-    // T6.4: resolved once per render and passed down — the inspector and the
-    // size field must agree about which unit they are speaking, and a second
-    // call site is a second chance for them to disagree.
-    let unit = page_measurement_unit();
     let selected_rows = selected.and_then(|sel| {
         let p = styles.iter().find(|p| p.id.as_str() == sel)?;
         Some((
@@ -138,16 +135,6 @@ pub(super) fn page_data(
         ))
     });
     (list, selected_rows)
-}
-
-/// The measurement unit the page surfaces display and parse in (D-03).
-///
-/// The explicit setting comes from the app-scoped defaults (T6.3); `None` there
-/// means no choice has been recorded, which is what makes the environment the
-/// next rung rather than this one. `effective_measurement_unit` is the only way
-/// to ask, so the environment cannot be consulted without it.
-pub(super) fn page_measurement_unit() -> MeasurementUnit {
-    effective_measurement_unit(super::super::editor_defaults::explicit_measurement_unit())
 }
 
 /// The current geometry for the page style `name` — what the edit form needs

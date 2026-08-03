@@ -25,7 +25,7 @@ use loki_doc_model::layout::page::PageLayout;
 use loki_doc_model::loki_primitives::units::MeasurementUnit;
 use loki_i18n::fl;
 
-use super::super::editor_defaults;
+use super::super::editor_defaults::{self, PanelSettings};
 use super::page_form::button_css;
 
 /// A labelled row, matching the form's other rows.
@@ -80,10 +80,11 @@ pub(super) fn unit_row(active: MeasurementUnit, mut generation: Signal<u64>) -> 
 /// clears nothing is a control that looks like it did something.
 pub(super) fn new_document_defaults_row(
     layout: &PageLayout,
+    settings: &PanelSettings,
     mut generation: Signal<u64>,
 ) -> Element {
     let captured = layout.clone();
-    let has_defaults = editor_defaults::has_default_page_geometry();
+    let has_defaults = settings.has_page_geometry;
     row(
         fl!("style-page-defaults-label"),
         rsx! {

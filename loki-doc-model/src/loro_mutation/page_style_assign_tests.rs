@@ -189,3 +189,62 @@ fn applying_an_unknown_style_or_an_out_of_range_section_is_a_no_op() {
             .all(|s| s.page_style != Some(StyleId::new("Landscape")))
     );
 }
+
+/// **Dropping to one column must clear the separator from the CRDT.**
+///
+/// The count key is rewritten every pass, but `gap` and `separator` were only
+/// written when the new layout *had* columns — so going three-to-one left
+/// `separator: true` behind, the reader rebuilt
+/// `Some(SectionColumns { count: 1, separator: true })`, and ODT export wrote a
+/// `<style:column-sep>` inside a one-column `<style:columns>`. The widths key
+/// two lines below already had this rule; the other two did not.
+#[test]
+fn dropping_to_one_column_clears_the_separator_it_left_behind() {
+    use crate::layout::page::SectionColumns;
+    use crate::loro_mutation::set_page_style_geometry;
+
+    let mut doc = Document::new();
+    let mut section = Section::with_layout_and_blocks(
+        PageLayout {
+            columns: Some(SectionColumns {
+                count: 3,
+                gap: Points::new(18.0),
+                separator: true,
+                widths: Vec::new(),
+            }),
+            ..PageLayout::default()
+        },
+        vec![Block::Para(vec![Inline::Str("x".into())])],
+    );
+    section.page_style = Some(StyleId::new("Body"));
+    doc.sections = vec![section];
+    doc.assign_page_styles();
+    doc.sections[0].page_style = Some(StyleId::new("Body"));
+
+    let loro = document_to_loro(&doc).expect("seed");
+
+    // The separator really is stored first, so the assertion below is not
+    // passing on a document that never had one.
+    let seeded = loro_to_document(&loro).expect("read back");
+    assert!(
+        seeded.sections[0]
+            .layout
+            .columns
+            .as_ref()
+            .is_some_and(|c| c.separator && c.count == 3),
+        "fixture never stored a three-column separator"
+    );
+
+    let single = PageLayout {
+        columns: None,
+        ..PageLayout::default()
+    };
+    set_page_style_geometry(&loro, "Body", &single).expect("drop to one column");
+
+    let after = loro_to_document(&loro).expect("read back");
+    let cols = after.sections[0].layout.columns.as_ref();
+    assert!(
+        cols.is_none_or(|c| !c.separator),
+        "a one-column layout came back carrying a separator: {cols:?}"
+    );
+}

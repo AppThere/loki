@@ -22,7 +22,7 @@ use loki_doc_model::layout::paper_catalog::PAPERS;
 use loki_doc_model::loki_primitives::units::MeasurementUnit;
 use loki_i18n::fl;
 
-use super::super::editor_defaults::remembered_custom_sizes;
+use super::super::editor_defaults::PanelSettings;
 use super::page_form::button_css;
 use super::page_presets::PagePreset;
 
@@ -139,10 +139,11 @@ pub(super) fn CustomSizeField(
 /// so a by-value parameter would move it out from under them.
 pub(super) fn size_section(
     layout: &PageLayout,
-    unit: MeasurementUnit,
+    settings: &PanelSettings,
     btn: &dyn Fn(String, PagePreset) -> Element,
     on_custom: impl FnMut(PageSize) + 'static,
 ) -> Element {
+    let unit = settings.unit;
     let current = layout.page_size.clone();
     // Reseed the custom fields when the selected style's size changes **or the
     // unit does** — the seeded text is written in the unit, so a unit change
@@ -172,7 +173,7 @@ pub(super) fn size_section(
                 // Sizes the user typed that the catalogue cannot name (T6.3),
                 // most recent first. Labelled with their dimensions in the
                 // active unit — they have no name, which is why they are here.
-                for size in remembered_custom_sizes().into_iter() {
+                for size in settings.custom_sizes.iter() {
                     { btn(
                         format!(
                             "{} × {} {}",

@@ -5,6 +5,7 @@
 use super::{PagePreset, apply_preset, is_active};
 use loki_doc_model::layout::page::{PageLayout, PageOrientation, PageSize};
 use loki_doc_model::layout::paper_catalog::{self, PAPERS, paper_for};
+use loki_doc_model::loki_primitives::units::Points;
 
 #[test]
 fn landscape_swaps_the_axes_and_sets_the_flag() {
@@ -167,4 +168,101 @@ fn stepping_to_three_matches_the_three_column_preset() {
     );
     let preset = apply_preset(&PageLayout::default(), PagePreset::Columns(3));
     assert_eq!(stepped.columns, preset.columns);
+}
+
+/// **Setting a size must bring the orientation with it.** The DOCX writer reads
+/// `layout.orientation` while the panel's Portrait/Landscape state reads the
+/// dimensions, so a page whose two disagree exports `w:orient="portrait"` for a
+/// plainly landscape sheet while the Landscape button is lit.
+#[test]
+fn applying_a_size_keeps_the_orientation_flag_with_the_dimensions() {
+    let agrees = |l: &PageLayout| {
+        let landscape = l.page_size.width.value() > l.page_size.height.value();
+        (l.orientation == PageOrientation::Landscape) == landscape
+    };
+
+    // Start from a layout whose flag is deliberately wrong, which is what the
+    // direct `page_size` assignments used to produce.
+    let mut broken = PageLayout {
+        page_size: PageSize {
+            width: Points::new(700.0),
+            height: Points::new(500.0),
+        },
+        orientation: PageOrientation::Portrait,
+        ..PageLayout::default()
+    };
+    assert!(!agrees(&broken), "fixture is not actually inconsistent");
+
+    for preset in [
+        PagePreset::Portrait,
+        PagePreset::Landscape,
+        PagePreset::Size(&paper_catalog::A4),
+        PagePreset::ExactSize(300.0, 200.0),
+        PagePreset::ExactSize(200.0, 300.0),
+    ] {
+        let out = apply_preset(&broken, preset);
+        assert!(
+            agrees(&out),
+            "{preset:?} left the orientation flag disagreeing with the dimensions"
+        );
+    }
+    // ...and from a consistent layout it stays consistent.
+    broken.orientation = PageOrientation::Landscape;
+    for preset in [
+        PagePreset::Size(&paper_catalog::US_LETTER),
+        PagePreset::Portrait,
+    ] {
+        assert!(agrees(&apply_preset(&broken, preset)));
+    }
+}
+
+/// **A remembered custom size applies the numbers on its label.** `Size` is
+/// orientation-free — A4 is the same sheet either way round, so it keeps the
+/// page's orientation — but `ExactSize` carries a width and a height the user
+/// typed, and normalising them to short/long made a button reading
+/// "300 × 200 pt" produce a 200 × 300 page.
+#[test]
+fn an_exact_size_is_applied_in_the_order_given() {
+    let portrait = PageLayout::default();
+    let out = apply_preset(&portrait, PagePreset::ExactSize(300.0, 200.0));
+    assert_eq!(
+        out.page_size.width.value(),
+        300.0,
+        "width and height swapped"
+    );
+    assert_eq!(out.page_size.height.value(), 200.0);
+    assert_eq!(out.orientation, PageOrientation::Landscape);
+
+    // The active check has to agree with what the apply arm did, or the button
+    // that produced the page is not the one that lights up.
+    assert!(is_active(&out, PagePreset::ExactSize(300.0, 200.0)));
+    assert!(
+        !is_active(&out, PagePreset::ExactSize(200.0, 300.0)),
+        "the transposed size also reads as active"
+    );
+}
+
+/// **Each margin preset lights only itself.** `MarginsNormal` tested top/bottom
+/// alone, which Wide (72 / 144) also satisfies, so a Wide page lit two buttons.
+#[test]
+fn margin_presets_are_mutually_exclusive() {
+    let presets = [
+        PagePreset::MarginsNormal,
+        PagePreset::MarginsNarrow,
+        PagePreset::MarginsWide,
+    ];
+    for applied in presets {
+        let page = apply_preset(&PageLayout::default(), applied);
+        let lit: Vec<_> = presets.iter().filter(|p| is_active(&page, **p)).collect();
+        assert_eq!(
+            lit.len(),
+            1,
+            "{applied:?} lit {} margin buttons: {lit:?}",
+            lit.len()
+        );
+        assert!(
+            is_active(&page, applied),
+            "{applied:?} did not light itself"
+        );
+    }
 }

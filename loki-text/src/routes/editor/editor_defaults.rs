@@ -22,10 +22,11 @@
 //! against — and it would be near-invisible, because the result still looks like
 //! a well-formed document.
 
+use dioxus::prelude::*;
 use loki_app_shell::document_defaults::DocumentDefaults;
 use loki_doc_model::document::Document;
 use loki_doc_model::layout::page::PageSize;
-use loki_doc_model::loki_primitives::units::Points;
+use loki_doc_model::loki_primitives::units::{MeasurementUnit, Points, effective_measurement_unit};
 
 /// Applies `defaults` to a freshly built blank `doc`, in place.
 ///
@@ -39,10 +40,13 @@ use loki_doc_model::loki_primitives::units::Points;
 pub(super) fn apply_document_defaults(doc: &mut Document, defaults: &DocumentDefaults) {
     for section in &mut doc.sections {
         if let Some(size) = defaults.page_size {
-            section.layout.page_size = PageSize {
+            // Through `set_page_size`, so a landscape default does not seed
+            // every new document with landscape dimensions under a `Portrait`
+            // flag — which the DOCX writer would export as `w:orient="portrait"`.
+            section.layout.set_page_size(PageSize {
                 width: size.width,
                 height: size.height,
-            };
+            });
         }
         if let Some(m) = defaults.margins {
             // Only the four edges: header/footer/gutter distances are not part
@@ -56,27 +60,55 @@ pub(super) fn apply_document_defaults(doc: &mut Document, defaults: &DocumentDef
     }
 }
 
-/// The user's explicit measurement unit, for T6.4's resolution chain.
+/// Everything the style panel needs from the app-scoped settings, read **once**
+/// per render.
 ///
-/// Reads the settings file; `None` when no choice has been recorded, which is
-/// what makes the environment the next rung rather than this one.
-#[must_use]
-pub fn explicit_measurement_unit() -> Option<loki_doc_model::loki_primitives::units::MeasurementUnit>
-{
-    DocumentDefaults::load().measurement_unit
+/// Each field used to have its own accessor, and each accessor opened and
+/// parsed the settings file: the panel did four blocking reads per render, on
+/// the UI thread, repeated on every caret move while it was open. One load,
+/// threaded down, is the same information at a quarter of the syscalls — and
+/// it also removes the chance of two halves of one render disagreeing because
+/// the file changed between their reads.
+#[derive(Clone, PartialEq)]
+pub(super) struct PanelSettings {
+    /// The unit to display and type in (T6.4's chain, already resolved).
+    pub unit: MeasurementUnit,
+    /// Hand-entered sizes, most recent first.
+    pub custom_sizes: Vec<PageSize>,
+    /// Whether any page geometry has been recorded — drives the Reset control.
+    pub has_page_geometry: bool,
 }
 
-/// The sizes the user has entered by hand, most recent first, as page sizes.
-#[must_use]
-pub fn remembered_custom_sizes() -> Vec<PageSize> {
-    DocumentDefaults::load()
-        .custom_sizes
-        .into_iter()
-        .map(|s| PageSize {
-            width: s.width,
-            height: s.height,
-        })
-        .collect()
+impl PanelSettings {
+    /// Loads the settings and **subscribes the calling render scope** to the
+    /// next write.
+    ///
+    /// The subscription is the point of taking `generation`. A settings file is
+    /// not reactive state, so writing one changes nothing on screen by itself;
+    /// the counter is what the panel re-renders on. It was passed to the two
+    /// controls that *write* it and read by nothing during a render, so nobody
+    /// subscribed and the bump was inert — picking a new unit left every number
+    /// on screen in the old one until an unrelated event happened to redraw.
+    ///
+    /// Taking it here rather than reading it at some call site is rule 5: the
+    /// only way to get the settings is to subscribe to changes in them.
+    pub(super) fn load(generation: Signal<u64>) -> Self {
+        // The read is the subscription — the value itself is not needed.
+        let _generation = generation();
+        let stored = DocumentDefaults::load();
+        Self {
+            unit: effective_measurement_unit(stored.measurement_unit),
+            custom_sizes: stored
+                .custom_sizes
+                .iter()
+                .map(|s| PageSize {
+                    width: s.width,
+                    height: s.height,
+                })
+                .collect(),
+            has_page_geometry: stored.page_size.is_some() || stored.margins.is_some(),
+        }
+    }
 }
 
 /// Records the current page geometry as the app-scoped default for **new**
@@ -111,14 +143,6 @@ pub fn clear_default_page_geometry() {
     defaults.page_size = None;
     defaults.margins = None;
     defaults.save();
-}
-
-/// Whether any page geometry has been recorded — drives whether the reset
-/// control is worth showing.
-#[must_use]
-pub fn has_default_page_geometry() -> bool {
-    let d = DocumentDefaults::load();
-    d.page_size.is_some() || d.margins.is_some()
 }
 
 /// Records the measurement unit to display and type in (T6.4's explicit

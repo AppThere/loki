@@ -214,6 +214,31 @@ impl SectionColumns {
 
 pub use super::page_usage::PageUsage;
 
+impl PageLayout {
+    /// Sets the page size **and brings [`orientation`](Self::orientation) with
+    /// it**.
+    ///
+    /// The two are one fact recorded twice: `w:orient` and `w:w`/`w:h` in OOXML,
+    /// and in this model a `PageOrientation` beside a `PageSize`. Word keeps
+    /// them agreeing — a landscape page has its width and height already
+    /// swapped *and* `w:orient="landscape"` — and every consumer here assumes
+    /// the same. They drifted wherever a caller assigned `page_size` on its own:
+    /// a typed custom size or a seeded app default produced landscape
+    /// dimensions under a `Portrait` flag, so the exporter wrote
+    /// `w:orient="portrait"` for a page that is plainly landscape while the
+    /// panel's Landscape button — which reads the dimensions — lit up.
+    ///
+    /// Assign through here rather than to the field, and the pair cannot part.
+    pub fn set_page_size(&mut self, size: PageSize) {
+        self.orientation = if size.width.value() > size.height.value() {
+            PageOrientation::Landscape
+        } else {
+            PageOrientation::Portrait
+        };
+        self.page_size = size;
+    }
+}
+
 /// The complete page layout for a section.
 ///
 /// TR 29166 §7.2.8 (Section and page layout) and §6.2.3 (header/footer).

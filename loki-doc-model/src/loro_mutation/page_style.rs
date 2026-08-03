@@ -121,9 +121,20 @@ pub(super) fn write_section_geometry(
     let cols = child_map_or_create(&lay, KEY_COLUMNS)?;
     let count = layout.columns.as_ref().map_or(1, |c| c.count).max(1);
     cols.insert(KEY_COL_COUNT, i64::from(count))?;
-    if let Some(c) = layout.columns.as_ref() {
-        cols.insert(KEY_COL_GAP, c.gap.value())?;
-        cols.insert(KEY_COL_SEPARATOR, c.separator)?;
+    // Gap and separator are **deleted** when the layout has no columns, for the
+    // reason the widths key is rewritten every pass: dropping to one column
+    // otherwise left the previous `separator: true` behind, the reader rebuilt
+    // `Some(SectionColumns { count: 1, separator: true })`, and ODT export
+    // wrote a `<style:column-sep>` inside a one-column `<style:columns>`.
+    match layout.columns.as_ref() {
+        Some(c) => {
+            cols.insert(KEY_COL_GAP, c.gap.value())?;
+            cols.insert(KEY_COL_SEPARATOR, c.separator)?;
+        }
+        None => {
+            cols.delete(KEY_COL_GAP)?;
+            cols.delete(KEY_COL_SEPARATOR)?;
+        }
     }
     match layout.columns.as_ref().and_then(|c| {
         encode_col_widths(&c.widths).filter(|_| c.widths.len() == usize::from(c.count))
