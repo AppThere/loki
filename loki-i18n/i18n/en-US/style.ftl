@@ -55,6 +55,11 @@ style-page-new = New
 style-page-unapplied = { $name } (unused)
 style-page-apply-label = Apply
 style-page-apply-here = Apply to this section
+# App-scoped defaults for new documents (T6.3) and the measurement unit (T6.4)
+style-page-defaults-label = New docs
+style-page-set-default = Use as default
+style-page-clear-default = Reset
+style-page-unit-label = Unit
 # One indent level of a list style
 style-list-level-label = Level { $n }
 # A list level's label kind and geometry (non-inheriting; shown read-only)

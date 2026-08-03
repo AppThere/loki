@@ -151,7 +151,7 @@ all exist. And the task list below over-states what remains:
 | --- | --- | --- |
 | T6.1 `style:page-usage` | remaining | **Was remaining — done, r96.** |
 | T6.2 page-size catalogue | remaining | **Done, r98.** 28 papers, plus user-defined. See below. |
-| T6.3 app-scoped defaults | remaining | **Remaining.** Only `default_page_size_for_locale` (A4 vs Letter off `LC_PAPER`) exists. |
+| T6.3 app-scoped defaults | remaining | **Done, r100.** See below. |
 | T6.4 unit resolution | remaining | **Done, r99** for the page surfaces; the rest of the panel still shows pt. See below — and the r96 wording was loose: typed `Length<U>` units existed all along, what was missing was a *runtime* one. |
 | T6.5 advisory DOCX part | remaining | **Remaining.** No custom-part writer. |
 | T6.6 odd/even + first page | remaining | **Already built.** DOCX reader, writer, `settings.xml` assembly, model fields, and `flow_headers::assign_headers_footers` selecting the first/even/default variant. The spec's "mirrored margins are near-useless without it" was already satisfied. |
@@ -162,6 +162,66 @@ all exist. And the task list below over-states what remains:
 `w:mirrorMargins` → `DocumentSettings` → `LayoutOptions` → `mirrored_margins()`
 swapping left/right on even pages, with a Loro round-trip and tests. What did
 *not* exist was any ODF spelling of it.
+
+### T6.3 — app-scoped defaults (done, r100)
+
+`loki_app_shell::document_defaults` stores page size, margins, measurement unit
+and remembered custom sizes in `AppThere/document-defaults.json`, alongside the
+display calibration and window geometry — the persistence pattern this crate
+already had, reused rather than reinvented.
+
+**Seed, never embed, is enforced by *where the call is*.** `load_document` has
+four arms — blank, bundled template, imported file, real file path — and the
+defaults are applied on the **first alone**. A template carries the geometry its
+designer chose and an opened file its author's; re-seeding those would silently
+reformat other people's documents to the reader's preferences, and would look
+fine, because the result is still a well-formed document. The seeded document
+carries ordinary geometry and no marker, so there is nothing to export and
+nothing for a second machine to reinterpret.
+
+**An unset field leaves the built-in answer alone.** `new_blank` has already
+picked A4 or US Letter from the locale; replacing that with a hardcoded value
+would make an empty settings file *worse* than no settings file.
+`an_unrecorded_field_leaves_the_built_in_answer_untouched` covers the half-set
+case too, which a single "have any settings" flag would get wrong.
+
+**Three of the four fields had no writer, so controls came with the store.** The
+seeding path *reads* `page_size`, `margins` and `measurement_unit`; only
+`custom_sizes` was written, by the size field. A setting nothing can set is
+indistinguishable from one that does not work — so the page form grew a "New
+docs → Use as default / Reset" row and a unit picker. The Reset exists because
+"Use as default" alone is a one-way door: a reader who set one by accident could
+only replace it, never get back the behaviour they had.
+
+**This is what gives T6.4's explicit rung a source.** `page_measurement_unit`
+passed a literal `None` until now; it passes the stored setting, so the D-03
+chain has all four rungs live rather than three.
+
+**A settings file is not reactive state**, so writing one changes nothing on
+screen. `StyleEditorSync` gained a `settings_generation` counter for the panel to
+re-render on. The alternative — re-setting an unrelated signal to its own value —
+works only because `Signal::set` does not compare, and reads at the call site as
+a line that does nothing.
+
+**Validation happens on load, once.** A hand-edited or future-version file is
+untrusted input; an implausible page is dropped in favour of the built-in rather
+than propagated into every new document, so no reader of the struct has to
+re-check it. Margins are checked against a *different* range than pages: a zero
+margin is legitimate (full bleed), a zero-width page is not.
+
+Mutation-tested five ways: overwriting an unset field with a built-in, letting
+margin seeding clobber header/footer/gutter, seeding only the first section,
+remembering catalogued papers as custom sizes, and skipping the plausibility
+check — each kills a specific test.
+
+**Not established:** no screen sitting — the style panel still has no harness
+scenario, so the two new rows have not been seen rendered. The store is written
+and read only by `loki-text`; Calc and Slides link the same crate and ignore it.
+Nothing reads the defaults at *file → new* time outside the editor route, and
+there is no settings dialog — these controls live in the page-style panel because
+that is where the geometry they describe already is, not because that is where a
+preference belongs. D-07's list is complete (size, margins, unit, custom sizes);
+a general preferences surface is not part of it.
 
 ### T6.4 — measurement units (done for the page surfaces, r99)
 

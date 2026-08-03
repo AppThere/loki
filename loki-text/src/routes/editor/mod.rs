@@ -19,6 +19,7 @@ mod editor_caret_follow;
 mod editor_caret_follow_geom;
 mod editor_color_panel;
 mod editor_compact;
+mod editor_defaults;
 mod editor_dirty;
 mod editor_doc_colors;
 mod editor_docked_panels;

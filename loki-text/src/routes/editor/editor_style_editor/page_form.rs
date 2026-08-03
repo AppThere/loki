@@ -26,6 +26,7 @@ use loki_i18n::fl;
 
 use super::super::editor_keydown_ctrl::post_mutation_sync;
 use super::StyleEditorSync;
+use super::page_defaults_row::{new_document_defaults_row, unit_row};
 use super::page_presets::{PagePreset, apply_preset, column_count, is_active};
 use super::page_rename::PageRenameField;
 use super::page_size_picker::size_section;
@@ -217,6 +218,10 @@ pub(super) fn page_style_form(
         let Some(mut next) = page_edit_target(&ds_size, &size_name) else {
             return;
         };
+        // T6.3: remember a size the catalogue cannot name, so the picker can
+        // offer it again. Recorded before the mutation rather than after, so a
+        // size the user typed is kept even if the document write fails.
+        super::super::editor_defaults::remember_custom_size(&size);
         next.page_size = size;
         let guard = sync.loro_doc.read();
         let Some(ldoc) = guard.as_ref() else { return };
@@ -268,6 +273,8 @@ pub(super) fn page_style_form(
                 { btn(fl!("style-page-column-separator"), PagePreset::ToggleSeparator) }
             }) }
             { preset_row(fl!("style-page-apply-label"), apply_here_button(doc_state, name.clone(), sync)) }
+            { unit_row(unit, sync.settings_generation) }
+            { new_document_defaults_row(&layout, sync.settings_generation) }
         }
     }
 }

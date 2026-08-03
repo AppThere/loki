@@ -27,6 +27,7 @@ pub mod display_calibration;
 pub mod display_density;
 #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
 pub mod display_probe_x11;
+pub mod document_defaults;
 pub mod new_document;
 pub mod recent_documents;
 pub mod spell;

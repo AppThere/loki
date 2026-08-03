@@ -29,4 +29,12 @@ pub(in crate::routes::editor) struct StyleEditorSync {
     pub can_redo: Signal<bool>,
     /// Status-banner sink for feedback (e.g. a rejected cyclic re-parent).
     pub save_message: Signal<Option<SaveStatus>>,
+    /// Bumped whenever an **app-scoped** setting is written (T6.3/T6.4).
+    ///
+    /// The panel reads those settings from disk on each render, so it needs a
+    /// signal to re-render *on* — a settings file is not reactive state. An
+    /// explicit counter rather than re-setting an unrelated signal to its own
+    /// value: that works only because `Signal::set` does not compare, and reads
+    /// at the call site as a line that does nothing.
+    pub settings_generation: Signal<u64>,
 }

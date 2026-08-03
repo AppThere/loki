@@ -4536,6 +4536,7 @@ dependencies = [
  "appthere-ui",
  "dirs",
  "loki-i18n",
+ "loki-primitives",
  "loki-spell",
  "reqwest",
  "serde",

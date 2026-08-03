@@ -22,6 +22,7 @@ use loki_doc_model::layout::paper_catalog::PAPERS;
 use loki_doc_model::loki_primitives::units::MeasurementUnit;
 use loki_i18n::fl;
 
+use super::super::editor_defaults::remembered_custom_sizes;
 use super::page_form::button_css;
 use super::page_presets::PagePreset;
 
@@ -167,6 +168,20 @@ pub(super) fn size_section(
                 style: "display: flex; flex-direction: row; flex-wrap: wrap; gap: 4px; flex: 1;",
                 for paper in PAPERS.iter() {
                     { btn(paper.display_name.to_string(), PagePreset::Size(paper)) }
+                }
+                // Sizes the user typed that the catalogue cannot name (T6.3),
+                // most recent first. Labelled with their dimensions in the
+                // active unit — they have no name, which is why they are here.
+                for size in remembered_custom_sizes().into_iter() {
+                    { btn(
+                        format!(
+                            "{} × {} {}",
+                            unit.format_bare(size.width),
+                            unit.format_bare(size.height),
+                            unit.abbreviation()
+                        ),
+                        PagePreset::ExactSize(size.width.value(), size.height.value()),
+                    ) }
                 }
             }
         }

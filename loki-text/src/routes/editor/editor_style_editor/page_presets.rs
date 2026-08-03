@@ -20,6 +20,11 @@ pub(super) enum PagePreset {
     /// dimension literals *and* their own "is this that paper" comparison, which
     /// is why only two sizes were reachable.
     Size(&'static Paper),
+    /// Set an exact width × height in points, for a **remembered custom size**
+    /// (T6.3). Separate from [`PagePreset::Size`] because a size the catalogue
+    /// cannot name has no `Paper` to borrow — which is precisely why it was
+    /// worth remembering.
+    ExactSize(f64, f64),
     MarginsNormal,
     MarginsNarrow,
     MarginsWide,
@@ -76,6 +81,22 @@ pub(super) fn apply_preset(current: &PageLayout, preset: PagePreset) -> PageLayo
         }
         PagePreset::Size(paper) => {
             l.page_size = paper.oriented_like(&l.page_size);
+        }
+        PagePreset::ExactSize(w, h) => {
+            // Oriented like the current page, exactly as a catalogued paper is:
+            // choosing a size must not silently rotate the document.
+            let portrait = PageSize {
+                width: Points::new(w.min(h)),
+                height: Points::new(w.max(h)),
+            };
+            l.page_size = if is_landscape {
+                PageSize {
+                    width: portrait.height,
+                    height: portrait.width,
+                }
+            } else {
+                portrait
+            };
         }
         PagePreset::MarginsNormal | PagePreset::MarginsNarrow | PagePreset::MarginsWide => {
             let (tb, lr) = match preset {
@@ -146,6 +167,14 @@ pub(super) fn is_active(layout: &PageLayout, preset: PagePreset) -> bool {
         PagePreset::Portrait => !landscape,
         PagePreset::Landscape => landscape,
         PagePreset::Size(paper) => paper.matches(&layout.page_size),
+        PagePreset::ExactSize(w, h) => {
+            let (pw, ph) = (
+                layout.page_size.width.value(),
+                layout.page_size.height.value(),
+            );
+            let (short, long) = (pw.min(ph), pw.max(ph));
+            (short - w.min(h)).abs() < 1.0 && (long - w.max(h)).abs() < 1.0
+        }
         PagePreset::MarginsNormal => all(72.0),
         PagePreset::MarginsNarrow => all(36.0),
         PagePreset::MarginsWide => all(72.0) && lr(144.0),

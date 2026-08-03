@@ -142,13 +142,12 @@ pub(super) fn page_data(
 
 /// The measurement unit the page surfaces display and parse in (D-03).
 ///
-/// `None` is passed for the explicit user setting because no settings store
-/// exists to hold one yet — that is T6.3. The argument is threaded rather than
-/// dropped so the override arrives at one place when it lands, and
-/// `effective_measurement_unit` is the only way to ask, so the environment
-/// cannot be consulted without it.
+/// The explicit setting comes from the app-scoped defaults (T6.3); `None` there
+/// means no choice has been recorded, which is what makes the environment the
+/// next rung rather than this one. `effective_measurement_unit` is the only way
+/// to ask, so the environment cannot be consulted without it.
 pub(super) fn page_measurement_unit() -> MeasurementUnit {
-    effective_measurement_unit(None)
+    effective_measurement_unit(super::super::editor_defaults::explicit_measurement_unit())
 }
 
 /// The current geometry for the page style `name` — what the edit form needs

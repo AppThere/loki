@@ -38,6 +38,7 @@ use super::well_known::Points;
 /// universal typographic convention, the way LibreOffice and Word both keep it
 /// regardless of the measurement setting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum MeasurementUnit {
     /// Millimetres — the metric default.
     #[default]

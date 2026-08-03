@@ -25,6 +25,7 @@ mod form;
 mod form_font;
 mod list_browser;
 mod page_browser;
+mod page_defaults_row;
 mod page_form;
 mod page_presets;
 mod page_rename;

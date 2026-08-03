@@ -78,6 +78,10 @@ pub(super) fn EditorInner(path: String) -> Element {
 
     // ── Style search query (cleared on picker close) ─────────────────────────
     let style_search_query = use_signal(String::new);
+    // Bumped when an app-scoped setting is written (T6.3/T6.4). Those live in a
+    // file rather than in reactive state, so the style panel — which re-reads
+    // them each render — needs something to re-render on.
+    let settings_generation = use_signal(|| 0u64);
 
     let EditorState {
         doc_state,
@@ -657,6 +661,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                         can_undo,
                         can_redo,
                         save_message,
+                        settings_generation,
                     },
                 )}
             }
