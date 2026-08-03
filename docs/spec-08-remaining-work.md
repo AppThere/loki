@@ -23,13 +23,15 @@ Ahead of Phase 6, in this order.
 
 ### CLAUDE.md ceiling backlog is stale
 
-Says 29 entries with sizes (`para.rs` 1401, `flow.rs` 1202, `resolve.rs` 858) that match nothing. Real baseline is 4: spreadsheet `editor_inner` 1013, loki-text `editor_inner` 800, `para.rs` 767, `editor_canvas` 432.
-
-First because it is the auto-loading file — the wrong number is the one that misleads by default. Same argument that put the epistemic digest there.
+**Done (r90).** Corrected to the real four, and `check-file-ceiling.py` now compares the table's rows against the baseline by membership and fails either way — a sentence saying "believe the baseline" is the shape that drifted in the first place.
 
 ### Ribbon overflow menu — live defect (I-28)
 
-Render-in-place plus root backdrop: `z-index: 41` inside `Router`, backdrop a root sibling at 40. Its controls are dead while raised. Fix is hosting it in `AtPopoverHost` — the first real migration of the primitive beyond the spell panel, so treat API strain as a finding rather than absorbing it.
+**Done (r91).** Hosted in `AtPopoverHost`; `scripts/sitting/run.sh ribbonoverflow` is the regression. The sweep also deleted `overlay`'s backdrop mechanism, whose last requester this was. API strain reported, not absorbed: `route_key(Panel, Tab)` is `FocusNextControl` and nothing performs it — the `advance_focus_past|focus_next_node` register row now has two waiting consumers.
+
+### Harness lies — done (r92)
+
+`click_at` fails loudly when a click changes nothing anywhere; every scenario's clicks go through it. It found two silently-dead steps in the colour-picker scenario on its first run. Window geometry no longer leaks between runs. A reported finding was retracted with it — see below.
 
 ---
 
@@ -78,6 +80,7 @@ Render-in-place plus root backdrop: `z-index: 41` inside `Router`, backdrop a ro
 | **R5b** | `LOKI_TEXTURE_CEILING_MB=300`, plain Letter, no ballast, A3 optional. Look for a `raster_permille` line with **no** full-scale follow-up |
 | **I-06** | The document that reported the squiggle. Read its `w:lineRule` and body font size against the 8×4 sweep table — 11pt/12pt default is a 0.000 cell and confirms nothing; 14pt default is the worst cell |
 | **T5.5** | Actual Size within 2% — needs a physical display and a ruler |
+| **Save on a titled document** | NOT a defect and NOT established. The reported "Save never clears the dirty dot" was wrong twice over: the run that produced it never reached Save, and the behaviour is correct — the only document the harness can open is untitled, which routes to Save As and is dirty by definition. Settling the titled case needs a document with a path, which needs a file picker (unavailable headless) or a path argument to the binary (loki-text takes none) |
 
 ---
 

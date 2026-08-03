@@ -28,6 +28,7 @@ ZX=1176 ZY=788 scripts/sitting/run.sh typed  # the typed zoom field
 scripts/sitting/run.sh wheelzoom      # Ctrl+wheel zooms, plain wheel scrolls
 scripts/sitting/run.sh highlight      # highlight: typed, clicked and custom
 scripts/sitting/run.sh ribbonoverflow # the More menu's controls are clickable
+scripts/sitting/run.sh save           # what the ribbon Save does (see r92)
 ```
 
 Shots land in `target/sitting/`. `SETTLE` (default 10s) is how long to wait
@@ -48,6 +49,34 @@ zooming by z. Reading that off two screenshots is the check — an eyeball
 cheap assertion: *did this keypress do anything at all*. It is what caught every
 defect below. A zero where you expected a change is the finding; a montage of
 the crops is how you work out which change it was.
+
+## The lie that kept coming back, and what now catches it
+
+**A click that lands on nothing reads as "the feature does not work."** Four
+times — r80, r86, r90, r91 — a coordinate went stale, the click hit the gap
+beside a control, and the run was read as a defect in the code under test. One of
+those wrong conclusions was reported before it was caught.
+
+`click_at` is the fix: it snapshots, clicks, snapshots, and **says so loudly** if
+nothing changed anywhere. Every scenario's clicks go through it. Running it
+across all fourteen scenarios immediately found two that had been silently dead —
+the colour picker's font-colour trigger was clicking empty ribbon (the panel
+never opened), and its hue-strip step was missing the strip by nine pixels.
+
+Its own first version had the same class of bug. Snapshotting *before* the
+pointer moved meant hover tint changed the frame whether or not the click landed,
+which masked exactly the dead trigger it was written to find. It now moves,
+settles, snapshots, and only then clicks — so the comparison is about the click.
+
+`IDEMPOTENT=1` marks a click that may legitimately change nothing (placing the
+caret where it already is; re-clicking the active ribbon tab). Used sparingly —
+it is the opt-out that makes the check honest, and also the opt-out that makes it
+useless if reached for by reflex.
+
+**Do not fork the prelude.** One of the wrong readings came from a throwaway
+script that copied this file's first seventy lines: it drifted, missed the
+window-state reset, and ran against a persisted narrow window. Scenarios belong
+in `run.sh`.
 
 ## Two ways this instrument lied before it worked
 
@@ -82,6 +111,19 @@ too, and it affects the existing scroll path identically — do not "correct" fo
 it in app code, which would halve the step everywhere else.
 
 ## What the sittings have found
+
+**r92 — the harness's lies got a gate, and a reported finding was retracted.**
+See the section above for `click_at`. The finding it retracted: I reported that
+the ribbon's Save never clears the tab's dirty dot, "an open question about the
+save path that nobody has filed". Both halves were wrong. The control run that
+produced it clicked a coordinate that reached nothing — with a probe in the save
+effect, no save was ever requested — and the behaviour it was reaching for is
+correct: the only document this harness can open comes from a template, so it is
+untitled (`untitled-1-tpl-screenplay`), `use_ctrl_s_save` routes an untitled
+document to Save As, and an untitled document is dirty by definition. The dot
+staying is the specification. The `save` scenario now records that, and records
+that the titled case is **not established** and needs a document with a path,
+which this harness cannot open.
 
 **r91 — I-28, and two more harness lies in one session.** The ribbon overflow
 menu is hosted now and its controls are reachable; the assertion is the focus

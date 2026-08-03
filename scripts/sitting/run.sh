@@ -92,6 +92,42 @@ trap stop EXIT
 
 key() { xdotool key --clearmodifiers "$1"; sleep 0.6; }
 
+# Click, and **complain if nothing happened**.
+#
+# The harness's most expensive lie, four times over (r80, r86, r90, r91): a
+# coordinate goes stale, the click lands on the gap beside a control, and the run
+# reads as "the feature does not work". Every one of those cost a wrong
+# conclusion, and one of them was reported before it was caught.
+#
+# A click that changes no pixel anywhere did not hit anything interactive. That
+# is not a perfect test — a control whose action is invisible would trip it — but
+# it is the difference between a silent wrong answer and a loud question.
+click_at() { # click_at <x> <y> <what>
+  local x="$1" y="$2" what="${3:-click}"
+  # **Move first, then snapshot.** Blitz tints a hovered control from
+  # `onmouseenter`, so a snapshot taken before the pointer moved differs from the
+  # one after *whether or not the click landed on anything* — which masked a
+  # click that missed its trigger entirely on the first version of this helper.
+  # Separating the move from the click makes the comparison about the click.
+  xdotool mousemove "$x" "$y"
+  sleep "${HOVER_SETTLE:-1}"
+  xwd -root -silent 2>/dev/null | convert xwd:- -depth 8 "$SHOT_DIR/.pre-click.png" 2>/dev/null
+  xdotool click 1
+  sleep "${CLICK_SETTLE:-2}"
+  xwd -root -silent 2>/dev/null | convert xwd:- -depth 8 "$SHOT_DIR/.post-click.png" 2>/dev/null
+  local d
+  d=$(compare -metric AE "$SHOT_DIR/.pre-click.png" "$SHOT_DIR/.post-click.png" null: 2>&1)
+  if [ "$d" = "0" ] && [ -z "${IDEMPOTENT:-}" ]; then
+    echo "  [!] click on '$what' at $x,$y changed NOTHING — stale coordinate?"
+  fi
+}
+
+# Crop helper: echoes the path so a `compare` can be written on one line.
+crop() { # crop <shot> <geometry>
+  convert "$SHOT_DIR/$1.png" -crop "$2" +repage "$SHOT_DIR/$1-crop-${2//[^0-9]/_}.png"
+  echo "$SHOT_DIR/$1-crop-${2//[^0-9]/_}.png"
+}
+
 # ---------------------------------------------------------------------------
 case "${1:-smoke}" in
 
@@ -143,7 +179,7 @@ editor)
   key Return
   sleep "${OPEN_SETTLE:-12}"
   shot 31-opened
-  xdotool mousemove 640 500 click 1; sleep 1
+  CLICK_SETTLE=1 click_at "640" "500" "canvas"
   shot 32-clicked
   xdotool type --delay 120 "ZZQQ"; sleep 2
   shot 33-typed
@@ -164,14 +200,14 @@ zoom)
   # is a parameter rather than a constant — a stale coordinate silently
   # clicks the gap beside the control and the run reads as "the menu does
   # not open" (the harness's own lie, again).
-  xdotool mousemove "${ZX:-1176}" "${ZY:-788}" click 1; sleep 2
+  CLICK_SETTLE=2 click_at "${ZX:-1176}" "${ZY:-788}" "zoom readout"
   shot 42-zoom-menu
   key Down;  shot 43-zoom-down
   key Down;  shot 44-zoom-down2
   key Return; sleep 2
   shot 45-zoom-picked
   # End: the last row, which is Actual Size when the density is known.
-  xdotool mousemove "${ZX:-1176}" "${ZY:-788}" click 1; sleep 2
+  CLICK_SETTLE=2 click_at "${ZX:-1176}" "${ZY:-788}" "zoom readout"
   key End; shot 46-zoom-end
   key Return; sleep 2
   shot 47-zoom-actual
@@ -187,7 +223,7 @@ calibrate)
   key Return
   sleep "${OPEN_SETTLE:-12}"
   shot 51-opened
-  xdotool mousemove "${ZX:-1176}" "${ZY:-788}" click 1; sleep 2
+  CLICK_SETTLE=2 click_at "${ZX:-1176}" "${ZY:-788}" "zoom readout"
   shot 52-menu
   key End;    shot 53-on-actual
   key Return; sleep 2
@@ -195,7 +231,7 @@ calibrate)
   xdotool type --delay 120 "${MEASURED:-80}"; sleep 1
   shot 55-typed
   # Apply: the density becomes 96 * 85.6 / measured, and Actual Size follows.
-  xdotool mousemove 784 517 click 1; sleep 3
+  CLICK_SETTLE=3 click_at "784" "517" "calibrate Apply"
   shot 56-applied
   ;;
 
@@ -210,9 +246,9 @@ picker)
   sleep "${OPEN_SETTLE:-12}"
   shot 61-opened
   # Format tab, then the font-colour trigger.
-  xdotool mousemove "${FX:-98}" "${FY:-696}" click 1; sleep 2
+  CLICK_SETTLE=2 click_at "${FX:-98}" "${FY:-696}" "Format tab"
   shot 62-format
-  xdotool mousemove "${CX:-640}" "${CY:-740}" click 1; sleep 2
+  CLICK_SETTLE=2 click_at "${CX:-36}" "${CY:-738}" "font-colour trigger"
   shot 63-picker
   # Drag inside the saturation/value square: press at the middle, move down-left,
   # release. The preview and the handle must follow.
@@ -222,7 +258,7 @@ picker)
   xdotool mouseup 1; sleep 1
   shot 65-sv-drag
   # And the hue strip.
-  xdotool mousemove "${HX:-643}" "${HY:-520}" click 1; sleep 1
+  CLICK_SETTLE=1 click_at "${HX:-670}" "${HY:-490}" "hue strip"
   shot 66-hue
   ;;
 
@@ -240,7 +276,7 @@ anchor)
   sleep 2
   shot 70-scrolled
   # Zoom in one preset from the control.
-  xdotool mousemove "${PLUSX:-1225}" "${PLUSY:-788}" click 1; sleep 3
+  CLICK_SETTLE=3 click_at "${PLUSX:-1225}" "${PLUSY:-788}" "zoom + button"
   shot 71-zoomed
   ;;
 
@@ -252,7 +288,7 @@ typed)
   for i in $(seq 1 "${TABS:-7}"); do key Tab; done
   key Return
   sleep "${OPEN_SETTLE:-12}"
-  xdotool mousemove "${ZX:-1176}" "${ZY:-788}" click 1; sleep 2
+  CLICK_SETTLE=2 click_at "${ZX:-1176}" "${ZY:-788}" "zoom readout"
   shot 80-menu
   key 3; sleep 1
   shot 81-field
@@ -348,24 +384,25 @@ highlight)
   shot n0-plain
 
   select_and_open() {   # heading -> Format -> Highlight
-    xdotool mousemove "${TX:-375}" "${TY:-172}" click 1; sleep 1
+    IDEMPOTENT=1 CLICK_SETTLE=1 click_at "${TX:-375}" "${TY:-172}" "heading"
     xdotool key --clearmodifiers shift+End; sleep 1
-    xdotool mousemove "${FX:-98}" "${FY:-696}" click 1; sleep 1
-    xdotool mousemove "${HX:-108}" "${HY:-738}" click 1; sleep 2
+    # Already the active tab from the second open onward.
+    IDEMPOTENT=1 CLICK_SETTLE=1 click_at "${FX:-98}" "${FY:-696}" "Format tab"
+    CLICK_SETTLE=2 click_at "${HX:-108}" "${HY:-738}" "Highlight trigger"
   }
 
   # 1. A named colour, TYPED as a hex. First, so the panel has no Recent group.
   select_and_open
   shot n1-panel
-  xdotool mousemove "${EX:-499}" "${EY:-623}" click 1; sleep 1
+  CLICK_SETTLE=1 click_at "${EX:-499}" "${EY:-623}" "hex field"
   xdotool type --delay 120 "#FFFF00"; sleep 2
-  xdotool mousemove "${AX:-494}" "${AY:-655}" click 1; sleep 3
+  CLICK_SETTLE=3 click_at "${AX:-494}" "${AY:-655}" "picker Apply"
   shot n2-typed
 
   # 2. The SAME colour, CLICKED as a swatch. The swatch grid is left of the
   #    Recent group, so its coordinate does not move.
   select_and_open
-  xdotool mousemove "${YX:-43}" "${YY:-473}" click 1; sleep 3
+  CLICK_SETTLE=3 click_at "${YX:-43}" "${YY:-473}" "Yellow swatch"
   shot n3-named
 
   # 3. A colour that is NOT one of the sixteen: drag the square, then Apply.
@@ -373,7 +410,7 @@ highlight)
   select_and_open
   xdotool mousemove "${SX:-616}" "${SY:-450}" mousedown 1; sleep 1
   xdotool mouseup 1; sleep 1
-  xdotool mousemove "${AX2:-549}" "${AY:-655}" click 1; sleep 3
+  CLICK_SETTLE=3 click_at "${AX2:-549}" "${AY:-655}" "picker Apply"
   shot n4-custom
 
   for s in n2-typed n3-named n4-custom; do
@@ -406,17 +443,17 @@ ribbonoverflow)
   sleep "${OPEN_SETTLE:-12}"
   shot r0-opened
   # Put the caret in the document so a formatting control has something to act on.
-  xdotool mousemove "${TX:-360}" "${TY:-172}" click 1; sleep 1
+  CLICK_SETTLE=1 click_at "${TX:-360}" "${TY:-172}" "heading"
   xdotool key --clearmodifiers shift+End; sleep 1
   shot r1-selected
   # The More button is the last thing in the ribbon strip.
-  xdotool mousemove "${MX:-512}" "${MY:-845}" click 1; sleep 2
+  CLICK_SETTLE=2 click_at "${MX:-512}" "${MY:-845}" "More button"
   shot r2-menu
   # Click a control INSIDE the menu — the Document group's Save. This is the
   # assertion: the defect was that the root backdrop was hit-tested before a
   # menu rendered inside `Router`, so every control in here was dead. A menu
   # that merely appears looked identical before the fix.
-  xdotool mousemove "${CX:-394}" "${CY:-618}" click 1; sleep 3
+  CLICK_SETTLE=3 click_at "${CX:-394}" "${CY:-618}" "menu Save"
   shot r3-clicked
   # **The assertion is the focus ring landing on that button.** The patched
   # shell focuses whatever the pointer hit, so a ring on a control inside the
@@ -438,5 +475,38 @@ ribbonoverflow)
     "$SHOT_DIR/r3-clicked-btn.png" null: 2>&1)"
   ;;
 
+save)
+  # **What the ribbon's Save does on the document this harness can open.**
+  #
+  # Added to settle a claim I got wrong: a throwaway script "showed" that Save
+  # never clears the tab's dirty dot, and that was reported as an open question
+  # about the save path. Two things were wrong with it. The script used a stale
+  # copy of this file's prelude, so it ran against a persisted narrow window and
+  # its click never landed on Save at all — no save was ever requested. And the
+  # behaviour it was reaching for is correct anyway.
+  #
+  # ESTABLISHED here: the click reaches Save (`click_at` fails loudly otherwise),
+  # and the dot does **not** clear. NOT a defect — the only document this harness
+  # can open is created from a template and is therefore untitled
+  # (`untitled-1-tpl-screenplay`), and `use_ctrl_s_save` routes an untitled
+  # document to Save As, whose file picker cannot appear on a headless Xvfb.
+  # An untitled document is also dirty by definition (`use_dirty_tracking`), so
+  # the dot staying is the specified behaviour.
+  #
+  # NOT ESTABLISHED: that Save clears the dot for a document that *has* a path.
+  # WHAT WOULD SETTLE IT: opening a titled document, which needs either a file
+  # picker (unavailable here) or a path argument to the binary (loki-text takes
+  # none). Either is a change outside this harness.
+  start_x || exit 1
+  start_app env LOKI_DEVICE_PROFILE="${PROFILE:-pointer=fine}" || exit 1
+  for i in $(seq 1 "${TABS:-7}"); do key Tab; done
+  key Return
+  sleep "${OPEN_SETTLE:-12}"
+  shot v0-opened
+  CLICK_SETTLE=3 click_at "${SX:-36}" "${SY:-738}" "ribbon Save"
+  shot v1-saved
+  echo "  tab strip changed (0 = still dirty, which is correct for untitled): \
+$(compare -metric AE "$(crop v0-opened 200x40+0+0)" "$(crop v1-saved 200x40+0+0)" null: 2>&1)"
+  ;;
 esac
 echo "DONE: $1"
