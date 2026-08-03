@@ -37,6 +37,11 @@ pub use meta::{read_document_meta, write_document_meta};
 pub use settings::{document_track_changes, set_track_changes};
 pub use styles::{read_document_styles, write_document_styles};
 
+// Shared with `loro_mutation`, which writes the same section-layout shape these
+// read/encode — one derivation for the column-width codec and for "what geometry
+// is this section actually showing".
+pub(crate) use decode::encode_col_widths;
+
 // Crate-internal block / note writers reused by the mutation layer to insert a
 // new `Block` or footnote against a live document (same schema as the initial
 // `document_to_loro`).
@@ -48,7 +53,8 @@ use crate::document::Document;
 use crate::loro_schema::*;
 use loro::{LoroDoc, LoroMap, LoroMovableList};
 use page_layout::map_page_layout;
-use read::{reconstruct_blocks_from_list, reconstruct_page_layout};
+use read::reconstruct_blocks_from_list;
+pub(crate) use read::reconstruct_page_layout;
 use write::map_blocks_to_list;
 
 /// Errors that can occur during document translation to/from Loro.

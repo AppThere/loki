@@ -45,6 +45,15 @@ pub(super) struct PageStyleNames {
 
 /// Resolve the master-page / page-layout names for every section of `doc`.
 ///
+// TODO(page-styles-export): a catalogued page style **no section references** is
+// not emitted — this walks sections, so `create_page_style` without an apply is
+// lost on ODT export (it does survive the Loro CRDT, so it is not lost in the
+// session). ODF permits an unreferenced `style:master-page` and LibreOffice
+// keeps unused page styles, so the fix is to emit the catalog's leftovers after
+// the section walk. Deferred: it needs a name for a master page that has no
+// section to take geometry from, which is the same choice `PageStyle.layout`
+// makes and wants deciding once, alongside T6.2's page-size catalogue.
+///
 /// A section's stored `page_style` id becomes its master-page name (sanitised to
 /// a valid XML `NCName`); a section without one keeps the positional
 /// [`master_page_name`]. Distinct names are emitted once, so sections sharing a

@@ -155,13 +155,106 @@ all exist. And the task list below over-states what remains:
 | T6.4 unit resolution | remaining | **Remaining.** No measurement-unit type anywhere in the tree. |
 | T6.5 advisory DOCX part | remaining | **Remaining.** No custom-part writer. |
 | T6.6 odd/even + first page | remaining | **Already built.** DOCX reader, writer, `settings.xml` assembly, model fields, and `flow_headers::assign_headers_footers` selecting the first/even/default variant. The spec's "mirrored margins are near-useless without it" was already satisfied. |
-| T6.7 UI panel + manager | remaining | **Half built.** `style_page_inspector.rs` exists and is explicitly read-only; creating, renaming and applying a page style is not there. The 1–3 column preset buttons are real and are the whole column limit — but the **model** already carries arbitrary `count`, per-column widths and a separator, so this is a UI cap over a complete model. |
+| T6.7 UI panel + manager | remaining | **Was half built — the editing half is done, r97.** See the correction below: the r96 row was wrong about rename. |
 | T6.8 conformance | remaining | **Remaining** for page styles specifically; the ODF round-trip suites exist to extend. |
 
 **T6.1's premise checked out.** `mirror_margins` really is wired end to end —
 `w:mirrorMargins` → `DocumentSettings` → `LayoutOptions` → `mirrored_margins()`
 swapping left/right on even pages, with a Loro round-trip and tests. What did
 *not* exist was any ODF spelling of it.
+
+### T6.7 — the manager verbs (done, r97), and a correction to the r96 row
+
+**The r96 audit row above was wrong**, in the direction it warned about. It said
+"creating, renaming and applying a page style is not there". *Renaming* was
+there — `page_rename.rs`, `rename_page_style`, catalog key + every section
+reference — and so was geometry editing through preset buttons. The row was
+written from the *inspector's* module docs, which say "read-only" and are
+accurate about `style_page_inspector.rs` while `page_form.rs` sat beside it
+doing the writing. An audit that reads the doc comment of the file it happens to
+open reproduces exactly the error it was called in to catch.
+
+What was genuinely missing were the two verbs that make the family a *manager*:
+
+- **`create_page_style`** — a catalogued style seeded from the selected style's
+  geometry, named with the next free `PageStyleN`.
+- **`set_section_page_style`** — put a style on the section the caret is in, and
+  **give that section the style's geometry**, so applying changes the pages
+  rather than the label they carry.
+
+They land as one unit because either alone is inert: a created style no section
+references paints nothing and exports nothing, and there was no way to reach a
+section's page-style assignment at all.
+
+**The column cap is gone.** `ColumnCountDelta` steps to `MAX_COLUMNS` (12) and
+`ToggleSeparator` exposes `SectionColumns::separator` — modelled, written by both
+exporters, painted by the layout engine, and settable from no UI in the suite
+until now. Both route through `apply_preset`, so stepping and the 1/2/3 presets
+cannot drift over what "3 columns" means.
+
+#### Three defects this turned up, none visible before the verbs existed
+
+1. **The catalog's geometry copy was write-only.** `PageStyle.layout` was read
+   by nothing in production — `set_page_style_geometry` wrote sections only.
+   Harmless while unread; the moment `set_section_page_style` could seed a
+   section from it, a stale entry became a way to apply geometry no page had
+   shown. The mutation now writes both copies in one call.
+
+2. **`apply_preset`'s column-width logic was unreachable.** It carefully
+   preserved per-column widths when the count still matched and dropped them
+   otherwise — and `set_page_style_geometry` never wrote the widths key at all,
+   so a width list from a different count survived every preset. The layout
+   engine's `widths.len() == count` guard meant this degraded quietly instead of
+   breaking, which is why it lasted.
+
+3. **The geometry tests targeted by a mechanism production does not use.**
+   `page_style_geometry.rs` derived its section indices from
+   `section_page_style_ids` (layout-equality grouping) while the panel targets
+   the stored `section.page_style` reference. The two agree on that fixture and
+   diverge the moment two names share a geometry. The fixture now runs
+   `assign_page_styles` and targets by name, like the panel.
+
+**`derive_page_styles` / `section_page_style_ids` have no production callers at
+all** — only tests and their own re-export — despite doc comments calling them
+"the export inverse". ODT export uses `resolve_page_style_names`, which honours
+the stored reference. Left in place and **not** deleted this pass; flagged here
+rather than silently kept.
+
+**Mutation-tested, seven ways** — four in the model, three in the panel. Each
+of: dropping the catalog write, keeping stale widths, setting the reference
+without the geometry, preferring the catalog over the live section, listing only
+applied styles, reading the flat block index as a section index, and removing
+the column clamp — kills a specific test.
+
+**Two of the seven passed on the first attempt and shouldn't have**, both from
+the same failure: a control that silenced its own subject.
+
+- The live-section-outranks-catalog test couldn't discriminate because
+  `set_page_style_geometry` keeps the two copies equal, so *no* setup using it
+  can tell them apart. The discriminating case had to come from the Layout
+  ribbon's `set_document_*` mutations, which write sections and never touch the
+  catalog.
+- The panel's section-first read passed under mutation because the test moved
+  its sections to **Letter** — and `PageSize::default()` *is* Letter, so the
+  "changed" sections held exactly what the stale catalog held. Moving the
+  fixture to A4 fixed it. Both tests now carry a guard asserting the two sources
+  genuinely differ *before* reading one, so a future change that re-equalises
+  them fails loudly instead of passing quietly.
+
+**Not established:** no screen sitting — the style panel has no harness
+scenario, so this is verified by unit and model tests only, and nothing here has
+been seen on a screen. Duplicate, delete, set-default, catalogue search,
+unit-aware margin fields and live preview (the rest of T6.7's line) are **not**
+built.
+
+Two gaps are marked in-code rather than left to be rediscovered:
+`TODO(page-styles-export)` in `odt/write/page_styles.rs` — a catalogued page
+style **no section references** is not written to ODT, because that walk is over
+sections (it does survive the Loro CRDT, so it is not lost in-session, and ODF
+permits an unreferenced `style:master-page`); and `TODO(page-panel-touch)` in
+`page_form.rs` — the stepper's `−`/`+` are the panel's smallest hit targets and
+are not covered by the Compact posture's `touch_min_css()`, relying on the
+ambient font scale instead.
 
 ### T6.1 — `style:page-usage` (done, r96)
 

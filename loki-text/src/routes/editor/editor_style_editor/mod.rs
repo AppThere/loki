@@ -26,8 +26,10 @@ mod form_font;
 mod list_browser;
 mod page_browser;
 mod page_form;
+mod page_presets;
 mod page_rename;
 mod panel_data;
+mod panel_data_page;
 mod posture;
 mod provenance;
 mod table_browser;
@@ -123,7 +125,7 @@ pub(super) fn style_editor_panel(
     // Page styles (§9 page family) are derived on demand from the sections.
     let page_selected = editing_page_style.read().clone();
     let (page_list, page_selected_rows) =
-        panel_data::page_data(&doc_state, page_selected.as_deref());
+        panel_data_page::page_data(&doc_state, page_selected.as_deref());
 
     let styles = catalog_style_tree(&doc_state);
     let active_id = draft.id.clone();
@@ -138,7 +140,7 @@ pub(super) fn style_editor_panel(
     let ds_page_form = Arc::clone(&doc_state);
     let page_edit = page_selected
         .as_deref()
-        .and_then(|n| panel_data::page_edit_target(&doc_state, n).map(|(l, _)| (n.to_string(), l)));
+        .and_then(|n| panel_data_page::page_edit_target(&doc_state, n).map(|l| (n.to_string(), l)));
 
     // Everything the provenance column renders (staged rows, impact preview,
     // new-style parent default, linked character-style rows) — see `panel_data`.
@@ -232,6 +234,7 @@ pub(super) fn style_editor_panel(
                         page_selected,
                         editing_page_style,
                         posture,
+                        sync,
                     ) }
 
                     // ── Middle: edit form ──────────────────────────────────────

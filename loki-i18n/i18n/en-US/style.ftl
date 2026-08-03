@@ -44,6 +44,13 @@ style-page-size = Size
 style-page-orientation = Orientation
 style-page-margins = Margins
 style-page-columns = Columns
+style-page-columns-fewer = −
+style-page-columns-more = +
+style-page-column-separator = Separator
+style-page-new = New
+style-page-unapplied = { $name } (unused)
+style-page-apply-label = Apply
+style-page-apply-here = Apply to this section
 # One indent level of a list style
 style-list-level-label = Level { $n }
 # A list level's label kind and geometry (non-inheriting; shown read-only)

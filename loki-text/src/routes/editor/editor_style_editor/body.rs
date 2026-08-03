@@ -41,13 +41,15 @@ pub(super) fn left_column(
     list_list: Vec<(String, String)>,
     list_selected: Option<String>,
     editing_list_style: Signal<Option<String>>,
-    page_list: Vec<(String, String)>,
+    page_list: Vec<super::panel_data_page::PageListEntry>,
     page_selected: Option<String>,
     editing_page_style: Signal<Option<String>>,
     posture: StylePanelPosture,
+    sync: super::StyleEditorSync,
 ) -> Element {
     let ds_new = Arc::clone(&doc_state);
     let ds_char = Arc::clone(&doc_state);
+    let ds_page = Arc::clone(&doc_state);
     rsx! {
         div {
             style: format!(
@@ -137,7 +139,9 @@ pub(super) fn left_column(
             { list_browser::list_list_section(list_list, list_selected, editing_list_style, posture) }
 
             // ── Page styles (§9 page family, non-inheriting) ───────────────────
-            { page_browser::page_list_section(page_list, page_selected, editing_page_style, posture) }
+            { page_browser::page_list_section(
+                &ds_page, page_list, page_selected, editing_page_style, posture, sync,
+            ) }
         }
     }
 }

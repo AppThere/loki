@@ -120,7 +120,7 @@ pub(super) fn reconstruct_blocks_from_list(list: &loro::LoroMovableList) -> Vec<
 
 // ── PageLayout deserialization ────────────────────────────────────────────────
 
-pub(super) fn reconstruct_page_layout(section_map: &LoroMap) -> PageLayout {
+pub(crate) fn reconstruct_page_layout(section_map: &LoroMap) -> PageLayout {
     let Some(layout_map) = section_map
         .get(KEY_LAYOUT)
         .and_then(|v| v.into_container().ok())

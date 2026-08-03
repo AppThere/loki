@@ -3,149 +3,65 @@
 //! Editable **page-style** form (Spec 05 M6 page family, ADR-0012 Decision 2).
 //!
 //! LibreOffice-style per-page-style editing: preset buttons (orientation / size /
-//! margins / columns, matching the Layout ribbon) that apply to **only the
-//! selected page style's sections**. Each click computes the target section
-//! indices + the edited [`PageLayout`] and writes them through
-//! `set_page_style_geometry`, so the other page styles are untouched.
+//! margins / columns, matching the Layout ribbon) plus a column-count stepper and
+//! separator toggle, all applying to **only the selected page style** — the
+//! mutation resolves the sections that reference it, so the other page styles are
+//! untouched.
 //!
-//! [`apply_preset`] — the pure layout transform — is unit-tested; the component
-//! is a thin applier.
+//! The form also carries the family's two manager verbs: renaming the selected
+//! style ([`super::page_rename`]) and **applying** it to the section the caret is
+//! in ([`set_section_page_style`]). Creating one lives in
+//! [`super::page_browser`], next to the list it appears in.
+//!
+//! [`apply_preset`] — the pure layout transform — is unit-tested in
+//! [`super::page_presets`]; this module is a thin applier.
 
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::tokens;
 use dioxus::prelude::*;
-use loki_doc_model::layout::page::{PageLayout, PageOrientation, PageSize, SectionColumns};
-use loki_doc_model::loki_primitives::units::Points;
-use loki_doc_model::{rename_page_style, set_page_style_geometry};
+use loki_doc_model::layout::page::PageLayout;
+use loki_doc_model::{rename_page_style, set_page_style_geometry, set_section_page_style};
 use loki_i18n::fl;
 
 use super::super::editor_keydown_ctrl::post_mutation_sync;
 use super::StyleEditorSync;
+use super::page_presets::{PagePreset, apply_preset, column_count, is_active};
 use super::page_rename::PageRenameField;
-use super::panel_data::page_edit_target;
+use super::panel_data_page::{caret_section_index, page_edit_target};
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
-/// A page-geometry preset the form can apply to a page style.
-#[derive(Clone, Copy, PartialEq)]
-pub(super) enum PagePreset {
-    Portrait,
-    Landscape,
-    SizeA4,
-    SizeLetter,
-    MarginsNormal,
-    MarginsNarrow,
-    MarginsWide,
-    Columns(u8),
-}
-
-/// The default inter-column gap when the form first adds columns (0.5 in),
-/// matching the Layout ribbon.
-const DEFAULT_COL_GAP_PT: f64 = 36.0;
-
-/// Returns `current` with `preset` applied — the pure page-geometry transform.
-/// Orientation and size preserve the other axis (choosing A4 while landscape
-/// stays landscape); margins keep header/footer/gutter; columns keep the gap.
-#[must_use]
-pub(super) fn apply_preset(current: &PageLayout, preset: PagePreset) -> PageLayout {
-    let mut l = current.clone();
-    let is_landscape = l.page_size.width.value() > l.page_size.height.value();
-    match preset {
-        PagePreset::Portrait | PagePreset::Landscape => {
-            let want = preset == PagePreset::Landscape;
-            l.orientation = if want {
-                PageOrientation::Landscape
-            } else {
-                PageOrientation::Portrait
-            };
-            if is_landscape != want {
-                let (w, h) = (l.page_size.width, l.page_size.height);
-                l.page_size = PageSize {
-                    width: h,
-                    height: w,
-                };
-            }
-        }
-        PagePreset::SizeA4 | PagePreset::SizeLetter => {
-            let base = if preset == PagePreset::SizeA4 {
-                PageSize::a4()
-            } else {
-                PageSize::letter()
-            };
-            l.page_size = if is_landscape {
-                PageSize {
-                    width: base.height,
-                    height: base.width,
-                }
-            } else {
-                base
-            };
-        }
-        PagePreset::MarginsNormal | PagePreset::MarginsNarrow | PagePreset::MarginsWide => {
-            let (tb, lr) = match preset {
-                PagePreset::MarginsNarrow => (36.0, 36.0),
-                PagePreset::MarginsWide => (72.0, 144.0),
-                _ => (72.0, 72.0),
-            };
-            l.margins.top = Points::new(tb);
-            l.margins.bottom = Points::new(tb);
-            l.margins.left = Points::new(lr);
-            l.margins.right = Points::new(lr);
-        }
-        PagePreset::Columns(n) => {
-            l.columns = if n <= 1 {
-                None
-            } else {
-                let gap = l
-                    .columns
-                    .as_ref()
-                    .map_or(Points::new(DEFAULT_COL_GAP_PT), |c| c.gap);
-                // Preserve explicit per-column widths only when they still match
-                // the new column count; otherwise fall back to equal columns.
-                let widths = l
-                    .columns
-                    .as_ref()
-                    .map(|c| c.widths.clone())
-                    .filter(|w| w.len() == usize::from(n))
-                    .unwrap_or_default();
-                Some(SectionColumns {
-                    count: n,
-                    gap,
-                    separator: l.columns.as_ref().is_some_and(|c| c.separator),
-                    widths,
-                })
-            };
-        }
-    }
-    l
-}
-
-/// Whether `layout` already matches `preset` (drives the active-button styling).
-fn is_active(layout: &PageLayout, preset: PagePreset) -> bool {
-    let landscape = layout.page_size.width.value() > layout.page_size.height.value();
-    let (w, h) = (
-        layout.page_size.width.value(),
-        layout.page_size.height.value(),
-    );
-    let (short, long) = (w.min(h), w.max(h));
-    let size_is = |p: &PageSize| {
-        let (pw, ph) = (p.width.value(), p.height.value());
-        (short - pw.min(ph)).abs() < 1.0 && (long - pw.max(ph)).abs() < 1.0
-    };
-    let m = &layout.margins;
-    let all = |v: f64| (m.top.value() - v).abs() < 0.5 && (m.bottom.value() - v).abs() < 0.5;
-    let lr = |v: f64| (m.left.value() - v).abs() < 0.5 && (m.right.value() - v).abs() < 0.5;
-    let count = layout.columns.as_ref().map_or(1, |c| c.count);
-    match preset {
-        PagePreset::Portrait => !landscape,
-        PagePreset::Landscape => landscape,
-        PagePreset::SizeA4 => size_is(&PageSize::a4()),
-        PagePreset::SizeLetter => size_is(&PageSize::letter()),
-        PagePreset::MarginsNormal => all(72.0),
-        PagePreset::MarginsNarrow => all(36.0),
-        PagePreset::MarginsWide => all(72.0) && lr(144.0),
-        PagePreset::Columns(n) => count == n,
-    }
+/// Shared button chrome; `active` gives the pressed/selected look.
+///
+/// # Touch target
+///
+/// These are text buttons inside the style panel: 2×6 px padding around a
+/// `FONT_SIZE_LABEL` glyph run, so the intrinsic box is under the WCAG 2.5.8
+/// 44×44 logical-pixel minimum at the desktop font scale. They meet it the same
+/// way the panel's other controls do — on touch builds the base font scale
+/// lifts the whole panel — and the Compact posture's `touch_min_css()` is what
+/// enforces it for the list rows. **The stepper's `−`/`+` are the smallest
+/// targets in the panel** and are the ones to re-measure when the panel next
+/// gets a screen-sitting scenario; they are not covered by `touch_min_css()`
+/// today. TODO(page-panel-touch): fold the form's buttons into the posture's
+/// touch minimum rather than relying on the ambient font scale.
+pub(super) fn button_css(active: bool) -> String {
+    format!(
+        "padding: 2px 6px; border-radius: 3px; border: 1px solid {border}; \
+         cursor: pointer; font-size: {fs}px; background: {bg}; color: {fg};",
+        border = if active {
+            tokens::COLOR_TAB_ACTIVE_INDICATOR
+        } else {
+            tokens::COLOR_BORDER_CHROME
+        },
+        fs = tokens::FONT_SIZE_LABEL,
+        bg = if active {
+            tokens::COLOR_SURFACE_3
+        } else {
+            tokens::COLOR_SURFACE_2
+        },
+        fg = tokens::COLOR_TEXT_ON_CHROME,
+    )
 }
 
 /// One preset button. Applies `preset` to the selected page style on click.
@@ -160,26 +76,15 @@ fn preset_button(
     let ds = Arc::clone(doc_state);
     rsx! {
         button {
-            style: format!(
-                "padding: 2px 6px; border-radius: 3px; border: 1px solid {border}; \
-                 cursor: pointer; font-size: {fs}px; \
-                 background: {bg}; color: {fg};",
-                border = if active { tokens::COLOR_TAB_ACTIVE_INDICATOR } else { tokens::COLOR_BORDER_CHROME },
-                fs = tokens::FONT_SIZE_LABEL,
-                bg = if active { tokens::COLOR_SURFACE_3 } else { tokens::COLOR_SURFACE_2 },
-                fg = tokens::COLOR_TEXT_ON_CHROME,
-            ),
+            style: button_css(active),
             onclick: move |_| {
-                let Some((current, indices)) = page_edit_target(&ds, &name) else {
+                let Some(current) = page_edit_target(&ds, &name) else {
                     return;
                 };
-                if indices.is_empty() {
-                    return;
-                }
                 let next = apply_preset(&current, preset);
                 let guard = sync.loro_doc.read();
                 let Some(ldoc) = guard.as_ref() else { return };
-                if set_page_style_geometry(ldoc, &indices, &next).is_ok() {
+                if set_page_style_geometry(ldoc, &name, &next).is_ok() {
                     apply_mutation_and_relayout(&ds, ldoc);
                     post_mutation_sync(
                         &ds,
@@ -196,7 +101,7 @@ fn preset_button(
     }
 }
 
-/// A labelled row of preset buttons.
+/// A labelled row of controls.
 fn preset_row(label: String, buttons: Element) -> Element {
     rsx! {
         div {
@@ -210,6 +115,54 @@ fn preset_row(label: String, buttons: Element) -> Element {
                 { label }
             }
             {buttons}
+        }
+    }
+}
+
+/// The "apply this page style to the section the caret is in" button.
+///
+/// Rendered only when there **is** a caret and its section does not already use
+/// this style, so the control is never a no-op that looks like an action.
+fn apply_here_button(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    name: String,
+    sync: StyleEditorSync,
+) -> Element {
+    let focus = sync.cursor_state.read().focus.clone();
+    let Some(section) = caret_section_index(doc_state, focus.as_ref()) else {
+        return rsx! {};
+    };
+    let already = doc_state
+        .lock()
+        .ok()
+        .and_then(|s| {
+            let doc = s.document.as_ref()?;
+            Some(doc.sections.get(section)?.page_style.as_ref()?.as_str() == name)
+        })
+        .unwrap_or(false);
+    if already {
+        return rsx! {};
+    }
+    let ds = Arc::clone(doc_state);
+    rsx! {
+        button {
+            style: button_css(false),
+            onclick: move |_| {
+                let guard = sync.loro_doc.read();
+                let Some(ldoc) = guard.as_ref() else { return };
+                if set_section_page_style(ldoc, section, &name).is_ok() {
+                    apply_mutation_and_relayout(&ds, ldoc);
+                    post_mutation_sync(
+                        &ds,
+                        sync.loro_doc,
+                        sync.cursor_state,
+                        sync.undo_manager,
+                        sync.can_undo,
+                        sync.can_redo,
+                    );
+                }
+            },
+            { fl!("style-page-apply-here") }
         }
     }
 }
@@ -255,6 +208,7 @@ pub(super) fn page_style_form(
             editing_page_style.set(Some(new));
         }
     };
+    let count = column_count(&layout);
     rsx! {
         div {
             style: format!("display: flex; flex-direction: column; padding: {}px;", tokens::SPACE_2),
@@ -278,11 +232,19 @@ pub(super) fn page_style_form(
                 { btn(fl!("ribbon-columns-one-aria"), PagePreset::Columns(1)) }
                 { btn(fl!("ribbon-columns-two-aria"), PagePreset::Columns(2)) }
                 { btn(fl!("ribbon-columns-three-aria"), PagePreset::Columns(3)) }
+                { btn(fl!("style-page-columns-fewer"), PagePreset::ColumnCountDelta(-1)) }
+                span {
+                    style: format!(
+                        "font-size: {fs}px; color: {fg}; min-width: 16px; text-align: center;",
+                        fs = tokens::FONT_SIZE_LABEL,
+                        fg = tokens::COLOR_TEXT_ON_CHROME,
+                    ),
+                    "{count}"
+                }
+                { btn(fl!("style-page-columns-more"), PagePreset::ColumnCountDelta(1)) }
+                { btn(fl!("style-page-column-separator"), PagePreset::ToggleSeparator) }
             }) }
+            { preset_row(fl!("style-page-apply-label"), apply_here_button(doc_state, name.clone(), sync)) }
         }
     }
 }
-
-#[cfg(test)]
-#[path = "page_form_tests.rs"]
-mod tests;
