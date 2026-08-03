@@ -269,6 +269,8 @@ pub(crate) fn map_document(
         ..DocumentSettings::default()
     });
 
+    page::apply_mirror_margins(&mut sections, mirror);
+
     let document = Document {
         meta,
         styles: catalog,

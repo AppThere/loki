@@ -187,6 +187,12 @@ pub(super) fn reconstruct_page_layout(section_map: &LoroMap) -> PageLayout {
         };
     }
 
+    // Page usage. Absent (a snapshot written before T6.1) decodes as `All`,
+    // which is what such a document meant.
+    if let Some(s) = get_str_from_map(&layout_map, KEY_PAGE_USAGE) {
+        layout.page_usage = crate::layout::page::PageUsage::from_odf(&s);
+    }
+
     // Columns
     if let Some(cols_map) = layout_map
         .get(KEY_COLUMNS)

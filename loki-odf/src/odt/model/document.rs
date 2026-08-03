@@ -160,6 +160,11 @@ pub(crate) struct OdfPageLayout {
     pub margin_right: Option<String>,
     /// `style:print-orientation` — `"portrait"` or `"landscape"`.
     pub print_orientation: Option<String>,
+    /// `style:page-usage` — `"all"` (default), `"mirrored"`, `"left"` or
+    /// `"right"`. ODF 1.3 §19.469. Maps to
+    /// [`loki_doc_model::layout::page::PageLayout::page_usage`], which is where
+    /// OOXML's document-wide `w:mirrorMargins` also lands.
+    pub page_usage: Option<String>,
     /// `style:num-format` — the page-number numbering scheme (`"1"`, `"i"`,
     /// `"I"`, `"a"`, `"A"`). ODF 1.3 §20.396. Maps to
     /// [`loki_doc_model::layout::page::PageLayout::page_number_format`].

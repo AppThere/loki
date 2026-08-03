@@ -95,6 +95,30 @@ pub struct Document {
 }
 
 impl Document {
+    /// Whether this document mirrors its margins on even (verso) pages.
+    ///
+    /// # One question, two places the formats put the answer
+    ///
+    /// ODF states it per page layout (`style:page-usage="mirrored"`); OOXML has
+    /// only the document-wide `w:mirrorMargins` in `settings.xml`. Both reach
+    /// the model — the first as [`crate::layout::page::PageUsage`] on each
+    /// section's layout, the second as [`crate::settings::DocumentSettings`] —
+    /// so "is this document mirrored" has two possible homes and every consumer
+    /// that asked it directly was picking one.
+    ///
+    /// A union rather than a precedence, because the two never contradict: a
+    /// DOCX import sets both, an ODT import sets only the layouts, and a
+    /// programmatically-built document may set only the setting. Asking either
+    /// alone silently drops one of those three origins — which is how an ODT
+    /// with mirrored margins rendered single-sided (Spec 08 T6.1).
+    #[must_use]
+    pub fn mirrors_margins(&self) -> bool {
+        self.settings.as_ref().is_some_and(|s| s.mirror_margins)
+            || self
+                .sections
+                .iter()
+                .any(|sec| sec.layout.page_usage.mirrors_margins())
+    }
     /// Creates a new empty document with a single default section.
     #[must_use]
     pub fn new() -> Self {
@@ -215,63 +239,6 @@ impl Document {
     #[must_use]
     pub fn section_count(&self) -> usize {
         self.sections.len()
-    }
-
-    /// Returns an iterator over all blocks across all sections in document
-    /// order.
-    ///
-    /// Blocks are yielded section by section, then in block order within each
-    /// section. The position of a block in this iterator corresponds to its
-    /// flat index as used by the Loro bridge (`block_0`, `block_1`, …).
-    pub fn blocks_flat(&self) -> impl Iterator<Item = &crate::content::block::Block> {
-        self.sections.iter().flat_map(|s| s.blocks.iter())
-    }
-
-    /// Returns the block at flat index `index` across all sections, or `None`
-    /// if `index` is out of range.
-    ///
-    /// Flat indices are assigned by iterating sections in order, then blocks
-    /// within each section. For example, in a document with two sections of
-    /// two blocks each, flat index `2` is the first block of the second
-    /// section.
-    ///
-    /// Flat indices are stable within a document snapshot but are **not**
-    /// preserved across mutations that insert or remove blocks.
-    #[must_use]
-    pub fn block_at_flat(&self, index: usize) -> Option<&crate::content::block::Block> {
-        self.blocks_flat().nth(index)
-    }
-
-    /// Returns the total number of blocks across all sections.
-    ///
-    /// Returns `0` for an empty document (no sections or all sections empty).
-    #[must_use]
-    pub fn block_count_flat(&self) -> usize {
-        self.sections.iter().map(|s| s.blocks.len()).sum()
-    }
-
-    /// Returns the `(section_index, block_index_within_section)` pair for a
-    /// given flat block index, or `None` if `flat_index` is out of range.
-    ///
-    /// Useful for locating which section owns a block when only its flat index
-    /// is known (e.g. after receiving a Loro mutation targeting `block_N`).
-    ///
-    /// # Examples
-    ///
-    /// For a document with two sections of two blocks each:
-    /// - `flat_index_to_section_block(0)` → `Some((0, 0))`
-    /// - `flat_index_to_section_block(2)` → `Some((1, 0))`
-    /// - `flat_index_to_section_block(4)` → `None`
-    #[must_use]
-    pub fn flat_index_to_section_block(&self, flat_index: usize) -> Option<(usize, usize)> {
-        let mut remaining = flat_index;
-        for (s_idx, section) in self.sections.iter().enumerate() {
-            if remaining < section.blocks.len() {
-                return Some((s_idx, remaining));
-            }
-            remaining -= section.blocks.len();
-        }
-        None
     }
 }
 

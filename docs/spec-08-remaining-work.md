@@ -140,6 +140,49 @@ squiggle clamp, and the gate-script bypasses.
 
 **Re-scoped XL → M by S0.5.** ADR-0012 Decision 2 already shipped `Length<Emu>`, `PageStyle`, the N-column model, ODT master-page round-trip, DOCX section export and `mirror_margins`. **Read ADR-0012 and confirm against the tree before writing anything** — this phase's scope was wrong by a wide margin once already.
 
+### Scope audit against the tree (r96) — it was wrong again, in both directions
+
+The instruction above was followed, and it earned its place. **ADR-0012's own
+Consequences section is stale**: it says the page family is "decided but not yet
+built", while `PageStyle`, `derive_page_styles` and the read-only page inspector
+all exist. And the task list below over-states what remains:
+
+| Task | Spec says | Tree says |
+| --- | --- | --- |
+| T6.1 `style:page-usage` | remaining | **Was remaining — done, r96.** |
+| T6.2 page-size catalogue | remaining | **Remaining.** `PageSize` has exactly two constructors, `a4()` and `letter()`; the inspector can name those two and renders everything else as `612 × 792 pt`. |
+| T6.3 app-scoped defaults | remaining | **Remaining.** Only `default_page_size_for_locale` (A4 vs Letter off `LC_PAPER`) exists. |
+| T6.4 unit resolution | remaining | **Remaining.** No measurement-unit type anywhere in the tree. |
+| T6.5 advisory DOCX part | remaining | **Remaining.** No custom-part writer. |
+| T6.6 odd/even + first page | remaining | **Already built.** DOCX reader, writer, `settings.xml` assembly, model fields, and `flow_headers::assign_headers_footers` selecting the first/even/default variant. The spec's "mirrored margins are near-useless without it" was already satisfied. |
+| T6.7 UI panel + manager | remaining | **Half built.** `style_page_inspector.rs` exists and is explicitly read-only; creating, renaming and applying a page style is not there. The 1–3 column preset buttons are real and are the whole column limit — but the **model** already carries arbitrary `count`, per-column widths and a separator, so this is a UI cap over a complete model. |
+| T6.8 conformance | remaining | **Remaining** for page styles specifically; the ODF round-trip suites exist to extend. |
+
+**T6.1's premise checked out.** `mirror_margins` really is wired end to end —
+`w:mirrorMargins` → `DocumentSettings` → `LayoutOptions` → `mirrored_margins()`
+swapping left/right on even pages, with a Loro round-trip and tests. What did
+*not* exist was any ODF spelling of it.
+
+### T6.1 — `style:page-usage` (done, r96)
+
+`PageUsage {All, Mirrored, Left, Right}` on `PageLayout`, with the ODF codec in
+`loki-doc-model/src/layout/page_usage.rs`. Read and written by the ODT
+reader/writer, carried through the Loro bridge, and — the half that makes it a
+feature rather than a field — **read by the paginator**, so an ODT that mirrors
+now alternates its margins.
+
+**The formats disagree about where the property lives, and the model takes the
+richer shape.** ODF states it per page layout; OOXML has only the document-wide
+`w:mirrorMargins`. So the DOCX importer stamps the flag onto every section, the
+DOCX writer asks `Document::mirrors_margins()` (a union of both origins, because
+an ODT-sourced document has no `settings` at all and the setting-only read
+exported it as single-sided), and the collapse happens at the one boundary where
+the format forces it.
+
+Mutation-tested both ways: reverting the paginator to the settings-only read
+kills the mirroring test; making the writer emit the attribute unconditionally
+kills the default-bytes test.
+
 | Task | Work |
 | --- | --- |
 | T6.1 | `style:page-usage` (`all`/`left`/`right`/`mirrored`) on the ODF path, wired to existing `mirror_margins` |

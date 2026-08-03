@@ -9,6 +9,7 @@
 
 pub mod header_footer;
 pub mod page;
+pub mod page_usage;
 pub mod section;
 
 pub use header_footer::{HeaderFooter, HeaderFooterKind};

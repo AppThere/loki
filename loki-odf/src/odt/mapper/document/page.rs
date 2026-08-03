@@ -179,7 +179,16 @@ fn convert_page_layout(pl: &OdfPageLayout) -> PageLayout {
         .map(crate::odt::mapper::lists::map_numbering_scheme)
         .filter(|s| *s != NumberingScheme::Decimal);
 
+    // `style:page-usage` is on the page layout, not its properties child.
+    // Unknown values fall back to `all` in the codec — see `PageUsage::from_odf`.
+    let page_usage = pl
+        .page_usage
+        .as_deref()
+        .map(loki_doc_model::layout::page::PageUsage::from_odf)
+        .unwrap_or_default();
+
     PageLayout {
+        page_usage,
         page_size: PageSize { width, height },
         margins: PageMargins {
             top: mt,

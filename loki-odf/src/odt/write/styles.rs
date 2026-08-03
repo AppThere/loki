@@ -7,7 +7,7 @@
 
 use loki_doc_model::document::Document;
 use loki_doc_model::layout::header_footer::HeaderFooter;
-use loki_doc_model::layout::page::{PageLayout, PageOrientation, SectionColumns};
+use loki_doc_model::layout::page::{PageLayout, PageOrientation, PageUsage, SectionColumns};
 use loki_doc_model::style::para_style::ParagraphStyle;
 
 use super::auto::AutoStyles;
@@ -203,6 +203,12 @@ fn write_paragraph_style(out: &mut String, id: &str, style: &ParagraphStyle) {
 fn write_page_layout(out: &mut String, pl_name: &str, layout: &PageLayout) {
     out.push_str("<style:page-layout");
     attr(out, "style:name", pl_name);
+    // `style:page-usage` belongs on the page layout itself, not on its
+    // properties child. Written only when it is not the ODF default, so an
+    // ordinary single-sided document produces the same bytes it did before.
+    if layout.page_usage != PageUsage::default() {
+        attr(out, "style:page-usage", layout.page_usage.as_odf());
+    }
     out.push_str("><style:page-layout-properties");
     attr(out, "fo:page-width", &pt(layout.page_size.width));
     attr(out, "fo:page-height", &pt(layout.page_size.height));

@@ -206,6 +206,8 @@ impl SectionColumns {
     }
 }
 
+pub use super::page_usage::PageUsage;
+
 /// The complete page layout for a section.
 ///
 /// TR 29166 §7.2.8 (Section and page layout) and §6.2.3 (header/footer).
@@ -223,6 +225,11 @@ pub struct PageLayout {
     pub orientation: PageOrientation,
     /// Multi-column layout, if any. `None` = single column.
     pub columns: Option<SectionColumns>,
+    /// Which pages of a spread this layout applies to, and whether its margins
+    /// mirror (ODF `style:page-usage`; OOXML's document-wide
+    /// `w:mirrorMargins` collapses into this on import).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub page_usage: PageUsage,
     /// The default (odd/right-page) header.
     pub header: Option<HeaderFooter>,
     /// The default (odd/right-page) footer.
@@ -253,21 +260,5 @@ pub struct PageLayout {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a4_dimensions() {
-        let size = PageSize::a4();
-        // A4 is approximately 595 × 842 pt
-        assert!((size.width.value() - 595.28).abs() < 0.1);
-        assert!((size.height.value() - 841.89).abs() < 0.1);
-    }
-
-    #[test]
-    fn default_page_layout_portrait() {
-        let layout = PageLayout::default();
-        assert_eq!(layout.orientation, PageOrientation::Portrait);
-        assert!(layout.header.is_none());
-    }
-}
+#[path = "page_tests.rs"]
+mod tests;

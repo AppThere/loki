@@ -142,6 +142,7 @@
 
 pub mod content;
 pub mod document;
+mod document_flat;
 pub mod loro_schema;
 pub mod settings;
 pub use loro_schema::*;

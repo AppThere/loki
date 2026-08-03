@@ -28,7 +28,10 @@ fn effective_options(doc: &loki_doc_model::Document, options: &LayoutOptions) ->
     if eff.default_tab_stop_pt.is_none() {
         eff.default_tab_stop_pt = doc.settings.as_ref().map(|s| s.default_tab_stop_pt);
     }
-    eff.mirror_margins |= doc.settings.as_ref().is_some_and(|s| s.mirror_margins);
+    // Same one question as the DOCX writer asks — see `Document::mirrors_margins`.
+    // Reading only `settings` here is why an ODT with `style:page-usage="mirrored"`
+    // laid out single-sided (Spec 08 T6.1).
+    eff.mirror_margins |= doc.mirrors_margins();
     eff
 }
 

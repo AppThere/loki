@@ -14,9 +14,9 @@ use loki_doc_model::content::block::Block;
 use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
 use loki_doc_model::layout::page::{
     LineNumberRestart, LineNumbering, PageBorders, PageLayout, PageMargins, PageOrientation,
-    PageSize,
+    PageSize, PageUsage,
 };
-use loki_doc_model::layout::section::SectionStart;
+use loki_doc_model::layout::section::{Section, SectionStart};
 use loki_doc_model::style::list_style::NumberingScheme;
 use loki_primitives::units::Points;
 
@@ -221,3 +221,25 @@ pub(super) fn map_page_layout_with_hf(
 #[cfg(test)]
 #[path = "document_page_tests.rs"]
 mod tests;
+
+/// Spreads OOXML's document-wide `w:mirrorMargins` across every section's page
+/// usage.
+///
+/// # Why the model does not simply keep the flag
+///
+/// ODF states this per page layout (`style:page-usage="mirrored"`), OOXML once
+/// for the document. The model takes the richer shape, so the collapse belongs
+/// at this boundary — and doing it here is what lets an ODT export of an
+/// imported DOCX carry the attribute, and what keeps
+/// `Document::mirrors_margins` from having to prefer one origin over the other.
+///
+/// The `DocxSettings` flag is kept as well, verbatim, for the DOCX → DOCX
+/// round-trip ADR-0002 asks for.
+pub(super) fn apply_mirror_margins(sections: &mut [Section], mirror: bool) {
+    if !mirror {
+        return;
+    }
+    for section in sections {
+        section.layout.page_usage = PageUsage::Mirrored;
+    }
+}
