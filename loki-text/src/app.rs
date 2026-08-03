@@ -19,8 +19,8 @@
 
 use appthere_ui::tokens;
 use appthere_ui::{
-    AtPopoverHost, AtThemeContext, focus_ring_css, use_provide_device_profile, use_provide_popover,
-    use_provide_responsive, use_safe_area,
+    AtPopoverHost, AtThemeContext, focus_ring_css, ui_font_css, use_provide_device_profile,
+    use_provide_popover, use_provide_responsive, use_safe_area,
 };
 use dioxus::prelude::*;
 
@@ -192,6 +192,14 @@ pub fn App() -> Element {
         // `:focus` anywhere in the suite, so Tab moved focus and the screen never
         // changed.
         document::Style { "{focus_ring_css()}" }
+
+        // **Registering the face is not selecting it.** The blobs above make
+        // "Atkinson Hyperlegible Next" *resolvable*; nothing in the tree asked
+        // for it except component-by-component, so an element outside every such
+        // component — anything the popover host renders — fell through to the CSS
+        // initial value and drew in serif. This sheet is the declaration, at the
+        // one place inheritance reaches everything (r94).
+        document::Style { "{ui_font_css()}" }
 
         // The UI typeface (Atkinson Hyperlegible Next) and the bundled
         // metric-compatible fallback families (Carlito/Caladea/Arimo/Cousine/

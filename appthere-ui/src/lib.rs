@@ -36,6 +36,7 @@ pub mod safe_area;
 pub mod scroll;
 pub mod theme;
 pub mod tokens;
+pub mod ui_font;
 
 pub use components::icons::{
     AtIcon, AT_CHANGE_ACCEPT, AT_CHANGE_ACCEPT_ONE, AT_CHANGE_REJECT, AT_CHANGE_REJECT_ONE,
@@ -99,3 +100,4 @@ pub use scroll::{
     ViewportController,
 };
 pub use theme::{use_theme, AtThemeContext, ThemeVariant};
+pub use ui_font::ui_font_css;

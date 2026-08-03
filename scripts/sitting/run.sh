@@ -44,8 +44,23 @@ start_x() {
 # and one no scenario can see: the app is behaving correctly. It cost two
 # scenarios' results before it was spotted, and both looked like regressions in
 # the code under test. Cleared here so each run starts from the app's default.
+#
+# **The recent-documents list is the same leak** and cost the same kind of wrong
+# answer (r94): a path left by an earlier run put a row on the Home screen that
+# every later `menu` run then Tabbed onto, and opening it produced a router error
+# page instead of the ⋮ menu the scenario is about. It reads as "the menu is
+# broken". Every file the app persists belongs in here, not just the one that
+# has bitten so far.
+#
+# **This changes what a `TABS` count lands on**, and that is the intended
+# direction: with the recent list cleared every run, the Home tab order is the
+# same every run. It was previously a function of whatever earlier sittings had
+# opened, so two runs of one scenario could focus different controls with nothing
+# in the output to say why. Scenario `TABS` values are calibrated against the
+# empty list.
 reset_window_state() {
-  rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/AppThere/Loki/window.json" 2>/dev/null
+  local data="${XDG_DATA_HOME:-$HOME/.local/share}/AppThere/Loki"
+  rm -f "$data/window.json" "$data/recent.json" 2>/dev/null
 }
 
 start_app() { # start_app [env assignments...]

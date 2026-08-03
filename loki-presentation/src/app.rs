@@ -3,7 +3,7 @@
 //! Root application component for loki-presentation.
 
 use appthere_ui::{
-    AtPopoverHost, AtThemeContext, AtViewportWidthSensor, use_provide_popover,
+    AtPopoverHost, AtThemeContext, AtViewportWidthSensor, ui_font_css, use_provide_popover,
     use_provide_responsive, use_safe_area,
 };
 use dioxus::prelude::*;
@@ -137,6 +137,14 @@ pub fn App() -> Element {
             }}
             "
         }
+
+        // **Registering the face is not selecting it.** The blobs above make
+        // "Atkinson Hyperlegible Next" *resolvable*; nothing in the tree asked
+        // for it except component-by-component, so an element outside every such
+        // component — anything the popover host renders — fell through to the CSS
+        // initial value and drew in serif. This sheet is the declaration, at the
+        // one place inheritance reaches everything (r94).
+        document::Style { "{ui_font_css()}" }
 
         // The UI typeface and bundled fallback families are registered
         // synchronously into the renderer's font collection at launch via

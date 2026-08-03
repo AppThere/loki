@@ -65,6 +65,40 @@ wrong — a dismissible popover tints every pixel in the window, so it reported
 2552 of 3136 "overpainted" on a trigger that was demonstrably clear. 2% fuzz
 clears the tint and nothing else.
 
+### The popover layer was rendering in serif (r94)
+
+Reported from the app: new UI elements "showing up with the wrong font, like
+they're unstyled". They were unstyled. `font-family` was declared
+component-by-component — about twenty-five copies of one fact — and **nowhere on
+the document**, so anything not inside such a component fell through to the CSS
+initial value. `AtPopoverHost` mounts at the app root by construction, so its
+content inherits from `body` and nothing else: **all six** popover content
+producers (zoom menu, spelling menu, Recent ⋮ menu, Open tooltip, ribbon overflow
+menu, the host itself) declare no family.
+
+Fixed at the document root — `appthere_ui::ui_font_css()`, the shape
+`focus_ring_css()` already established, injected by all three apps. Declaring it
+at the twenty-sixth component would have left the twenty-seventh to find.
+
+**Measured, both polarities, in one run of `run.sh zoom`:** the Home screen and
+the editor are pixel-identical before and after (0 and 0 — everything there
+already declared a family), and the zoom menu changes by 3759 px, from a visibly
+serif face to Atkinson. `ribbonclearance` is also 0: the overflow menu's labels
+come from `AtRibbonGroup`, which declares one, which is why that menu looked
+right and hid the defect.
+
+**Two things this did not settle.** The first probe reported *nothing* changed —
+it photographed a scene whose every label already had a family, so a control
+injecting `Cousine` at the root changed nothing either; a null result from an
+instrument that cannot speak. And the `menu` scenario turned out to be broken by
+leftover `recent.json` state — the same leak class as r92's `window.json`, now
+cleared alongside it. The Recent ⋮ menu is therefore fixed by enumeration and
+inheritance, not photographed.
+
+**Follow-up, not done:** the ~25 per-component declarations are now redundant
+(all name the same token). Removing them is a one-fact-one-derivation cleanup
+with a wide diff and no behaviour change, so it is a separate pass.
+
 Not fixed, and not this branch's: the macro trust/signature stack, `loki-layout`'s
 squiggle clamp, and the gate-script bypasses.
 
