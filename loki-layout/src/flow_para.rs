@@ -166,7 +166,12 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
 
         // ── Inline image placement (gap #9) ──────────────────────────────────
         // Block-stack the non-floating images and collect any `wrapNone` overlays.
-        let overlay_items = stack_block_images(layout, &images, state.content_width);
+        let overlay_items = stack_block_images(
+            layout,
+            &images,
+            state.content_width,
+            state.mode.fits_oversized_to_column(),
+        );
 
         // Emit the float beside the wrapped text; a float taller than its text
         // becomes an `ActiveFloat` so *following* paragraphs wrap its remainder.

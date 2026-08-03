@@ -175,7 +175,8 @@ fn build_chain_layouts<'s>(
             // Copy-on-write only when there are images to stack (S9-1).
             if !images.is_empty() {
                 let l = Arc::make_mut(&mut layout);
-                let overlay = super::stack_block_images(l, &images, state.content_width);
+                let fit = state.mode.fits_oversized_to_column();
+                let overlay = super::stack_block_images(l, &images, state.content_width, fit);
                 super::apply_overlay_images(l, overlay);
             }
             out.push((resolved, layout, notes));

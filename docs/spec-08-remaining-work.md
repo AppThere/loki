@@ -166,6 +166,66 @@ swapping left/right on even pages, with a Loro round-trip and tests. What did
 
 
 
+
+### T7.3 — the document never scrolls horizontally (partial, r108)
+
+P1 (T7.0) cleared this to proceed, so T7.4's modal-viewer fallback stays unused.
+
+**The rule now holds.** `doc_page_source` used to size the reflow tile to the
+**widest content** — "so an oversized element can be reached by horizontal
+scrolling rather than clipped". That comment describes T7.3's defect as though
+it were a feature: one wide table made the entire reading view scroll sideways,
+and every line of ordinary prose then sat in a tile far wider than the measure.
+The tile is now the measure, always.
+
+**Oversized images shrink to the column, aspect preserved**
+(`fit_to_column`), and **only in the reflow view**
+(`LayoutMode::fits_oversized_to_column`). That gate is the load-bearing part:
+paginated and pageless are *fidelity* views of a page with a real physical
+width, where Word and LibreOffice paint an oversized image at its declared size
+and let it overhang. Shrinking it there would make our page disagree with theirs
+on screen, on export and in print — a fidelity regression dressed as a reading
+improvement. A method on the mode rather than a `matches!` at each of the two
+call sites, which are in different modules and would be the copy that stops
+agreeing.
+
+Mutation-tested three ways: scaling the width without the height (which squashes
+the image — a worse defect than the sideways scroll being removed), scaling
+*up* as well as down, and letting the paginated view fit too. Each kills a
+specific test.
+
+#### Not built: the per-element horizontal scroll container
+
+An element that **cannot** be scaled — a table with fixed column widths — is now
+clipped at the tile rather than allowed to widen it. That is deliberately a
+worse outcome for that one element and a better one for the document, which is
+the trade T7.3 states; but the task's own answer for it is the per-element
+scroller, and that is not built. `TODO(t7.3-element-scroller)`.
+
+**It needs an architecture decision this task did not anticipate.** P1 measured
+*DOM* nested scroll containers, and they route correctly. But the reflow
+document is painted into a **canvas** (wgpu/vello tiles), not built as DOM — so
+there is no per-element DOM box to make scrollable, and P1's green result does
+not reach the case it was run for. Three shapes, none chosen:
+
+- Hoist oversized elements out of the canvas into real DOM siblings positioned
+  over it. Gets P1's routing for free; needs the canvas and the DOM to agree on
+  position at every scroll offset and zoom.
+- Give the canvas its own per-element scroll state and route wheel/drag to it
+  from the tile hit-test. No DOM involvement, but re-implements what P1 just
+  showed Blitz already does correctly.
+- Keep clipping and offer an explicit "open this table" affordance — closest to
+  T7.4's modal viewer, applied per element rather than per document.
+
+**What would settle it:** deciding whether the reflow view stays canvas-painted.
+If it does, the second and third are the only candidates and P1's reading is
+only indirectly relevant — which is worth recording, because P1 was run to gate
+this task and its answer turns out to apply to a DOM path this task may not use.
+
+**Also not done:** tables are not shrunk at all — only images are. A table's
+width comes from its column widths, and fitting one to a column means
+redistributing those, which is a different problem from scaling a rectangle.
+
 ### T7.2 — the reading measure, resolved against live font metrics (partial, r107)
 
 **The mechanism is built; the last mile is not wired, deliberately.**
@@ -928,7 +988,7 @@ kills the default-bytes test.
 | **T7.0** | **Done (r105) — P1 answers yes for the wheel.** Nested containers consume within their bounds and bubble the remainder, and a horizontal-only inner does **not** swallow a vertical gesture. T7.3 proceeds; T7.4's fallback is not needed on this evidence. Drag is **not** measured — see below. |
 | T7.1 | **Partial (r106).** The priority engine, the retention set and the width-driven drop are done and on screen; the overflow `Popover`'s trigger has **not** been observed rendering — see below. |
 | T7.2 | **Partial (r107).** The measure resolver (live font metrics) and the ambient cap the reflow width honours are done and mutation-tested. **Nothing installs a measure yet**, so behaviour is unchanged — see below. |
-| T7.3 | Oversized elements shrink to fit the content column, aspect preserved, per-element expand into its own horizontal scroll container. **The document never scrolls horizontally** |
+| T7.3 | **Partial (r108).** The document no longer scrolls horizontally, and oversized images shrink to the column with aspect preserved. The **per-element expand** is not built and needs an architecture decision — see below. |
 | T7.4 | If P1 says nested containers do not route, fall back to a modal full-screen viewer and record the deviation. Never ship a version where the document scrolls sideways |
 
 **Acceptance.** No horizontal document scroll at any width with a 200%-width table present; status bar legible at 320 px; readable at default zoom on a phone without pinching.
