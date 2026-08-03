@@ -1883,7 +1883,17 @@ mod page_fields {
         assert_eq!(pages.len(), 3, "expected 3 pages");
 
         let catalog = StyleCatalog::new();
-        assign_headers_footers(&mut pages, &layout, &mut r, &catalog, 1.0, 3);
+        assign_headers_footers(
+            &mut pages,
+            &layout,
+            &mut r,
+            &catalog,
+            1.0,
+            crate::flow::PagePosition {
+                section_first_page: 1,
+                total_page_count: 3,
+            },
+        );
 
         for page in &pages {
             assert!(
@@ -1924,7 +1934,17 @@ mod page_fields {
         assert_eq!(pages.len(), 2, "expected 2 pages");
 
         let catalog = StyleCatalog::new();
-        assign_headers_footers(&mut pages, &layout, &mut r, &catalog, 1.0, 2);
+        assign_headers_footers(
+            &mut pages,
+            &layout,
+            &mut r,
+            &catalog,
+            1.0,
+            crate::flow::PagePosition {
+                section_first_page: 1,
+                total_page_count: 2,
+            },
+        );
 
         let f1 = format!("{:?}", pages[0].footer_items);
         let f2 = format!("{:?}", pages[1].footer_items);

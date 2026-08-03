@@ -154,7 +154,7 @@ all exist. And the task list below over-states what remains:
 | T6.3 app-scoped defaults | remaining | **Done, r100.** See below. |
 | T6.4 unit resolution | remaining | **Done, r99** for the page surfaces; the rest of the panel still shows pt. See below — and the r96 wording was loose: typed `Length<U>` units existed all along, what was missing was a *runtime* one. |
 | T6.5 advisory DOCX part | remaining | **Done, r101.** See below. |
-| T6.6 odd/even + first page | remaining | **Already built.** DOCX reader, writer, `settings.xml` assembly, model fields, and `flow_headers::assign_headers_footers` selecting the first/even/default variant. The spec's "mirrored margins are near-useless without it" was already satisfied. |
+| T6.6 odd/even + first page | remaining | **Was "already built" — it was not. Done, r103.** Every format leg really did exist; the *selection* did not work past section 1. See below. |
 | T6.7 UI panel + manager | remaining | **Was half built — the editing half is done, r97.** See the correction below: the r96 row was wrong about rename. |
 | T6.8 conformance | remaining | **Done, r102** — and it found a defect in T6.5. See below. |
 
@@ -162,6 +162,72 @@ all exist. And the task list below over-states what remains:
 `w:mirrorMargins` → `DocumentSettings` → `LayoutOptions` → `mirrored_margins()`
 swapping left/right on even pages, with a Loro round-trip and tests. What did
 *not* exist was any ODF spelling of it.
+
+### T6.6 — odd/even and first-page variants (done, r103)
+
+**The r96 audit called this one "already built", and every part it listed was
+real**: the model fields, the DOCX reader (correctly gating `first` on
+`w:titlePg` and `even` on `w:evenAndOddHeaders`), the DOCX writer, the
+`settings.xml` assembly, the ODF `style:header-first` / `style:header-left`
+reader and writer, and the Loro bridge in both directions. What it did not check
+was the one thing that turns those fields into a feature — which variant the
+paginator actually puts on a page.
+
+**The defect.** `flow_headers::select` asked `page_number == 1`. That is the
+*document*-global page number, but `w:titlePg` and `style:header-first` are
+per-section. So only section 1 could ever show a first-page header or footer:
+every later section's `header_first` / `footer_first` was imported, carried
+through the CRDT, written back out on export — and never rendered. Produced and
+unhandled, which the ledger's rule 6 calls a live inconsistency rather than a
+deferral.
+
+The correct quantity was being computed **fourteen lines below**, as
+`section_first_pn`, and used only for the `w:pgNumType` restart. That is rule 3's
+fourth instrument failure: a reading of a quantity *adjacent* to the one asked
+for, sitting unread next to the wrong one.
+
+**Measured, not inferred.** A throwaway probe laid out a two-section document
+with distinguishable header text in each variant and printed what landed on each
+page. Section 2's first page showed section 2's *default* header. The fix was
+written after that reading, not before it.
+
+**Why the section's first page is now a parameter.** `assign_headers_footers`
+took it from `pages.first()`. That is right on the full path, where the slice is
+the whole section, and wrong on the incremental path, where the slice is only
+the re-flowed middle. It does not *currently* diverge there — per
+`the_property_tests_only_ever_resume_from_block_zero`, the fixtures yield one
+checkpoint per section at block 0, so every resume starts at the section's first
+page and the two agree. It starts diverging the moment T3.4 makes checkpoints
+per-page, silently, for both the variant choice and the numbering restart.
+`PagePosition` takes it from the caller, who knows it on either path.
+
+**The coverage gap that let it through.** `header_first` appeared in no
+`loki-layout` test at all — the selection logic had none. The format crates'
+round-trips do assert it, but on single-section documents, where `pn == 1` and
+"the section's first page" are the same page. And the incremental suite's
+`pages_eq` has always compared `header_items`, but no fixture gave a section a
+header, so it was comparing two empty vectors: an instrument that cannot speak
+where the hazard is. Both are now closed —
+`loki-layout/tests/header_variants.rs` (five cases, including one multi-page
+section that makes the `is_first` guard **false** where a first-page variant
+exists, so hardwiring it true fails) and
+`multi_section_header_variants_match_full_layout`.
+
+**Not established — odd/even parity is physical, not displayed.** `select` picks
+the even variant on `page_number.is_multiple_of(2)`, the physical page number.
+Word and LibreOffice arguably key left/right on the *displayed* number, which
+differs whenever a section restarts numbering (`w:pgNumType @w:start`). This was
+left alone: it is consistent with `paginate_blanks::mirrored_margins`, which
+makes the same choice, so changing one without the other would introduce a
+disagreement inside our own paginator — and nothing was measured either way.
+**What would settle it:** open a DOCX with `w:evenAndOddHeaders`, two sections,
+and `w:pgNumType w:start="1"` on the second, in Word and in LibreOffice, and read
+which header the second section's second physical page shows.
+
+**Also not covered:** header variants across DOCX → ODF → DOCX. T6.8's suite
+asserts its four named geometry properties along that path; headers are not among
+them, and ODF has no `titlePg` equivalent (presence of `style:header-first` *is*
+the flag), so the collapse at that boundary is untested.
 
 ### T6.8 — cross-format page-geometry conformance (done, r102)
 

@@ -386,3 +386,94 @@ fn the_property_tests_only_ever_resume_from_block_zero() {
         "the single checkpoint is at block 0, so every resume starts there",
     );
 }
+
+/// **The incremental path must agree with the full path about headers, too.**
+///
+/// `pages_eq` has always compared `header_items` and `footer_items`, but no
+/// fixture in this file gave any section a header — so the comparison was
+/// between two empty vectors and could not fail. An instrument that cannot
+/// speak where the hazard is.
+///
+/// **What this does and does not establish.** It closes the empty-vs-empty
+/// blind spot: headers now render on both sides, so a divergence in *which*
+/// variant a page got is visible. It does **not** yet discriminate
+/// `assign_headers_footers`'s `section_first_page` argument on this path —
+/// per `the_property_tests_only_ever_resume_from_block_zero`, this fixture
+/// yields one checkpoint per section at block 0, so the re-flowed middle always
+/// *is* the whole section and `sc_start + 1` equals `pages.first()`. Passing the
+/// value in is correct in advance of T3.4 rather than a fix for a live
+/// divergence; when T3.4 lands and resumes start mid-section, this test gains
+/// that discrimination and should be re-mutation-checked.
+///
+/// The PAGE field in the default header is what makes the restart observable:
+/// without it `display_pn` is computed and never rendered.
+#[test]
+fn multi_section_header_variants_match_full_layout() {
+    use loki_doc_model::content::field::types::{Field, FieldKind};
+    use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
+
+    let page_number_para = || {
+        Block::StyledPara(StyledParagraph {
+            style_id: None,
+            direct_para_props: None,
+            direct_char_props: None,
+            inlines: vec![Inline::Field(
+                Field::new(FieldKind::PageNumber).with_current_value("1"),
+            )],
+            attr: Default::default(),
+        })
+    };
+
+    let mut fonts = FontResources::new();
+    let mut doc = multi_section_doc();
+    for (i, s) in doc.sections.iter_mut().enumerate() {
+        s.layout.header_first = Some(HeaderFooter {
+            kind: HeaderFooterKind::First,
+            blocks: vec![para(&"F".repeat(i + 1))],
+        });
+        s.layout.header_even = Some(HeaderFooter {
+            kind: HeaderFooterKind::Even,
+            blocks: vec![para(&"E".repeat(i + 4))],
+        });
+        // Carries a PAGE field so the numbering restart below is rendered
+        // rather than merely computed.
+        s.layout.header = Some(HeaderFooter {
+            kind: HeaderFooterKind::Default,
+            blocks: vec![page_number_para()],
+        });
+        s.layout.page_number_start = Some(1);
+    }
+
+    let prev = layout_paginated_full(&mut fonts, &doc, 1.0, &opts());
+    assert!(
+        prev.0.pages.len() > 3,
+        "fixture should span multiple pages, got {}",
+        prev.0.pages.len()
+    );
+    // The fixture is only discriminating if the headers actually rendered —
+    // an empty header on both sides is the blind spot this test exists to close.
+    assert!(
+        prev.0.pages.iter().any(|p| !p.header_items.is_empty()),
+        "no page rendered a header — the comparison would be vacuous"
+    );
+
+    // One edit per section, at a different depth in each: `check_edit` runs a
+    // full layout and Debug-formats every page, so the count is kept to what
+    // distinguishes the sections rather than a sweep.
+    let mut fired = false;
+    for (s, idx) in [(0usize, 0usize), (1, 15), (2, 29)] {
+        let edited = flip_char(&doc, s, idx);
+        let (_, _, f) = check_edit(
+            &mut fonts,
+            &doc,
+            &prev,
+            &edited,
+            &format!("header edit @ s{s} b{idx}"),
+        );
+        fired |= f;
+    }
+    assert!(
+        fired,
+        "incremental never fired — the comparison would be vacuous"
+    );
+}

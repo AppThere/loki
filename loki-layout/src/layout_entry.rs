@@ -250,13 +250,18 @@ pub fn layout_paginated_full(
         if let Some(bp) = blank {
             all_pages.push(bp);
         }
+        // This slice *is* the whole section, so its first page is the section's.
+        let pos = flow::PagePosition {
+            section_first_page: pages.first().map(|p| p.page_number).unwrap_or(1),
+            total_page_count: global_page_count as u32,
+        };
         flow::assign_headers_footers(
             &mut pages,
             &section.layout,
             resources,
             &doc.styles,
             display_scale,
-            global_page_count as u32,
+            pos,
         );
         all_pages.extend(pages);
     }

@@ -52,8 +52,8 @@ mod tail;
 mod textbox_impl;
 
 pub use group::flow_section_group;
-pub(crate) use headers::assign_headers_footers;
 pub(crate) use headers::layout_blocks_reflow;
+pub(crate) use headers::{PagePosition, assign_headers_footers};
 pub(crate) use page_fields::page_layout_has_page_fields;
 use tail::{
     flow_footnotes, flow_hrule, get_items_max_x, synthesize_heading_para, synthesize_plain_para,

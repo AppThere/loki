@@ -3,7 +3,7 @@
 # scripts/check-suppressions.py: neither count may GROW; a file must be
 # removed once both reach 0. New files must start at 0/0.
 # Regenerate with: scripts/check-suppressions.py --update
-# Totals: 510 `let _ =`, 182 `#[allow]` across 160 files.
+# Totals: 510 `let _ =`, 181 `#[allow]` across 159 files.
 
 66 1 loki-ooxml/src/docx/write/document_drawing.rs
 47 0 loki-ooxml/src/docx/write/styles.rs
@@ -90,7 +90,6 @@
 0 1 loki-doc-model/src/style/table_banding.rs
 0 1 loki-layout/src/flow_entry.rs
 0 1 loki-layout/src/flow_float.rs
-0 1 loki-layout/src/flow_headers.rs
 0 1 loki-layout/src/flow_para_place.rs
 0 1 loki-layout/src/flow_table_autofit.rs
 0 1 loki-layout/src/flow_table_cells.rs

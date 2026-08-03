@@ -214,13 +214,20 @@ pub fn relayout_paginated_incremental(
     {
         return None;
     }
+    // `middle` starts at the prefix boundary, which is only the section's first
+    // page when the edit landed on it — so the section's first page number comes
+    // from the checkpoint that defines it. `sc_start` is a 0-based page index
+    // and `page_number` is 1-indexed.
     crate::flow::assign_headers_footers(
         &mut middle,
         &doc.sections[sc].layout,
         resources,
         &doc.styles,
         display_scale,
-        new_total as u32,
+        crate::flow::PagePosition {
+            section_first_page: sc_start + 1,
+            total_page_count: new_total as u32,
+        },
     );
 
     // ── Assemble: reused prefix (Arc bump) + fresh middle + reused suffix ──
