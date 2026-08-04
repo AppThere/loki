@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 | Field | Value |
 | --- | --- |
-| Status | **Accepted** — 2026-08-03. Direction agreed; primary risk measured (§3.2); **not implemented** |
+| Status | **Accepted** — 2026-08-03. Direction agreed; view built behind a flag (§5). **Open defect:** mixed-run paragraphs wrap differently from the canvas path (§5.4) |
 | Drivers | Spec 08 T7.0 (probe P1), T7.2, T7.3, T7.4 |
 | Affects | `loki-renderer` (reflow path), `loki-layout` (reflow mode), `loki-text` editor route |
 | Makes moot | The ambient reading-measure cap added for T7.2 (`loki_renderer::measure`) |
@@ -284,12 +284,85 @@ both halves take it by changing the document, not the harness. Also untouched:
 justified text, tab stops, hyphenation, letter/word spacing and non-Latin
 scripts.
 
-### 5.4 Revised sequencing
+*Read this section together with §5.4*, which ran that extension and found the
+paths **do not** agree — and which explains why this one's agreement is weaker
+evidence than it reads as: the screenplay is monospaced.
+
+### 5.4 Mixed runs within a paragraph — **they do not agree** (2026-08-04)
+
+The extension §3.2 kept naming, run on a fixture built for it
+(`loki-text/examples/common/fixture.rs`, `LB_FIXTURE=mixed:<case>`): the same
+sentence six times, base style Arial 12 pt, with one middle run differing by
+exactly one property — weight, italic, size, family, a named **character**
+style, or letter-spacing. Both halves read the same fixture, so neither can be
+laying out a different document.
+
+**Result: every case disagrees**, at 2–5 of its 12 widths. Measured transition
+positions, layout side against DOM side: `family` 6→5 at **435 vs 431 px**,
+`size` 5→4 at **547 vs 543 px**, `weight` 8→7 at **289 vs ~300 px**. So a
+transition moves by roughly 1–10 px, in both directions, and a paragraph near a
+break flips a line. This is a **fidelity difference between the two views**, and
+it is now on the record rather than assumed away.
+
+#### What the controls established, and what they did not
+
+Two controls, run before attributing anything to *mixedness*:
+
+* **`mixed:plain`** — the same text with the middle run present but carrying
+  **no** property change. It disagreed at 4 of 12 widths. So the disagreement did
+  not need a property change at all.
+* **`mixed:onerun`** — the same *characters* as one inline, no run boundary. It
+  agreed at **all 12**.
+
+The boundary was the variable, not the property. A `<span>` boundary is not free:
+Blitz measures inline boxes item by item, and the canvas path shapes the
+paragraph as one styled string.
+
+#### Fixed: a boundary with no formatting behind it
+
+`content::coalesce` now joins adjacent resolved spans whose emitted CSS is
+identical, so a run split that carries no formatting meaning — and DOCX is full
+of them, since a run boundary survives spell state and revision ids — no longer
+reaches the renderer. After it, `mixed:plain` agrees at all 12 widths and the
+screenplay (§5.3) still agrees at all 18.
+
+Compared on the **emitted CSS** rather than on the `StyleSpan`s: the CSS is what
+reaches the renderer, so two spans differing only in something this view does not
+emit are one span as far as line breaking goes.
+
+#### Not established, and what would settle it
+
+The residual — genuinely different adjacent runs — is **unexplained**. Candidates,
+none of them tested: Blitz rounding each inline box's measurement at the
+boundary; a difference in how the two set up Parley across a style change; and
+variable-font instance selection (the base resolves to Arimo, a `wght` variable
+font, and the canvas path passes explicit normalised coordinates where Stylo
+resolves `font-weight` itself).
+
+*What would settle it:* compare **break positions** — which word ends each line —
+rather than counts, at one width where the two differ. A count says they
+disagree; only the position says where, and the candidates above predict
+different places.
+
+#### And it weakens §5.3
+
+The screenplay agreed at all 18 widths, and it is **monospaced**: every break
+decision sits a whole character-width from the next, so a sub-pixel metric
+difference rarely flips one. The mixed fixture is proportional. §5.3's agreement
+is therefore weaker evidence than it read as — it is evidence about a forgiving
+document, not about the general case. It stands as measured; it does not
+generalise.
+
+### 5.5 Revised sequencing
 
 1. ~~Resolve through `StyleCatalog`.~~ **Done — §5.1.**
 2. ~~Route families through `resolve_font_name`.~~ **Done — §5.1a.**
 3. ~~Re-run the line-break comparison on a styled document as a measurement.~~
-   **Done — §5.3. The paths agree at every swept width.**
-4. Extend the comparison to **mixed style runs within a paragraph** — the one
-   §3.2 named and the one this sweep still does not cover.
-5. Then T7.3's per-element scroller, and the virtualisation measurement.
+   **Done — §5.3.**
+4. ~~Extend it to mixed style runs within a paragraph.~~ **Done — §5.4. They do
+   not agree; one cause found and fixed, the residual open.**
+5. Locate the residual by comparing break *positions* at a disagreeing width
+   (§5.4). Until then, the ADR's direction stands but its fidelity claim does
+   not: the DOM reflow view wraps mixed-run paragraphs differently from the
+   canvas one.
+6. Then T7.3's per-element scroller, and the virtualisation measurement.

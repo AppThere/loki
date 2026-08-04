@@ -848,26 +848,52 @@ styledlinebreak)
   #   cargo run -p loki-text --example styled_linebreak_sweep    # layout side
   #   scripts/sitting/run.sh styledlinebreak                     # DOM side
   #
-  # The screen is as wide as the row: one shot rather than eighteen launches,
-  # and one set of conditions rather than eighteen. Widths come from
-  # `STYLED_WIDTHS` (the probe's default is the nine transitions measured on
-  # 2026-08-04); `SCREEN` must be at least the total the probe prints.
+  # The screen is as wide as the row: one shot rather than one launch per width,
+  # and one set of conditions rather than one per width.
+  #
+  # `LB_FIXTURE` selects the document (both halves read it): `screenplay`, or
+  # `mixed`, or `mixed:<case>` for one of weight/italic/size/family/charstyle/
+  # spacing. Run the six cases in a loop to attribute a disagreement:
+  #
+  #   for c in weight italic size family charstyle spacing; do
+  #     LB_FIXTURE=mixed:$c scripts/sitting/run.sh styledlinebreak; done
   BIN="$ROOT/target/debug/examples/styled_linebreak_probe"
-  if [ ! -x "$BIN" ]; then
-    echo "build it first: cargo build -p loki-text --example styled_linebreak_probe"
+  SWEEP="$ROOT/target/debug/examples/styled_linebreak_sweep"
+  if [ ! -x "$BIN" ] || [ ! -x "$SWEEP" ]; then
+    echo "build them first: cargo build -p loki-text \\"
+    echo "    --example styled_linebreak_probe --example styled_linebreak_sweep"
     exit 1
   fi
-  SCREEN="${SCREEN:-8200x900}" start_x || exit 1
+  # The widths and the calibration come from the layout half, not from a list
+  # kept here: a transcribed list is a second copy of the sweep's answer, and
+  # the first thing it loses is which fixture it came from.
+  echo "  [sweep] ${LB_FIXTURE:-screenplay}"
+  SWEEP_OUT="$SHOT_DIR/slb-sweep.txt"
+  "$SWEEP" > "$SWEEP_OUT" 2>/dev/null || { echo "sweep failed"; exit 1; }
+  # `STYLED_WIDTHS`/`CALIBRATE` override the sweep, for locating a DOM-side
+  # transition exactly: pass a contiguous range and read where the count steps.
+  WIDTHS="${STYLED_WIDTHS:-$(sed -n 's/^probe-widths //p' "$SWEEP_OUT")}"
+  CAL="${CALIBRATE:-$(sed -n 's/^calibrate //p' "$SWEEP_OUT")}"
+  if [ -z "$WIDTHS" ]; then echo "sweep found no transitions"; exit 1; fi
+  # Row width: each column is its content width plus the view's 48 px of
+  # padding, plus an 8 px gap, and 64 px of slack for the UA body margin and
+  # the window frame.
+  TOTAL=$(echo "$WIDTHS" | awk -F, '{s=0; for(i=1;i<=NF;i++) s+=$i+56; print s+64}')
+  echo "  [sweep] $(echo "$WIDTHS" | awk -F, '{print NF}') columns, calibrate=$CAL, row=${TOTAL}px"
+  # One knob: the window and the screen are the same height, because a column
+  # taller than the window is clipped by the view's scroll container and would
+  # measure as a shorter document. Raise it for a fixture with more paragraphs.
+  PROBE_HEIGHT="${PROBE_HEIGHT:-900}"
+  SCREEN="${SCREEN:-${TOTAL}x${PROBE_HEIGHT}}" start_x || exit 1
   # NO_ACTIVATE: nothing is typed at this probe, and activating a window on this
   # Xvfb takes the server down (see `start_app`).
-  NO_ACTIVATE=1 start_app env STYLED_WIDTHS="${STYLED_WIDTHS:-}" || exit 1
+  NO_ACTIVATE=1 start_app env STYLED_WIDTHS="$WIDTHS" PROBE_HEIGHT="$PROBE_HEIGHT" || exit 1
   sleep "${OPEN_SETTLE:-20}"
   shot slb
   cp "$SHOT_DIR/app.log" "$SHOT_DIR/slb.log"
   stop
   "$ROOT/scripts/sitting/linebreak_bands.py" \
-    --shot "$SHOT_DIR/slb.png" --log "$SHOT_DIR/slb.log" \
-    --calibrate "${CALIBRATE:-586:8}"
+    --shot "$SHOT_DIR/slb.png" --log "$SHOT_DIR/slb.log" --calibrate "$CAL"
   ;;
 esac
 echo "DONE: $1"

@@ -108,11 +108,21 @@ def main():
         return 1
 
     bands = []
+    clipped = False
     for w, (bx, bw) in zip(widths, runs):
         # 12 px into the band: inside the column's 24 px left padding, so every
         # row of the band is white there and none of them is a glyph.
         bottom = max(y for y in range(height) if white(bx + 12, y))
+        if bottom >= height - 1:
+            # The view's scroll container clipped this column. Its band is the
+            # window, not the document — a shorter count, silently. Refused
+            # rather than reported: this is the failure a height-independent
+            # measurement looks exactly like.
+            print(f"  w={w}: band reaches the last row — raise PROBE_HEIGHT")
+            clipped = True
         bands.append((w, bx, bw, bottom + 1))
+    if clipped:
+        return 1
 
     cal = [b for b in bands if b[0] == cal_w]
     if not cal:

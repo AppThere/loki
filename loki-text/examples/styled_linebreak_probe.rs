@@ -46,6 +46,12 @@ use dioxus::prelude::*;
 use loki_layout::{FontResources, SharedFontResources};
 use loki_text::routes::editor::dom_reflow;
 
+// The document under test, shared with the layout half rather than restated
+// here: two copies agree until one is edited, and that edit would read as a
+// rendering difference.
+#[path = "common/fixture.rs"]
+mod fixture;
+
 /// Column padding, from the view's own `padding: 24pt 18pt` — 18 pt each side.
 const PAD_PX: f32 = 48.0;
 /// Gap between columns, so two bands never touch.
@@ -75,11 +81,22 @@ fn widths() -> Vec<f32> {
     from_env
 }
 
+/// Window height, from `PROBE_HEIGHT`.
+///
+/// It has to exceed the tallest column: the view's scroll container clips what
+/// does not fit, and a clipped band measures as a shorter document rather than
+/// as an error. `linebreak_bands.py` refuses a band that reaches the last row
+/// for that reason.
+fn height() -> f32 {
+    std::env::var("PROBE_HEIGHT")
+        .ok()
+        .and_then(|h| h.parse().ok())
+        .unwrap_or(900.0)
+}
+
 #[component]
 fn Probe() -> Element {
-    let Some(doc) = loki_templates::document("screenplay") else {
-        return rsx! { div { "the screenplay template did not load" } };
-    };
+    let (_, doc) = fixture::from_env();
     let fonts = SharedFontResources::new_ready(FontResources::new());
     let families = dom_reflow::resolve_families(&fonts, &doc);
     let ws = widths();
@@ -116,14 +133,14 @@ fn main() {
         println!("band {w} expect_width={}", w + PAD_PX);
     }
     println!("total {total}");
-    // What the run actually resolved. Printed rather than assumed: on a host
-    // that has Courier New this run does not exercise substitution at all, and
-    // the result must not be read as though it did.
-    if let Some(doc) = loki_templates::document("screenplay") {
-        let fonts = SharedFontResources::new_ready(FontResources::new());
-        for (requested, resolved) in dom_reflow::resolve_families(&fonts, &doc) {
-            println!("family {requested:?} -> {resolved:?}");
-        }
+    // What the run actually resolved, and on which document. Printed rather
+    // than assumed: on a host that has these families the run does not exercise
+    // substitution at all, and the result must not be read as though it did.
+    let (name, doc) = fixture::from_env();
+    println!("fixture {name}");
+    let fonts = SharedFontResources::new_ready(FontResources::new());
+    for (requested, resolved) in dom_reflow::resolve_families(&fonts, &doc) {
+        println!("family {requested:?} -> {resolved:?}");
     }
 
     dioxus::native::launch_cfg(
@@ -143,7 +160,7 @@ fn main() {
                 .with_window_attributes(
                     dioxus::native::WindowAttributes::default()
                         .with_title("styled-linebreak-probe")
-                        .with_inner_size(dioxus::native::LogicalSize::new(total + 4.0, 900.0)),
+                        .with_inner_size(dioxus::native::LogicalSize::new(total + 4.0, height())),
                 ),
         )],
     );

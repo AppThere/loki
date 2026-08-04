@@ -41,6 +41,11 @@
 use loki_layout::items::PositionedItem;
 use loki_layout::{FontResources, LayoutMode, LayoutOptions, layout_document};
 
+// The document under test, shared with the DOM half rather than restated here —
+// see the module docs there on why two copies would be worse than none.
+#[path = "common/fixture.rs"]
+mod fixture;
+
 /// Inclusive px range and step for the sweep.
 ///
 /// The lower bound is where the screenplay's deepest indent (the character cue,
@@ -83,20 +88,19 @@ fn line_count(fonts: &mut FontResources, doc: &loki_doc_model::Document, width_p
 }
 
 fn main() {
-    let Some(doc) = loki_templates::document("screenplay") else {
-        eprintln!("the screenplay template did not load");
-        std::process::exit(1);
-    };
+    let (name, doc) = fixture::from_env();
     let mut fonts = FontResources::new();
+    println!("fixture: {name}");
 
-    // The substitution the DOM path now mirrors. Printed rather than assumed:
-    // if the host happens to *have* Courier New, this run does not exercise
-    // substitution at all and the result must not be read as though it did.
-    let requested = "Courier New";
-    let resolved = fonts.resolve_font_name(requested);
-    println!("family: requested {requested:?} -> resolved {resolved:?}");
-    if resolved == requested {
-        println!("  NOTE: no substitution on this host — the run does not cover §5.1a.");
+    // The substitutions the DOM path mirrors. Printed rather than assumed: on a
+    // host that *has* these families the run does not exercise substitution at
+    // all, and the result must not be read as though it did.
+    for requested in ["Arial", "Courier New", "Times New Roman"] {
+        let resolved = fonts.resolve_font_name(requested);
+        println!("family {requested:?} -> {resolved:?}");
+        if resolved == requested {
+            println!("  NOTE: no substitution for {requested:?} on this host.");
+        }
     }
 
     let mut prev: Option<(i32, usize)> = None;
@@ -119,4 +123,19 @@ fn main() {
         println!("  {from} -> {to} at {px} px  (probe {} and {px})", px - 1);
     }
     println!("{} transitions", transitions.len());
+
+    // Machine-readable, for `scripts/sitting/run.sh styledlinebreak` to hand
+    // straight to the DOM half. Printed rather than transcribed: a width list
+    // typed into the scenario by hand is a second copy of this sweep's answer,
+    // and the first thing that copy loses is which fixture it came from.
+    let widths: Vec<String> = transitions
+        .iter()
+        .flat_map(|(px, ..)| [(px - 1).to_string(), px.to_string()])
+        .collect();
+    println!("probe-widths {}", widths.join(","));
+    // Calibrate on the **widest** column: the fewest lines, so the constant is
+    // read where the least is stacked on top of it.
+    if let Some((px, _, to)) = transitions.last() {
+        println!("calibrate {px}:{to}");
+    }
 }

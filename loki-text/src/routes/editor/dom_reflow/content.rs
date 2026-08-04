@@ -158,6 +158,18 @@ pub(super) fn block_el(block: &Block, catalog: &StyleCatalog, families: &FamilyM
 ///
 /// The flattened text is sliced by each span's byte range, which is the range
 /// the same function handed the shaper.
+///
+/// # Adjacent runs that resolve alike are emitted as one span
+///
+/// A boundary between two `<span>`s is not free: Blitz measures inline boxes
+/// item by item, and the canvas path shapes the paragraph as one styled string.
+/// Measured (ADR-0017 §5.4) on a paragraph split into three runs carrying
+/// *identical* properties: the two paths broke differently at 4 of 12 widths,
+/// and the same characters as a single run agreed at all 12. Documents are full
+/// of such splits — a DOCX run boundary survives spell-check state and revision
+/// ids that have no formatting meaning — so this is the common case, not a
+/// corner. Runs that genuinely differ still get their own span, and still
+/// differ; see §5.4.
 fn styled_para_el(
     para: &loki_doc_model::content::block::StyledParagraph,
     catalog: &StyleCatalog,
@@ -178,17 +190,37 @@ fn styled_para_el(
     rsx! {
         p {
             style: resolved_para_css(&resolved),
-            for (i, span) in spans.iter().enumerate() {
-                {
-                    // `get` rather than indexing: a range past the end would
-                    // panic inside a render, and a missing run is a visibly
-                    // shorter paragraph rather than a dead application.
-                    let slice = text.get(span.range.clone()).unwrap_or_default().to_string();
-                    rsx! { span { key: "{i}", style: span_css(span, families), "{slice}" } }
-                }
+            for (i, (css, slice)) in coalesce(&text, &spans, families).into_iter().enumerate() {
+                { rsx! { span { key: "{i}", style: "{css}", "{slice}" } } }
             }
         }
     }
+}
+
+/// Resolved spans as `(css, text)` pairs, with adjacent equal-CSS runs joined.
+///
+/// Compared on the emitted CSS rather than on the `StyleSpan`s: the CSS is what
+/// reaches the renderer, so two spans differing only in something this view does
+/// not emit are the same span as far as line breaking is concerned, and keeping
+/// them apart would be a boundary with no reader.
+fn coalesce(
+    text: &str,
+    spans: &[loki_layout::para::StyleSpan],
+    families: &FamilyMap,
+) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for span in spans {
+        let css = span_css(span, families);
+        // `get` rather than indexing: a range past the end would panic inside a
+        // render, and a missing run is a visibly shorter paragraph rather than
+        // a dead application.
+        let slice = text.get(span.range.clone()).unwrap_or_default();
+        match out.last_mut() {
+            Some((prev_css, prev_text)) if *prev_css == css => prev_text.push_str(slice),
+            _ => out.push((css, slice.to_string())),
+        }
+    }
+    out
 }
 
 /// Every font family the document's runs ask for.
@@ -237,3 +269,7 @@ pub(super) fn requested_families(doc: &loki_doc_model::document::Document) -> Ve
     }
     out
 }
+
+#[cfg(test)]
+#[path = "content_tests.rs"]
+mod tests;
