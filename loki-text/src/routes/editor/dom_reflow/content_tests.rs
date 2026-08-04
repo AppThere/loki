@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for span coalescing in the DOM reflow view (ADR-0017 §5.4).
+//! Tests for span coalescing in the DOM reflow view (ADR-0017 §5.4–§5.5).
 //!
-//! The measurement these exist for: a paragraph split into three runs carrying
-//! *identical* properties broke differently from the canvas path at 4 of 12
-//! widths, and the same characters as a single run agreed at all 12. A boundary
-//! between two `<span>`s is not free, so a boundary with no formatting behind it
-//! must not be emitted.
+//! Coalescing is an **economy** — a run split with no formatting behind it is
+//! nodes for nothing — and not a correctness fix; the line-break disagreement it
+//! was first written for turned out to be missing `white-space: pre-wrap`. What
+//! these pin is that the economy is exact: the same characters, in the same
+//! order, under the same CSS.
 
 use super::FamilyMap;
 use super::coalesce;

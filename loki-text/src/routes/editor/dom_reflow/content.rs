@@ -161,15 +161,18 @@ pub(super) fn block_el(block: &Block, catalog: &StyleCatalog, families: &FamilyM
 ///
 /// # Adjacent runs that resolve alike are emitted as one span
 ///
-/// A boundary between two `<span>`s is not free: Blitz measures inline boxes
-/// item by item, and the canvas path shapes the paragraph as one styled string.
-/// Measured (ADR-0017 §5.4) on a paragraph split into three runs carrying
-/// *identical* properties: the two paths broke differently at 4 of 12 widths,
-/// and the same characters as a single run agreed at all 12. Documents are full
-/// of such splits — a DOCX run boundary survives spell-check state and revision
-/// ids that have no formatting meaning — so this is the common case, not a
-/// corner. Runs that genuinely differ still get their own span, and still
-/// differ; see §5.4.
+/// Documents are full of run splits that carry no formatting meaning — a DOCX
+/// run boundary survives spell-check state and revision ids — and emitting a
+/// `<span>` for each is nodes for nothing.
+///
+/// **This is an economy, not a fix**, and the distinction is on the record
+/// because it was got wrong once. It was added when a three-run paragraph with
+/// *identical* properties broke differently from the canvas path at 4 of 12
+/// widths; that disagreement turned out to be the missing
+/// `white-space: pre-wrap` in [`super::style::resolved_para_css`] (ADR-0017
+/// §5.5), not the boundary. With the whitespace fixed, the same paragraph agrees
+/// at every swept width **with coalescing switched off** — a redundant boundary
+/// is measurably harmless.
 fn styled_para_el(
     para: &loki_doc_model::content::block::StyledParagraph,
     catalog: &StyleCatalog,

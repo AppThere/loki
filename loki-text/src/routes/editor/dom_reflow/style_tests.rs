@@ -144,6 +144,21 @@ fn sizes_are_emitted_in_points() {
     assert!(!css.contains("px"), "a size was converted to px: {css}");
 }
 
+/// **Whitespace is preserved, not collapsed.** A paragraph reaches this view as
+/// one span per resolved run, and CSS `normal` trims each one's edges — so the
+/// space ending one run and the space beginning the next both vanished, and
+/// `the monospaced words here sits` rendered as `themonospaced words heresits`
+/// (ADR-0017 §5.5). `loki-layout` shapes the model's text as it stands; this is
+/// the declaration that says so.
+#[test]
+fn whitespace_is_preserved_so_runs_do_not_lose_the_space_between_them() {
+    let css = resolved_para_css(&ResolvedParaProps::default());
+    assert!(
+        css.contains("white-space: pre-wrap"),
+        "a run boundary will eat the space across it: {css}"
+    );
+}
+
 /// A resolved paragraph emits its alignment, its outside spacing and its
 /// indents — the properties that decide where its lines start and end.
 #[test]

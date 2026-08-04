@@ -18,7 +18,15 @@
 //!   run can differ from the one beside it.
 //! * `mixed:<case>` — a single case from that set, for attributing a
 //!   disagreement the whole-document count can only detect. The cases are
-//!   `weight`, `italic`, `size`, `family`, `charstyle` and `spacing`.
+//!   `plain`, `weight`, `italic`, `size`, `family`, `charstyle` and `spacing`.
+//! * `mixed:onerun` — `plain`'s characters with **no run boundary** at all.
+//! * `mixed:solo-<case>` — that case's properties over the *whole* paragraph,
+//!   with no run beside them.
+//!
+//! The last two are the controls, and they are what made §5.5 attributable:
+//! `plain` isolates "there is a boundary" from "the property changed", `onerun`
+//! removes the boundary entirely, and `solo-<case>` separates "these two runs
+//! differ" from "this run's face and size differ wherever they appear".
 
 use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::{Block, StyledParagraph};
@@ -143,6 +151,28 @@ pub fn mixed_runs(only: Option<&str>) -> Document {
             direct_para_props: None,
             direct_char_props: None,
             inlines: vec![Inline::Str(format!("{LEAD}ordinary words here{TAIL}"))],
+            attr: NodeAttr::default(),
+        })]);
+    }
+
+    // `solo-<case>`: the whole paragraph in that case's properties, with no run
+    // beside it. The third control, and the one that separates "these two runs
+    // disagree because they are *different*" from "this run's face and size
+    // disagree wherever it appears". A case that disagrees mixed *and* solo is
+    // not evidence about mixing at all.
+    if let Some(solo) = only.and_then(|c| c.strip_prefix("solo-"))
+        && let Some((_, text, props, style)) = cases.iter().find(|(n, ..)| *n == solo)
+    {
+        return assemble(vec![Block::StyledPara(StyledParagraph {
+            style_id: Some(StyleId::new("Normal")),
+            direct_para_props: None,
+            direct_char_props: None,
+            inlines: vec![Inline::StyledRun(StyledRun {
+                style_id: style.map(StyleId::new),
+                direct_props: Some(Box::new(props.clone())),
+                content: vec![Inline::Str(format!("{LEAD}{text}{TAIL}"))],
+                attr: NodeAttr::default(),
+            })],
             attr: NodeAttr::default(),
         })]);
     }

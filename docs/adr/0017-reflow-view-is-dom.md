@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 | Field | Value |
 | --- | --- |
-| Status | **Accepted** — 2026-08-03. Direction agreed; view built behind a flag (§5). **Open defect:** mixed-run paragraphs wrap differently from the canvas path (§5.4) |
+| Status | **Accepted** — 2026-08-03. Direction agreed; view built behind a flag (§5). Line breaks match the canvas path except where a break is already marginal, where they can differ by one line (§5.5) |
 | Drivers | Spec 08 T7.0 (probe P1), T7.2, T7.3, T7.4 |
 | Affects | `loki-renderer` (reflow path), `loki-layout` (reflow mode), `loki-text` editor route |
 | Makes moot | The ambient reading-measure cap added for T7.2 (`loki_renderer::measure`) |
@@ -290,6 +290,11 @@ evidence than it reads as: the screenplay is monospaced.
 
 ### 5.4 Mixed runs within a paragraph — **they do not agree** (2026-08-04)
 
+> **Superseded in part by §5.5**, which located the cause — CSS whitespace
+> collapsing eating the space *across* a run boundary — and fixed it. Read this
+> section as the measurement that led there; its "unexplained residual" is now
+> explained, and much smaller.
+
 The extension §3.2 kept naming, run on a fixture built for it
 (`loki-text/examples/common/fixture.rs`, `LB_FIXTURE=mixed:<case>`): the same
 sentence six times, base style Arial 12 pt, with one middle run differing by
@@ -318,31 +323,25 @@ The boundary was the variable, not the property. A `<span>` boundary is not free
 Blitz measures inline boxes item by item, and the canvas path shapes the
 paragraph as one styled string.
 
-#### Fixed: a boundary with no formatting behind it
+#### First response: `content::coalesce` — which turned out to be an economy
 
-`content::coalesce` now joins adjacent resolved spans whose emitted CSS is
-identical, so a run split that carries no formatting meaning — and DOCX is full
-of them, since a run boundary survives spell state and revision ids — no longer
-reaches the renderer. After it, `mixed:plain` agrees at all 12 widths and the
-screenplay (§5.3) still agrees at all 18.
-
-Compared on the **emitted CSS** rather than on the `StyleSpan`s: the CSS is what
-reaches the renderer, so two spans differing only in something this view does not
-emit are one span as far as line breaking goes.
+Adjacent resolved spans whose emitted CSS is identical are now joined, so a run
+split with no formatting meaning stops reaching the renderer. That made
+`mixed:plain` agree — but §5.5 then found the real cause, and with *that* fixed
+`mixed:plain` agrees **with coalescing switched off** too. So this is a node-count
+economy, not a correctness fix, and it is documented as one. Recorded rather than
+quietly re-labelled: the reasoning that produced it (a boundary must be costly,
+because removing boundaries helped) is exactly the reasoning a coincidence
+survives.
 
 #### Not established, and what would settle it
 
-The residual — genuinely different adjacent runs — is **unexplained**. Candidates,
-none of them tested: Blitz rounding each inline box's measurement at the
-boundary; a difference in how the two set up Parley across a style change; and
-variable-font instance selection (the base resolves to Arimo, a `wght` variable
-font, and the canvas path passes explicit normalised coordinates where Stylo
-resolves `font-weight` itself).
+*Answered by §5.5* — the answer was the third thing this section did not think
+to list.
 
 *What would settle it:* compare **break positions** — which word ends each line —
 rather than counts, at one width where the two differ. A count says they
-disagree; only the position says where, and the candidates above predict
-different places.
+disagree; only the position says where.
 
 #### And it weakens §5.3
 
@@ -353,16 +352,90 @@ is therefore weaker evidence than it read as — it is evidence about a forgivin
 document, not about the general case. It stands as measured; it does not
 generalise.
 
-### 5.5 Revised sequencing
+### 5.5 Where they break — the cause, and the fix (2026-08-04)
+
+§5.4's counts said the two paths disagreed and could not say why. Positions can.
+`loki-text/examples/styled_linebreak_lines` prints, for one width, each line's
+text, advance and trailing whitespace from the canvas path's retained Parley
+layout; the DOM path's answer is a shot of the same width.
+
+*`mixed:family` at 431 px.* The canvas path's third line reads
+`"the monospaced words here sits somewhere in "`. The DOM's reads
+**`themonospaced words heresits somewhere in the middle`**.
+
+The spaces *across* the run boundaries were gone — the one ending the run before
+and the one beginning the run after. Not a metrics difference at all: **missing
+characters**.
+
+#### Cause
+
+The text reaches this view as one `<span>` per resolved run, under CSS's default
+`white-space: normal`, which collapses and trims whitespace. `loki-layout` does
+not: it shapes the model's text as it stands. Two whitespace policies for one
+document, and the difference is invisible until a paragraph has a boundary inside
+it — which is why §5.3's screenplay (one run per paragraph) never showed it, and
+why §5.4's `mixed:plain` control did.
+
+*Fix:* `resolved_para_css` emits **`white-space: pre-wrap`** — "these characters,
+wrapped", which is what the canvas path does. `normal` was wrong from the start.
+
+#### After the fix
+
+| fixture | widths agreeing |
+| --- | --- |
+| screenplay (§5.3) | 18 / 18 |
+| `mixed:plain`, `mixed:onerun` | 12 / 12 |
+| `mixed:weight`, `mixed:italic`, `mixed:size`, `mixed:family` | 12 / 12 |
+| `mixed:charstyle` | 10 / 12 |
+| `mixed:spacing` | 8 / 12 |
+
+**Mixing itself is no longer a source of disagreement.** Two cases still flip a
+break, and a third control — `mixed:solo-<case>`, the whole paragraph in that
+case's properties with no run beside it — separates why:
+
+* `solo-charstyle` (Tinos 14 pt bold, *unmixed*) disagrees at 4 of 14 widths. So
+  `charstyle`'s residual is **not** about adjacency; that face at that size
+  differs wherever it appears.
+* `solo-spacing` agrees at **14 of 14**, and raising the tracking from 1.5 pt to
+  6 pt makes the *mixed* case agree at 12 of 12. So letter-spacing is applied on
+  both paths and is not dropped at a boundary either.
+
+#### The residual is sub-pixel, and is quantified
+
+`mixed:charstyle` at 299 px: the canvas path's line 3 is
+`"styled words here sits somewhere in "`, advance **207.689 pt** against
+**224.25 pt** available — 16.56 pt of slack, and the next word (`the`) is about
+16.7 pt. The break is marginal by ~0.15 pt. The DOM fits `the`, so its line is
+narrower by that much: a difference of order **0.1 %** of a line's advance.
+
+That is the size of the remaining disagreement. It only ever shows where a break
+is already within a fraction of a point, which is why it appears at 2–4 widths
+out of 12 and not everywhere.
+
+**Not established:** where the 0.1 % comes from. Candidates, none tested: Taffy's
+integer-pixel rounding of the inline context's available or measured size; font
+sizes that are not a whole number of px (14 pt = 18.667 px — and `charstyle`, the
+worse of the two residuals, is the only case with one); variable-font instance
+resolution, since the base family resolves to Arimo, a `wght` variable font, and
+the canvas path passes explicit normalised coordinates where Stylo resolves
+`font-weight` itself.
+
+*What would settle it:* the same instrument one level down — the **advance of a
+single line carrying identical text** on both paths, rather than the break it
+produces. `styled_linebreak_lines` already prints the canvas side; the DOM side
+needs an ink-extent measurement per line, which the band script is one loop away
+from.
+
+### 5.6 Revised sequencing
 
 1. ~~Resolve through `StyleCatalog`.~~ **Done — §5.1.**
 2. ~~Route families through `resolve_font_name`.~~ **Done — §5.1a.**
 3. ~~Re-run the line-break comparison on a styled document as a measurement.~~
    **Done — §5.3.**
-4. ~~Extend it to mixed style runs within a paragraph.~~ **Done — §5.4. They do
-   not agree; one cause found and fixed, the residual open.**
-5. Locate the residual by comparing break *positions* at a disagreeing width
-   (§5.4). Until then, the ADR's direction stands but its fidelity claim does
-   not: the DOM reflow view wraps mixed-run paragraphs differently from the
-   canvas one.
-6. Then T7.3's per-element scroller, and the virtualisation measurement.
+4. ~~Extend it to mixed style runs within a paragraph.~~ **Done — §5.4.**
+5. ~~Locate the residual by comparing break positions.~~ **Done — §5.5. The
+   cause was CSS whitespace collapsing; fixed. Mixing no longer disagrees.**
+6. Measure per-line **advances** to explain the remaining ~0.1 % (§5.5). Until
+   then the fidelity claim is: the two paths agree except where a break is
+   already marginal, and there they can differ by one line.
+7. Then T7.3's per-element scroller, and the virtualisation measurement.

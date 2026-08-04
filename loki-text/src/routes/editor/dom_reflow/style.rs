@@ -111,6 +111,20 @@ pub(super) fn span_css(s: &StyleSpan, families: &super::content::FamilyMap) -> S
 
 /// The CSS declarations for one resolved paragraph.
 ///
+/// # `white-space: pre-wrap`, because the model's characters are the content
+///
+/// Under CSS's default `normal`, whitespace is collapsed and trimmed — and the
+/// text of a paragraph reaches this view as one `<span>` per resolved run, so a
+/// space that *ended* one run and a space that *began* the next were both
+/// dropped. Measured (ADR-0017 §5.5): `the monospaced words here sits` rendered
+/// as `themonospaced words heresits`, and every mixed-run paragraph in the
+/// comparison fixture broke differently from the canvas path because of it.
+///
+/// `pre-wrap` says "these characters, wrapped", which is what the canvas path
+/// does: `loki-layout` shapes the model's text as it stands and does not collapse
+/// it. `normal` was the wrong mode from the start — it just could not be seen
+/// until a paragraph had a run boundary inside it.
+///
 /// `space_before` / `space_after` become margins here. On the canvas path the
 /// flow adds them around the paragraph box rather than inside it — the resolved
 /// struct's own docs say they are "handled by the caller, not included in
@@ -130,7 +144,7 @@ pub(super) fn resolved_para_css(p: &ResolvedParaProps) -> String {
         _ => "start",
     };
     let mut css = format!(
-        "text-align: {align}; margin: {before}pt 0 {after}pt 0; \
+        "white-space: pre-wrap; text-align: {align}; margin: {before}pt 0 {after}pt 0; \
          padding-inline-start: {start}pt; padding-inline-end: {end}pt; ",
         before = p.space_before,
         after = p.space_after,
