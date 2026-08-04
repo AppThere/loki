@@ -837,5 +837,37 @@ domreflow)
   echo "  Compare d0-canvas (painted) against d1-dom (DOM). They render the same"
   echo "  document; they are not expected to be pixel-identical — see ADR-0017."
   ;;
+
+styledlinebreak)
+  # ── ADR-0017 §5.3 step 3: the styled document's line breaks, measured ──
+  #
+  # Renders the screenplay template through the *real* DOM reflow view at every
+  # width `styled_linebreak_sweep` reports a transition at, all in one row, and
+  # measures each column's height. Pair the output with the sweep's counts.
+  #
+  #   cargo run -p loki-text --example styled_linebreak_sweep    # layout side
+  #   scripts/sitting/run.sh styledlinebreak                     # DOM side
+  #
+  # The screen is as wide as the row: one shot rather than eighteen launches,
+  # and one set of conditions rather than eighteen. Widths come from
+  # `STYLED_WIDTHS` (the probe's default is the nine transitions measured on
+  # 2026-08-04); `SCREEN` must be at least the total the probe prints.
+  BIN="$ROOT/target/debug/examples/styled_linebreak_probe"
+  if [ ! -x "$BIN" ]; then
+    echo "build it first: cargo build -p loki-text --example styled_linebreak_probe"
+    exit 1
+  fi
+  SCREEN="${SCREEN:-8200x900}" start_x || exit 1
+  # NO_ACTIVATE: nothing is typed at this probe, and activating a window on this
+  # Xvfb takes the server down (see `start_app`).
+  NO_ACTIVATE=1 start_app env STYLED_WIDTHS="${STYLED_WIDTHS:-}" || exit 1
+  sleep "${OPEN_SETTLE:-20}"
+  shot slb
+  cp "$SHOT_DIR/app.log" "$SHOT_DIR/slb.log"
+  stop
+  "$ROOT/scripts/sitting/linebreak_bands.py" \
+    --shot "$SHOT_DIR/slb.png" --log "$SHOT_DIR/slb.log" \
+    --calibrate "${CALIBRATE:-586:8}"
+  ;;
 esac
 echo "DONE: $1"

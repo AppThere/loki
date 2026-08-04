@@ -37,7 +37,7 @@ use dioxus::prelude::*;
 
 use crate::editing::state::DocumentState;
 
-mod content;
+pub mod content;
 mod style;
 
 /// Whether the DOM reflow path is selected.
@@ -106,8 +106,25 @@ pub(super) fn dom_reflow_view(
     // map rather than per run: `resolve_font_name` takes `&mut FontResources`,
     // and holding that lock across the render would put a shaping mutex in the
     // middle of the UI thread's tree build.
-    let families = resolve_families(&state, doc);
+    let families = resolve_families(&state.shared_font_resources, doc);
 
+    document_view(doc, &families, max_w)
+}
+
+/// The reading column for one document, at one column width.
+///
+/// Split out from [`dom_reflow_view`] so the *tree* can be built without the
+/// editor's state around it. That is what lets the styled-document line-break
+/// comparison (`loki-text/examples/styled_linebreak_probe.rs`, ADR-0017 §5.3
+/// step 3) render through **this** code rather than through a second emitter:
+/// a probe with its own copy of the CSS would agree with the canvas path
+/// exactly as far as the copy did, which is the one thing the comparison must
+/// not depend on.
+pub fn document_view(
+    doc: &loki_doc_model::document::Document,
+    families: &content::FamilyMap,
+    max_w: f32,
+) -> Element {
     rsx! {
         div {
             // The scroll container. `overflow-x: hidden` is T7.3's rule stated
@@ -131,7 +148,7 @@ pub(super) fn dom_reflow_view(
                 ),
                 for (si, section) in doc.sections.iter().enumerate() {
                     for (bi, block) in section.blocks.iter().enumerate() {
-                        { rsx! { div { key: "{si}-{bi}", { content::block_el(block, &doc.styles, &families) } } } }
+                        { rsx! { div { key: "{si}-{bi}", { content::block_el(block, &doc.styles, families) } } } }
                     }
                 }
             }
@@ -146,15 +163,32 @@ pub(super) fn dom_reflow_view(
 /// Returns an empty map when the font lock is unavailable: the requested names
 /// are then emitted as-is, which is the pre-substitution behaviour and visibly
 /// wrong in the same way for every run, rather than wrong for some.
-fn resolve_families(
-    state: &DocumentState,
+///
+/// # The resolved name has to be resolvable *here* too
+///
+/// `resolve_font_name` answers with a family from `loki-layout`'s collection.
+/// Blitz has its own, and a name only the first can resolve is a name the DOM
+/// path renders in Blitz's default face — measured, on this very document, when
+/// a probe launched without the registration `main.rs` does: the canvas path set
+/// the screenplay in Cousine and the DOM path in a proportional sans, and the
+/// two disagreed at 14 of 18 widths (ADR-0017 §5.3).
+///
+/// It holds today because `main.rs` passes `loki_fonts::ui_font_blobs()` to
+/// `Config::with_fonts`, and those blobs are the same bundled faces
+/// `resolve_font_name` substitutes. It does **not** hold for a face
+/// `FontResources::new` picks up from the executable-relative `assets/fonts/`
+/// directory, which Blitz never scans. `TODO(dom-reflow-fonts)`: the DOM path
+/// should emit the face it will actually get, not a name resolved against a
+/// collection the renderer does not share.
+pub fn resolve_families(
+    fonts: &loki_layout::SharedFontResources,
     doc: &loki_doc_model::document::Document,
 ) -> content::FamilyMap {
     let requested = content::requested_families(doc);
     if requested.is_empty() {
         return content::FamilyMap::new();
     }
-    let mut fonts = state.shared_font_resources.lock();
+    let mut fonts = fonts.lock();
     requested
         .into_iter()
         .map(|name| {

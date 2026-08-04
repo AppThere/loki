@@ -114,6 +114,11 @@ probe extends to each by changing its text and styles; the layout sweep extends
 the same way. **The ADR is supported, not proven**, and the next extension worth
 running is mixed style runs, because a document is rarely one uniform run.
 
+*Update 2026-08-04:* named styles, indents, alignment and **font substitution**
+have since been swept on a real styled document — the screenplay template — and
+also agree at every width; see §5.3. Mixed runs *within* a paragraph remain the
+open case.
+
 **Spell squiggles, selection geometry, the caret and revision marks** are all
 painted from `PositionedItem`s today. Each needs a DOM equivalent or an overlay.
 None is obviously hard; none is free.
@@ -223,12 +228,68 @@ Tables, lists and images render a **visible placeholder** rather than nothing �
 a silently dropped table would make the two paths look closer than they are,
 which is the one failure mode a comparison instrument must not have.
 
-### 5.3 Revised sequencing
+### 5.3 The styled document's line breaks, measured (2026-08-04)
+
+§5.1a's "every line breaks at the same word on both paths" was **by inspection**.
+Swept, it still holds — and the sweep is worth having, because it is the first
+comparison that exercises named styles and font substitution.
+
+*Procedure.* `cargo run -p loki-text --example styled_linebreak_sweep` lays the
+**screenplay template** out through `layout_document` in `LayoutMode::Reflow`
+across 260–800 px in 1 px steps, counting distinct glyph-run baselines, and
+prints the widths where the count changes. `scripts/sitting/run.sh
+styledlinebreak` then renders the same document through **the real DOM view**
+(`dom_reflow::document_view`, not a second emitter) at each of those transitions
+and the pixel below it, all in one row, and `scripts/sitting/linebreak_bands.py`
+reads each column's height. With `line-height` pinned, a band is
+`constant + lines × 24 px`; the constant is calibrated **once** and then has to
+reproduce every other width.
+
+*Result — all nine transitions matched, each pinned to a 1 px window*, with one
+constant (184 px) across all eighteen columns. The document resolved
+`"Courier New" → "Cousine"`, so this run does cover substitution.
+
+| lines | layout side | DOM side |
+| --- | --- | --- |
+| 18 → 16 | 269 px | 268 = 18, 269 = 16 |
+| 16 → 15 | 279 px | 278 = 16, 279 = 15 |
+| 15 → 14 | 298 px | 297 = 15, 298 = 14 |
+| 14 → 13 | 346 px | 345 = 14, 346 = 13 |
+| 13 → 12 | 356 px | 355 = 13, 356 = 12 |
+| 12 → 11 | 404 px | 403 = 12, 404 = 11 |
+| 11 → 10 | 423 px | 422 = 11, 423 = 10 |
+| 10 → 9 | 529 px | 528 = 10, 529 = 9 |
+| 9 → 8 | 586 px | 585 = 9, 586 = 8 |
+
+*The instrument discriminates.* An agreement is only worth the failure it could
+have shown, so the DOM half was run once with its font registration removed:
+the counts then disagreed at **14 of the 18 widths** and not one transition
+landed in the same window (268 and 269 both read 14 against the layout side's 18
+and 16; 528 and 529 both read 8 against 10 and 9). No constant fits that run.
+
+*And it caught something.* That failing configuration was not synthetic — it was
+the probe's first version, and it failed because `resolve_font_name` answers with
+a family from **`loki-layout`'s** font collection while Blitz has its own. The
+app is fine: `main.rs` registers `loki_fonts::ui_font_blobs()`, which is the same
+bundled set the substitution draws from. But the coupling is real and undeclared,
+and it does not extend to a face `FontResources::new` finds in the
+executable-relative `assets/fonts/` directory, which Blitz never scans —
+`TODO(dom-reflow-fonts)`, recorded on `dom_reflow::resolve_families`.
+
+**Still not established.** The screenplay is uniformly styled *per paragraph*: it
+has named styles, indents, alignment and a substituted family, but no **mixed
+runs within a paragraph** — no bold or italic span, no per-run family or size
+change. §3.2's open item is therefore still open, and it is the next extension:
+both halves take it by changing the document, not the harness. Also untouched:
+justified text, tab stops, hyphenation, letter/word spacing and non-Latin
+scripts.
+
+### 5.4 Revised sequencing
 
 1. ~~Resolve through `StyleCatalog`.~~ **Done — §5.1.**
 2. ~~Route families through `resolve_font_name`.~~ **Done — §5.1a.**
-3. Re-run the line-break comparison on a styled document as a *measurement*
-   rather than by eye, and extend it to mixed style runs (§3.2's open item).
-   The screenplay's lines break identically on both paths by inspection, which
-   is encouraging and is not the same as a swept comparison.
-4. Then T7.3's per-element scroller, and the virtualisation measurement.
+3. ~~Re-run the line-break comparison on a styled document as a measurement.~~
+   **Done — §5.3. The paths agree at every swept width.**
+4. Extend the comparison to **mixed style runs within a paragraph** — the one
+   §3.2 named and the one this sweep still does not cover.
+5. Then T7.3's per-element scroller, and the virtualisation measurement.

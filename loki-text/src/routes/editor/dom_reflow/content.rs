@@ -30,7 +30,7 @@ use super::style::{resolved_para_css, span_css};
 /// back its own way, so a document with a missing font sets differently on the
 /// two paths — measured on a screenplay, where one path was monospaced and the
 /// other proportional.
-pub(super) type FamilyMap = BTreeMap<String, String>;
+pub type FamilyMap = BTreeMap<String, String>;
 
 /// A visible marker for content this view cannot yet render.
 ///
