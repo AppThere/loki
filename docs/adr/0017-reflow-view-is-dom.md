@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 | Field | Value |
 | --- | --- |
-| Status | **Accepted** — 2026-08-03. Direction agreed; view built behind a flag (§5). Line breaks match the canvas path on every measured fixture; one open defect — a letter-spaced run beside others gets no tracking (§5.6) |
+| Status | **Accepted** — 2026-08-03. Direction agreed; view built behind a flag (§5). **Line breaks match the canvas path on every measured fixture and width** (§5.3–§5.6); virtualisation measured and does not bite (§5.7) |
 | Drivers | Spec 08 T7.0 (probe P1), T7.2, T7.3, T7.4 |
 | Affects | `loki-renderer` (reflow path), `loki-layout` (reflow mode), `loki-text` editor route |
 | Makes moot | The ambient reading-measure cap added for T7.2 (`loki_renderer::measure`) |
@@ -478,19 +478,44 @@ into Parley's `font_features` (see `docs/patches.md`), and
 to the box's rounding**, `kernheavy` included (−215 px → +0.8 px), and the mixed
 line-break cases `charstyle` and `spacing`'s counterparts follow.
 
-#### One open defect, sharply located
+#### The last one: a letter-spaced run beside others (closed 2026-08-05)
 
-`mixed:spacing` still disagrees at 4 of 12 widths, and its counts match the
-**untracked** document's exactly at every width: a `letter-spacing` run *inside a
-paragraph with other runs* receives no tracking in the DOM path. The same run as
-a paragraph's only child does (the `tracked` advance case applies the full
-+564 px at scale 6). So it is not the CSS — dumped, the middle span carries
-`letter-spacing: 1.5pt` and is not coalesced away — and not the property's
-support. `TODO(dom-reflow-letter-spacing)`.
+`mixed:spacing` disagreed at 4 of 12 widths, and its counts matched the
+**untracked** document at every one — a `letter-spacing` run inside a paragraph
+with other runs received no tracking at all, while the same run as a paragraph's
+only child did.
 
-*What would settle it:* the advance probe with the three-run paragraph as a
-case, then the same paragraph with the neighbours removed one at a time — the
-difference between the two is a Blitz question, and the probe already asks it.
+*Located with the advance probe's structural rows* — the same characters as one
+span and as several, with the tracking moved around:
+
+| row | before | after |
+| --- | --- | --- |
+| one span, tracked | +88 px (correct) | +88 px |
+| three spans, middle tracked | **+0 px** | +88 px |
+| two spans, **first** tracked | **+288 px** (all 36 chars) | +88 px |
+| two spans, **last** tracked | **+0 px** | +200 px |
+
+Read together those say it exactly: the whole inline context took the *first*
+span's letter-spacing, and every later span's was ignored.
+
+*Cause.* **Parley 0.6.0** — which the Blitz stack uses — refreshes every field of
+a shape item when it breaks a run except `letter_spacing` and `word_spacing`, so
+the item keeps `styles[0]`'s for the whole layout. Fixed upstream in **0.10**,
+which `loki-layout` already uses: which is why the canvas path was right on the
+same document and nothing in either path's own code explained the difference.
+Confirmed on the canvas side with the `trackpos` fixture — the same 37 characters
+with the tracking nowhere, on the first run and on the middle run give 212.104,
+278.104 (+11 × 6 pt) and 284.104 pt (+12 × 6 pt), each exactly the tracked run's
+own characters.
+
+*Fix.* `patches/parley` vendors 0.6.0 with the two lines added, scoped by
+`version = "0.6.0"` so `loki-layout`'s `^0.10` still resolves from the registry —
+`cargo metadata` reports both, which is the check that it stayed narrow. See
+`docs/patches.md` for the removal condition.
+
+After it, **every fixture agrees at every width**: the screenplay at 18, and
+`plain`, `onerun`, `weight`, `italic`, `size`, `family`, `charstyle` and
+`spacing` at 12 each.
 
 ### 5.7 Virtualisation, measured (2026-08-05)
 
@@ -548,10 +573,9 @@ today.
 6. ~~Measure per-line advances to explain the remaining ~0.1 %.~~ **Done —
    §5.6. It was kerning; fixed in the vendored `blitz-dom`. Every advance case
    now agrees to the pixel the box is rounded to.**
-7. Close the one remaining defect: a letter-spaced run beside other runs gets no
-   tracking in the DOM path (§5.6). Every other measured case — the screenplay
-   at 18 widths, and `plain`, `onerun`, `weight`, `italic`, `size`, `family` and
-   `charstyle` at 12 each — agrees exactly.
+7. ~~Close the one remaining defect: a letter-spaced run beside other runs gets
+   no tracking.~~ **Done 2026-08-05 — it was parley 0.6's shaper; see §5.6.
+   Every fixture now agrees at every width.**
 8. ~~T7.3's per-element scroller.~~ **Done 2026-08-05 — `oversized::AtOversized`,
    with tables and images rendered so it has the elements it exists for. See
    `docs/spec-08-remaining-work.md`.**

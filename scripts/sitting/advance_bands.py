@@ -132,24 +132,55 @@ def main():
 
     print(f"image {width}x{height}, scale {scale}")
     print(f"{len(bands)} bands, {len(names)} cases, {len(canvas_pt)} canvas advances")
-    if not (len(bands) == len(names) == len(canvas_pt)):
-        print("COUNT MISMATCH — the three inputs are not the same run")
+    if len(bands) != len(names):
+        print("COUNT MISMATCH — the shot and the probe's stdout are not the same run")
+        return 1
+    if len(canvas_pt) > len(bands):
+        print("COUNT MISMATCH — more canvas advances than rows")
         return 1
     if any(PAGE_LEFT + w >= width - 1 for _, w in bands):
         print("a band reaches the last column — the window clipped a run; widen it")
         return 1
 
     print(
-        f"\n{'case':>10} {'canvas px':>10} {'dom px':>8} {'delta':>8} "
+        f"\n{'case':>22} {'canvas px':>10} {'dom px':>8} {'delta':>8} "
         f"{'delta/scale':>12} {'delta %':>8}"
     )
-    for name, (_, dom), pt in zip(names, bands, canvas_pt):
-        canvas = pt * PT_TO_PX
+    widths = {}
+    for i, (name, (_, dom)) in enumerate(zip(names, bands)):
+        widths[name] = dom
+        if i >= len(canvas_pt):
+            # A row with no canvas counterpart: the structural pair, which is a
+            # DOM-against-DOM comparison and has nothing to set against the
+            # layout side.
+            print(f"{name:>22} {'—':>10} {dom:>8}")
+            continue
+        canvas = canvas_pt[i] * PT_TO_PX
         delta = dom - canvas
         print(
-            f"{name:>10} {canvas:>10.2f} {dom:>8} {delta:>8.2f} "
+            f"{name:>22} {canvas:>10.2f} {dom:>8} {delta:>8.2f} "
             f"{delta / scale:>12.3f} {100 * delta / canvas:>7.3f}%"
         )
+
+    # The structural pair: same characters, one span against three with the
+    # middle one tracked. Per-span letter-spacing that reaches the shaper widens
+    # the split row; a dropped one leaves the two identical.
+    single, split = widths.get("struct-single"), widths.get("struct-split-tracked")
+    if single and split:
+        print(
+            f"\nstructural pair: single {single} px, split+tracked {split} px, "
+            f"difference {split - single} px"
+        )
+        if split == single:
+            print("  the tracking on the middle span reached nothing")
+
+    # Where in the row a tracked span has to sit for its tracking to apply.
+    plain = widths.get("s2-plain")
+    if plain:
+        for name in ("s2-tracked-first", "s2-tracked-last"):
+            got = widths.get(name)
+            if got:
+                print(f"  {name}: {got} px vs plain {plain} px  (+{got - plain})")
     return 0
 
 

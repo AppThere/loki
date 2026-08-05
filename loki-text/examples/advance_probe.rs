@@ -73,17 +73,24 @@ fn Probe() -> Element {
                  display: flex; flex-direction: column; align-items: flex-start; \
                  gap: {GAP_PX}px;"
             ),
-            for (i, (css, features, text)) in rows.into_iter().enumerate() {
+            for (i, spans) in rows.into_iter().enumerate() {
                 div {
                     key: "{i}",
                     style: "background: rgb(255, 255, 255); white-space: pre;",
                     // The view's own CSS and nothing else: anything added here
                     // would make this a measurement of a different run than the
                     // one the view renders.
-                    span {
-                        style: "{css}",
-                        "data-font-features": "{features}",
-                        "{text}"
+                    for (j, (css, features, text)) in spans.into_iter().enumerate() {
+                        {
+                            rsx! {
+                                span {
+                                    key: "{j}",
+                                    style: "{css}",
+                                    "data-font-features": "{features}",
+                                    "{text}"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -99,7 +106,7 @@ fn Probe() -> Element {
 fn rows(
     doc: &loki_doc_model::document::Document,
     families: &dom_reflow::content::FamilyMap,
-) -> Vec<(String, &'static str, String)> {
+) -> Vec<Vec<(String, &'static str, String)>> {
     use loki_doc_model::content::block::Block;
     let mut out = Vec::new();
     for block in doc.sections.iter().flat_map(|s| s.blocks.iter()) {
@@ -123,25 +130,78 @@ fn rows(
         if let Some(span) = spans.first() {
             // The text comes from the flattener too, so the probe cannot render
             // a different string from the one the canvas half measured.
-            out.push((
+            out.push(vec![(
                 dom_reflow::style::span_css(span, families),
                 dom_reflow::style::span_font_features(span),
                 text.clone(),
-            ));
+            )]);
         }
+    }
+    // ── The structural pair (ADR-0017 §5.6's open defect) ───────────────────
+    //
+    // The same characters twice: once as **one** span and once as **three**,
+    // with the middle one tracked. If per-span letter-spacing reaches the
+    // shaper, the split row is wider than the single row by exactly the
+    // tracking on the middle run's characters. If it is dropped, they are the
+    // same width — which is what the line-break counts said, and this says it
+    // as a number.
+    //
+    // Both rows are built from resolved spans of real paragraphs, so the CSS is
+    // the view's own; only the *shape* differs.
+    if let Some(base) = out.first().and_then(|r| r.first()).cloned() {
+        let (lead, rest) = base.2.split_at(11);
+        let (mid, tail) = rest.split_at(11);
+        out.push(vec![(base.0.clone(), base.1, base.2.clone())]);
+        let mut tracked = base.0.clone();
+        tracked.push_str(&format!("letter-spacing: {TRACK_PT}pt; "));
+        // Printed, so the log records what was measured rather than what the
+        // code above was meant to build — the structural pair is the whole
+        // point of this row and a mis-built one would read as a finding.
+        println!("struct-mid-css {tracked}");
+        out.push(vec![
+            (base.0.clone(), base.1, lead.to_string()),
+            (tracked.clone(), base.1, mid.to_string()),
+            (base.0.clone(), base.1, tail.to_string()),
+        ]);
+
+        // Where in the row the tracked span sits, against the same characters
+        // as one plain span. Three rows that bisect "more than one span" from
+        // "not the first span" — the two shapes that would explain a tracking
+        // that works alone and not in company.
+        let rest = format!("{mid}{tail}");
+        out.push(vec![(base.0.clone(), base.1, rest.clone())]);
+        out.push(vec![
+            (tracked.clone(), base.1, mid.to_string()),
+            (base.0.clone(), base.1, tail.to_string()),
+        ]);
+        out.push(vec![
+            (base.0.clone(), base.1, mid.to_string()),
+            (tracked, base.1, tail.to_string()),
+        ]);
     }
     out
 }
+
+/// The tracking the structural pair puts on its middle span. Large enough that a
+/// dropped one cannot hide inside the box's rounding.
+const TRACK_PT: f32 = 6.0;
 
 fn main() {
     let s = scale();
     // Sized from the scale rather than fixed: the widest case at scale 8 is
     // ~3.7 k px, and a row clipped by the window measures as a shorter advance.
     let width = 500.0 * s + 400.0;
-    let height = fixture::advance_cases().len() as f32 * (20.0 * s + GAP_PX) + 60.0;
+    // +2 for the structural pair `rows` appends.
+    let height = (fixture::advance_cases().len() + 5) as f32 * (20.0 * s + GAP_PX) + 60.0;
     for (name, ..) in fixture::advance_cases() {
         println!("case {name}");
     }
+    // The structural pair, appended by `rows` in this order.
+    println!("case struct-single");
+    println!("case struct-split-tracked");
+    println!("case s2-plain");
+    println!("case s2-tracked-first");
+    println!("case s2-tracked-last");
     println!("scale {s} window {width}x{height}");
     let (_, doc) = fixture::from_env();
     let fonts = SharedFontResources::new_ready(FontResources::new());

@@ -276,3 +276,27 @@ fn an_unmapped_family_falls_back_to_the_requested_name() {
     };
     assert!(span_css(&s, &FamilyMap::new()).contains("font-family: 'Some Face'"));
 }
+
+/// **A tracked run says so, and an untracked one says nothing.**
+///
+/// The emission was never the defect — a letter-spaced run beside others lost
+/// its tracking inside parley 0.6's shaper (ADR-0017 §5.6, `patches/parley`) —
+/// but nothing pinned it either, so a regression here would have looked like the
+/// same shaper bug returning.
+#[test]
+fn letter_spacing_is_emitted_only_when_the_run_carries_it() {
+    let tracked = StyleSpan {
+        letter_spacing: Some(1.5),
+        ..resolved_span()
+    };
+    assert!(
+        span_css(&tracked, &FamilyMap::new()).contains("letter-spacing: 1.5pt"),
+        "{}",
+        span_css(&tracked, &FamilyMap::new())
+    );
+
+    // The inversion: an unset run emits no declaration at all. A `0pt` would
+    // override an ancestor's, and CSS `letter-spacing` inherits.
+    let css = span_css(&resolved_span(), &FamilyMap::new());
+    assert!(!css.contains("letter-spacing"), "{css}");
+}

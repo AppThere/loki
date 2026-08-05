@@ -65,6 +65,8 @@ pub fn from_env() -> (String, Document) {
         // `long:<n>` — n paragraphs of ordinary prose, for ADR-0017's
         // virtualisation question.
         Some(("long", n)) => (spec.clone(), long(n.parse().unwrap_or(100))),
+        // Where in a paragraph a tracked run sits (ADR-0017 §5.6's open defect).
+        _ if spec == "trackpos" => (spec.clone(), track_positions()),
         Some(("mixed", case)) => (spec.clone(), mixed_runs(Some(case))),
         _ if spec == "mixed" => (spec.clone(), mixed_runs(None)),
         _ => (
@@ -369,6 +371,54 @@ fn tracked_props() -> CharProps {
         letter_spacing: Some(Points::new(1.5)),
         ..Default::default()
     }
+}
+
+/// The same three-run paragraph three times, differing only in **where** the
+/// letter-spacing sits: nowhere, on the first run, on the middle run.
+///
+/// Written for one question. The DOM path applies a tracked span's spacing only
+/// when it is the inline context's *first* span — measured. Parley's shaper
+/// carries `letter_spacing` on a shape item and does not refresh it when it
+/// breaks a run, which would make that a Parley bug and so make the **canvas**
+/// path wrong in the same way. These three paragraphs, laid out through
+/// `layout_document`, say whether it is.
+///
+/// Same characters in all three, so a difference in advance is the tracking and
+/// nothing else.
+pub fn track_positions() -> Document {
+    let track = || CharProps {
+        letter_spacing: Some(Points::new(6.0)),
+        ..Default::default()
+    };
+    let plain = CharProps::default;
+    let para = |a: CharProps, b: CharProps, c: CharProps| {
+        Block::StyledPara(StyledParagraph {
+            style_id: Some(StyleId::new("Normal")),
+            direct_para_props: None,
+            direct_char_props: None,
+            inlines: vec![
+                run_of("Handgloves ", a),
+                run_of("quick brown ", b),
+                run_of("fox jumps over", c),
+            ],
+            attr: NodeAttr::default(),
+        })
+    };
+    assemble(vec![
+        para(plain(), plain(), plain()),
+        para(track(), plain(), plain()),
+        para(plain(), track(), plain()),
+    ])
+}
+
+/// One styled run carrying `props`.
+fn run_of(text: &str, props: CharProps) -> Inline {
+    Inline::StyledRun(StyledRun {
+        style_id: None,
+        direct_props: Some(Box::new(props)),
+        content: vec![Inline::Str(text.to_string())],
+        attr: NodeAttr::default(),
+    })
 }
 
 /// `n` paragraphs of ordinary prose (ADR-0017 §3.2's virtualisation risk).

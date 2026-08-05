@@ -542,6 +542,44 @@ is made synchronous (the `todo(jon)` comment in the original acknowledges this).
 
 ---
 
+### parley — 0.6.0
+
+**Source:** `patches/parley/` (local, vendored from crates.io 0.6.0).
+
+**Fix (one hunk, `src/shape/mod.rs`):** when the shaper breaks a run it refreshes
+every field of the current shape item **except** `letter_spacing` and
+`word_spacing`. The item therefore keeps the *first* style's spacing for the
+whole layout, so a styled run that asks for letter-spacing gets it only when it
+is the paragraph's first run — and then every other run gets it too.
+
+**How it was found, and why it took a patch.** ADR-0017 §5.6: the DOM reflow
+view's line breaks matched the canvas path on every fixture except a paragraph
+with a letter-spaced run in it. Measured with `advance_probe`'s structural rows,
+one span against three: a tracked span **first** widened all 36 characters of the
+row (+288 px at 6 pt), and a tracked span anywhere else widened none. The canvas
+path was correct on the same document — because `loki-layout` is on **parley
+0.10**, where the two lines are present, while the Blitz stack is still on 0.6.
+So the two paths disagreed for a reason visible in neither.
+
+Bumping Blitz instead is not a two-line change: `blitz-dom`, `blitz-shell` **and
+`blitz-paint`** share parley 0.6 types, and `blitz-paint` is not vendored here.
+
+**Scope.** The `[patch.crates-io]` entry carries `version = "0.6.0"`, which
+satisfies the Blitz crates' `^0.6` and leaves `loki-layout`'s `^0.10` resolving
+from the registry. `cargo metadata` shows both, which is the check that this
+stayed narrow.
+
+**Removal condition:** the Blitz stack moves to parley ≥ 0.10. Watch for
+`warning: Patch ... was not used` — if the Blitz crates' requirement moves off
+`^0.6` the patch stops applying **silently as far as behaviour goes**, and the
+defect returns; the line-break comparison
+(`scripts/sitting/run.sh styledlinebreak` with `LB_FIXTURE=mixed:spacing`) is
+what notices.
+
+**Added:** 2026-08-05.
+
+---
+
 ### blitz-dom — 0.2.4
 
 **Source:** `patches/blitz-dom/` (local).

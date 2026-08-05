@@ -93,6 +93,17 @@ dioxus-native-dom = { path = "patches/dioxus-native-dom" }
 # on click work for non-input elements.
 blitz-dom = { path = "patches/blitz-dom" }
 
+# PATCH: parley 0.6.0 does not refresh `letter_spacing`/`word_spacing` when the
+# shaper breaks a run, so a styled run's tracking is taken from the paragraph's
+# *first* run and applied to all of it. Fixed upstream in 0.10 (which
+# `loki-layout` already uses); the Blitz stack is still on 0.6. Two lines, in
+# `src/shape/mod.rs`. See docs/patches.md.
+#
+# The version requirement is what keeps this narrow: it satisfies the Blitz
+# crates' `^0.6` and leaves `loki-layout`'s `^0.10` on the registry, so the two
+# shapers stay independent.
+parley = { path = "patches/parley", version = "0.6.0" }
+
 # PATCH: forwards WindowEvent::Touch to Dioxus touch handlers.
 # Remove when blitz-shell implements touch natively. See docs/patches.md.
 blitz-shell = { path = "patches/blitz-shell" }
