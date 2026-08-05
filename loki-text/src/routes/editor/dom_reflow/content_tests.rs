@@ -67,7 +67,7 @@ fn adjacent_runs_that_resolve_alike_become_one_span() {
 
     let merged = coalesce(&text, &spans, &FamilyMap::new());
     assert_eq!(merged.len(), 1, "runs that resolve alike stayed separate");
-    assert_eq!(merged[0].1, "one two three");
+    assert_eq!(merged[0].2, "one two three");
 }
 
 /// **A run that genuinely differs keeps its own span.** The inversion of the
@@ -92,7 +92,7 @@ fn a_run_that_differs_keeps_its_own_span() {
         3,
         "the differing run was absorbed: {merged:?}"
     );
-    assert_eq!(merged[1].1, "two ");
+    assert_eq!(merged[1].2, "two ");
     assert!(
         merged[1].0.contains("font-weight: 700"),
         "{:?}",
@@ -118,7 +118,7 @@ fn equal_runs_on_either_side_of_a_different_one_stay_apart() {
 
     let merged = coalesce(&text, &spans, &FamilyMap::new());
     assert_eq!(merged.len(), 3);
-    let joined: String = merged.iter().map(|(_, t)| t.as_str()).collect();
+    let joined: String = merged.iter().map(|(_, _, t)| t.as_str()).collect();
     assert_eq!(joined, text, "coalescing changed the paragraph's text");
 }
 
@@ -133,6 +133,6 @@ fn coalescing_preserves_every_character_in_order() {
         run("gamma", CharProps::default()),
     ]);
     let merged = coalesce(&text, &spans, &FamilyMap::new());
-    let joined: String = merged.iter().map(|(_, t)| t.as_str()).collect();
+    let joined: String = merged.iter().map(|(_, _, t)| t.as_str()).collect();
     assert_eq!(joined, text);
 }

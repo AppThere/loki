@@ -895,5 +895,44 @@ styledlinebreak)
   "$ROOT/scripts/sitting/linebreak_bands.py" \
     --shot "$SHOT_DIR/slb.png" --log "$SHOT_DIR/slb.log" --calibrate "$CAL"
   ;;
+
+advances)
+  # ── ADR-0017 §5.6: per-run advances, DOM against canvas ──
+  #
+  # §5.5 left a residual of order 0.1 % of a line's advance. This measures that
+  # quantity rather than the break it flips: one row per resolved style, each in
+  # a span emitting the reflow view's own CSS plus a red background, whose
+  # rectangle *is* the run's advance in CSS px.
+  #
+  #   LB_FIXTURE=advances:1 scripts/sitting/run.sh advances
+  #   LB_FIXTURE=advances:8 scripts/sitting/run.sh advances
+  #
+  # Two scales, because a rounding difference is a fixed number of pixels and a
+  # metrics difference is a fraction of one.
+  BIN="$ROOT/target/debug/examples/advance_probe"
+  LINES="$ROOT/target/debug/examples/styled_linebreak_lines"
+  if [ ! -x "$BIN" ] || [ ! -x "$LINES" ]; then
+    echo "build them first: cargo build -p loki-text \\"
+    echo "    --example advance_probe --example styled_linebreak_lines"
+    exit 1
+  fi
+  export LB_FIXTURE="${LB_FIXTURE:-advances:1}"
+  # The canvas half at a width nothing can wrap at, so each paragraph is one
+  # line and that line's advance is the run's advance.
+  LB_WIDTH="${LB_WIDTH:-9000}" "$LINES" > "$SHOT_DIR/adv-canvas.txt" 2>/dev/null \
+    || { echo "canvas half failed"; exit 1; }
+  # Wide enough for the largest scale this scenario is run at; the measuring
+  # script refuses a band that reaches the last column rather than reporting a
+  # clipped run as a short one.
+  SCREEN="${SCREEN:-6000x2000}" start_x || exit 1
+  NO_ACTIVATE=1 start_app env LB_FIXTURE="$LB_FIXTURE" || exit 1
+  sleep "${OPEN_SETTLE:-20}"
+  shot adv
+  cp "$SHOT_DIR/app.log" "$SHOT_DIR/adv.log"
+  stop
+  "$ROOT/scripts/sitting/advance_bands.py" \
+    --shot "$SHOT_DIR/adv.png" --log "$SHOT_DIR/adv.log" \
+    --canvas "$SHOT_DIR/adv-canvas.txt"
+  ;;
 esac
 echo "DONE: $1"

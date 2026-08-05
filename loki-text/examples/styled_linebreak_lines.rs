@@ -91,6 +91,23 @@ fn main() {
                 range.start, range.end, metrics.advance, metrics.trailing_whitespace,
             );
         }
+        // Which face this paragraph actually got, and whether the canvas path
+        // is *synthesising* the weight rather than using a bold face. §5.6's
+        // residual is a run set in Tinos Bold coming out 0.13 % wider here than
+        // in the DOM, and synthetic emboldening is one of the two ways that can
+        // happen — the other being a different face — so both are printed.
+        for item in &para.layout.items {
+            if let loki_layout::items::PositionedItem::GlyphRun(run) = item {
+                println!(
+                    "     face: {} bytes idx={} size={:.3} synthesis={:?}",
+                    run.font_data.len(),
+                    run.font_index,
+                    run.font_size,
+                    run.synthesis,
+                );
+                break;
+            }
+        }
         // The line ranges index the text Parley was given, which is the
         // flattened text only when nothing was cleaned out of it (fields, notes,
         // hidden revisions). Checked rather than assumed: a silent offset would

@@ -58,7 +58,7 @@ pub(super) fn css_layout_color(c: LayoutColor) -> String {
 /// it. Emitting the requested name instead would leave Blitz to fall back by its
 /// own policy, which is not ours — see [`super::content::FamilyMap`].
 #[must_use]
-pub(super) fn span_css(s: &StyleSpan, families: &super::content::FamilyMap) -> String {
+pub fn span_css(s: &StyleSpan, families: &super::content::FamilyMap) -> String {
     let mut css = String::new();
     if let Some(name) = &s.font_name {
         // The substituted family, falling back to the requested one when the map
@@ -106,7 +106,35 @@ pub(super) fn span_css(s: &StyleSpan, families: &super::content::FamilyMap) -> S
     if let Some(ls) = s.letter_spacing {
         css.push_str(&format!("letter-spacing: {ls}pt; "));
     }
+
     css
+}
+
+/// The OpenType feature list for one resolved run, for the
+/// `data-font-features` attribute the vendored `blitz-dom` reads.
+///
+/// # Why an attribute and not `font-kerning`
+///
+/// `StyleSpan` carries the document's `w:kern` / `style:letter-kerning` (gap
+/// #23), and `para_build` turns anything but `Some(true)` into `"kern" 0`,
+/// because Word and LibreOffice default pair kerning **off** while the shaper
+/// defaults it on. Left unstated, the DOM path kerned text the canvas path did
+/// not — measured (ADR-0017 §5.6) at 0.13 % of a line in ordinary serif prose
+/// and **7.7 %** on a kern-heavy string, which is a break moved by words.
+///
+/// It cannot be said in CSS here: Stylo 0.8 gates both `font-kerning` and
+/// `font-feature-settings` to the Gecko engine, so in this build the properties
+/// do not exist and a declaration is dropped as unknown — which is worse than
+/// nothing, because it reads as a fix. The vendored `blitz-dom` therefore reads
+/// the list off `data-font-features` instead; see `docs/patches.md`.
+/// `TODO(dom-reflow-kerning)`: emit the CSS property once Stylo exposes it.
+#[must_use]
+pub fn span_font_features(s: &StyleSpan) -> &'static str {
+    if s.kerning == Some(true) {
+        "\"kern\" 1"
+    } else {
+        "\"kern\" 0"
+    }
 }
 
 /// The CSS declarations for one resolved paragraph.

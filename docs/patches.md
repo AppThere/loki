@@ -679,17 +679,43 @@ is made synchronous (the `todo(jon)` comment in the original acknowledges this).
     everywhere except on `overflow: visible` on `html`/`body`, which scrolls
     despite the value that normally means it does not.
 
+10. **Per-run OpenType features via `data-font-features` (PATCH(loki),
+    2026-08-05).** Stylo 0.8 gates both `font-kerning` and
+    `font-feature-settings` to the Gecko engine, so in this build neither
+    property exists and `stylo_to_parley::style` sets Parley's `font_features`
+    to an unconditional empty list — leaving the shaper's default, which is
+    **kerning on**. A document renderer needs it off unless the document asks:
+    Word's `w:kern` and ODF's `style:letter-kerning` both default to off, and
+    `loki-layout` already disables the feature accordingly
+    (`para_build.rs`, gap #23).
+
+    The gap was measured, not assumed (ADR-0017 §5.6): the same string set by
+    the two paths came out **0.13 % narrower** in the DOM for ordinary serif
+    prose and **7.7 % narrower** for a kern-heavy one, which moves a line break
+    by several words. `build_inline_layout_recursive` now reads a
+    `data-font-features` attribute off the inline element and passes it to
+    Parley as `FontSettings::Source`; `dom_reflow::style::span_font_features`
+    emits it. After the patch every case agrees to the pixel the box is rounded
+    to.
+
+    Attribute rather than CSS **because there is no CSS to use** — a
+    `font-kerning` declaration is dropped as an unknown property, which is worse
+    than nothing since it reads like a fix.
+
 **Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
 for non-input elements, dispatches scroll events to embedders, exposes an
-absolute node-scroll API, and stops treating a static canvas as perpetually
-animating (e.g. a per-source "needs animation" signal).
+absolute node-scroll API, stops treating a static canvas as perpetually
+animating (e.g. a per-source "needs animation" signal), and Stylo exposes
+`font-feature-settings` to the servo engine (at which point the reflow view
+emits the CSS property and the `data-font-features` read goes away).
 
 **Added:** 2026-05-18 (focus); extended 2026-06-10 (scroll events),
 2026-06-11 (absolute scroll), 2026-06-21 (`needs_animation_tick` — stop the
 idle canvas redraw loop, paired with the blitz-shell `redraw()` change),
-2026-06-27 (`extra_fonts` — synchronous bundled-font registration), and
-2026-08-02 (`handle_wheel` + scrollport geometry), together with matching
-changes in the blitz-shell and dioxus-native(-dom) patches.
+2026-06-27 (`extra_fonts` — synchronous bundled-font registration),
+2026-08-02 (`handle_wheel` + scrollport geometry), and 2026-08-05
+(`data-font-features` — per-run kerning), together with matching changes in the
+blitz-shell and dioxus-native(-dom) patches.
 
 ---
 

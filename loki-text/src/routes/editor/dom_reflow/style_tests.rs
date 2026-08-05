@@ -144,6 +144,37 @@ fn sizes_are_emitted_in_points() {
     assert!(!css.contains("px"), "a size was converted to px: {css}");
 }
 
+/// **Kerning follows the document, and the document's default is off.**
+///
+/// `para_build` disables the `kern` feature for anything but `Some(true)`,
+/// because Word and LibreOffice default pair kerning off. CSS defaults it *on*,
+/// so a run that says nothing must say `none` here — measured (ADR-0017 §5.6):
+/// left unstated, the DOM path set the same string 0.13 % narrower in serif
+/// prose and 7.7 % narrower on a kern-heavy one.
+#[test]
+fn kerning_is_off_unless_the_run_asks_for_it() {
+    assert_eq!(super::span_font_features(&resolved_span()), "\"kern\" 0");
+
+    // The inversion: a run that *does* ask for kerning gets it, or the rule is
+    // "never kern" rather than "follow the document".
+    let kerned = StyleSpan {
+        kerning: Some(true),
+        ..resolved_span()
+    };
+    assert_eq!(super::span_font_features(&kerned), "\"kern\" 1");
+}
+
+/// **It is not said in CSS**, and that is deliberate: Stylo 0.8 has neither
+/// `font-kerning` nor `font-feature-settings` outside Gecko, so a declaration
+/// would be dropped as unknown while reading like a fix. It goes out as the
+/// `data-font-features` attribute the vendored `blitz-dom` reads.
+#[test]
+fn kerning_is_not_emitted_as_a_css_declaration() {
+    let css = span_css(&resolved_span(), &FamilyMap::new());
+    assert!(!css.contains("font-kerning"), "inert declaration: {css}");
+    assert!(!css.contains("font-feature"), "inert declaration: {css}");
+}
+
 /// **Whitespace is preserved, not collapsed.** A paragraph reaches this view as
 /// one span per resolved run, and CSS `normal` trims each one's edges — so the
 /// space ending one run and the space beginning the next both vanished, and

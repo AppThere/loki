@@ -193,8 +193,21 @@ fn styled_para_el(
     rsx! {
         p {
             style: resolved_para_css(&resolved),
-            for (i, (css, slice)) in coalesce(&text, &spans, families).into_iter().enumerate() {
-                { rsx! { span { key: "{i}", style: "{css}", "{slice}" } } }
+            for (i, (css, features, slice)) in
+                coalesce(&text, &spans, families).into_iter().enumerate()
+            {
+                {
+                    rsx! {
+                        span {
+                            key: "{i}",
+                            style: "{css}",
+                            // Not a CSS property: this build's Stylo has no
+                            // `font-kerning`. See `style::span_font_features`.
+                            "data-font-features": "{features}",
+                            "{slice}"
+                        }
+                    }
+                }
             }
         }
     }
@@ -202,25 +215,33 @@ fn styled_para_el(
 
 /// Resolved spans as `(css, text)` pairs, with adjacent equal-CSS runs joined.
 ///
-/// Compared on the emitted CSS rather than on the `StyleSpan`s: the CSS is what
-/// reaches the renderer, so two spans differing only in something this view does
-/// not emit are the same span as far as line breaking is concerned, and keeping
-/// them apart would be a boundary with no reader.
+/// Compared on what is **emitted** rather than on the `StyleSpan`s — the CSS and
+/// the feature list both, since both reach the renderer. Two spans differing
+/// only in something this view does not emit are the same span as far as line
+/// breaking is concerned, and keeping them apart would be a boundary with no
+/// reader.
 fn coalesce(
     text: &str,
     spans: &[loki_layout::para::StyleSpan],
     families: &FamilyMap,
-) -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = Vec::new();
+) -> Vec<(String, &'static str, String)> {
+    let mut out: Vec<(String, &'static str, String)> = Vec::new();
     for span in spans {
         let css = span_css(span, families);
+        let features = super::style::span_font_features(span);
         // `get` rather than indexing: a range past the end would panic inside a
         // render, and a missing run is a visibly shorter paragraph rather than
         // a dead application.
         let slice = text.get(span.range.clone()).unwrap_or_default();
         match out.last_mut() {
-            Some((prev_css, prev_text)) if *prev_css == css => prev_text.push_str(slice),
-            _ => out.push((css, slice.to_string())),
+            // Both halves of what reaches the renderer, not just the CSS: two
+            // runs that agree on style but differ on kerning are two runs.
+            Some((prev_css, prev_features, prev_text))
+                if *prev_css == css && *prev_features == features =>
+            {
+                prev_text.push_str(slice)
+            }
+            _ => out.push((css, features, slice.to_string())),
         }
     }
     out

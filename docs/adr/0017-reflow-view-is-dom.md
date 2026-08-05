@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 | Field | Value |
 | --- | --- |
-| Status | **Accepted** — 2026-08-03. Direction agreed; view built behind a flag (§5). Line breaks match the canvas path except where a break is already marginal, where they can differ by one line (§5.5) |
+| Status | **Accepted** — 2026-08-03. Direction agreed; view built behind a flag (§5). Line breaks match the canvas path on every measured fixture; one open defect — a letter-spaced run beside others gets no tracking (§5.6) |
 | Drivers | Spec 08 T7.0 (probe P1), T7.2, T7.3, T7.4 |
 | Affects | `loki-renderer` (reflow path), `loki-layout` (reflow mode), `loki-text` editor route |
 | Makes moot | The ambient reading-measure cap added for T7.2 (`loki_renderer::measure`) |
@@ -426,7 +426,67 @@ produces. `styled_linebreak_lines` already prints the canvas side; the DOM side
 needs an ink-extent measurement per line, which the band script is one loop away
 from.
 
-### 5.6 Revised sequencing
+### 5.6 The 0.1 % was **kerning** (2026-08-05)
+
+§5.5 left a residual of order 0.1 % of a line's advance — enough to flip a break
+that was already marginal, too small to read out of a line count. Measured
+directly, it has a name.
+
+*The instrument.* `loki-text/examples/advance_probe` renders one row per resolved
+style, all carrying the same string, each in a `<span>` emitting **the reflow
+view's own CSS**. Each row is `fit-content` on one line, so the row box's width
+*is* the run's advance in CSS px; `scripts/sitting/advance_bands.py` measures it
+and sets it against the canvas path's advance from
+`styled_linebreak_lines`. `LB_FIXTURE=advances:<scale>` multiplies every size,
+because a **rounding** difference is a fixed number of pixels and a **metrics**
+difference is a fraction of one — and at 12 pt the whole effect is a quarter of a
+pixel, which is why §5.5 could not name it.
+
+*What it found.* At scale 6, eleven of twelve cases agreed to within the pixel
+the box is rounded up to. One did not: a run in **Tinos Bold** came out 0.13 %
+narrower in the DOM, at every scale tested (5, 6, 8) — a fraction, not a
+rounding.
+
+Then the controls, each removing one candidate:
+
+| control | result | rules out |
+| --- | --- | --- |
+| `serifbold` — same face and weight, stated on the run | identical to `emph` | the character-style path |
+| `libserifbold` — the *installed* metric-clone, no substitution | identical again | font substitution |
+| canvas-side face dump | `Tinos-Bold.ttf`, `synthesis: bold=false` | synthetic bold, wrong face |
+| `kernfree` — 46 identical letters, no kern pairs | **agrees** | everything above |
+| `kernheavy` — `AV Ta Wo …` | **−7.7 %** | — |
+
+*Cause.* `StyleSpan` carries the document's `w:kern` / `style:letter-kerning`
+(gap #23) and `loki-layout` disables the `kern` feature for anything but
+`Some(true)`, because Word and LibreOffice default pair kerning **off**. The DOM
+path said nothing, and the shaper's default is on. Ordinary prose has few kern
+pairs, so it showed as 0.13 %; kern-rich text showed as 7.7 %.
+
+*Fix, and where it had to go.* Stylo 0.8 gates **both** `font-kerning` and
+`font-feature-settings` to Gecko, so there is no CSS to say this in — a
+declaration is dropped as unknown, which is worse than nothing because it reads
+as a fix. The vendored `blitz-dom` now reads a `data-font-features` attribute
+into Parley's `font_features` (see `docs/patches.md`), and
+`style::span_font_features` emits it. After it, **all twelve advance cases agree
+to the box's rounding**, `kernheavy` included (−215 px → +0.8 px), and the mixed
+line-break cases `charstyle` and `spacing`'s counterparts follow.
+
+#### One open defect, sharply located
+
+`mixed:spacing` still disagrees at 4 of 12 widths, and its counts match the
+**untracked** document's exactly at every width: a `letter-spacing` run *inside a
+paragraph with other runs* receives no tracking in the DOM path. The same run as
+a paragraph's only child does (the `tracked` advance case applies the full
++564 px at scale 6). So it is not the CSS — dumped, the middle span carries
+`letter-spacing: 1.5pt` and is not coalesced away — and not the property's
+support. `TODO(dom-reflow-letter-spacing)`.
+
+*What would settle it:* the advance probe with the three-run paragraph as a
+case, then the same paragraph with the neighbours removed one at a time — the
+difference between the two is a Blitz question, and the probe already asks it.
+
+### 5.7 Revised sequencing
 
 1. ~~Resolve through `StyleCatalog`.~~ **Done — §5.1.**
 2. ~~Route families through `resolve_font_name`.~~ **Done — §5.1a.**
@@ -435,7 +495,11 @@ from.
 4. ~~Extend it to mixed style runs within a paragraph.~~ **Done — §5.4.**
 5. ~~Locate the residual by comparing break positions.~~ **Done — §5.5. The
    cause was CSS whitespace collapsing; fixed. Mixing no longer disagrees.**
-6. Measure per-line **advances** to explain the remaining ~0.1 % (§5.5). Until
-   then the fidelity claim is: the two paths agree except where a break is
-   already marginal, and there they can differ by one line.
-7. Then T7.3's per-element scroller, and the virtualisation measurement.
+6. ~~Measure per-line advances to explain the remaining ~0.1 %.~~ **Done —
+   §5.6. It was kerning; fixed in the vendored `blitz-dom`. Every advance case
+   now agrees to the pixel the box is rounded to.**
+7. Close the one remaining defect: a letter-spaced run beside other runs gets no
+   tracking in the DOM path (§5.6). Every other measured case — the screenplay
+   at 18 widths, and `plain`, `onerun`, `weight`, `italic`, `size`, `family` and
+   `charstyle` at 12 each — agrees exactly.
+8. Then T7.3's per-element scroller, and the virtualisation measurement.

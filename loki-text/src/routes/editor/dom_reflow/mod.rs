@@ -38,7 +38,7 @@ use dioxus::prelude::*;
 use crate::editing::state::DocumentState;
 
 pub mod content;
-mod style;
+pub mod style;
 
 /// Whether the DOM reflow path is selected.
 ///
