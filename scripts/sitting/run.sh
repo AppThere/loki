@@ -966,6 +966,19 @@ oversized)
   shot ov0-fit
   CLICK_SETTLE=3 click_at "${BX:-40}" "${BY:-260}" "fit/expand toggle"
   shot ov1-expanded
+  # **The figure has to be on screen**, not merely laid out. The fixture's image
+  # is a solid green, and green appears nowhere else in this scenario — so a
+  # count of zero means the bitmap did not arrive. Checked rather than looked at:
+  # an image that lays out and never paints leaves a box of exactly the right
+  # size, which is what a screenshot shows and what fooled this scenario once.
+  GREEN=$(convert "$SHOT_DIR/ov0-fit.png" -fuzz 10% -fill black +opaque "#2ECC71" \
+    -fill white -opaque "#2ECC71" -colorspace Gray -format "%[fx:mean*w*h]" info: 2>/dev/null)
+  GREEN=${GREEN%%.*}
+  if [ "${GREEN:-0}" -lt 1000 ]; then
+    echo "  [!] the figure did not paint — ${GREEN:-0} green pixels in ov0-fit"
+  else
+    echo "  figure painted: ${GREEN} green pixels"
+  fi
   echo "  Compare ov0-fit and ov1-expanded in $SHOT_DIR."
   ;;
 

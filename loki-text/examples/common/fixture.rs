@@ -490,12 +490,24 @@ pub fn oversized() -> Document {
         foot: TableFoot::empty(),
     };
 
-    // A 2x2 solid **red** PNG, declared 8 inches wide. The bytes are irrelevant
-    // to the geometry under test and the declaration is not, so this keeps the
-    // fixture to one line instead of an asset — red rather than white because a
-    // white one is indistinguishable from an image that never loaded, and the
-    // first version of this fixture was.
-    const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAF0lEQVR4nGP8z4APMOGVHZUeGtIACAAA//8DXgBB9lUdWQAAAABJRU5ErkJggg==";
+    // A 2x2 solid **green** PNG, declared 8 inches wide. The bytes are
+    // irrelevant to the geometry under test and the declaration is not, so this
+    // keeps the fixture to a constant instead of an asset.
+    //
+    // Two things about it are deliberate, and both were learned the hard way.
+    // **It is not white**: a white figure is indistinguishable from one that
+    // never loaded, and the first version of this fixture was white. **It is not
+    // red**: red is what this view paints its "not rendered" placeholders in, so
+    // a check that counted red pixels would be satisfied by the marker that
+    // means the figure is missing.
+    //
+    // And it is generated, with every chunk CRC verified before being pasted
+    // here. The version before this one was hand-written and its IDAT CRC was
+    // wrong: `image` refused it, ImageMagick accepted it, and the difference
+    // read for two sessions as "Blitz does not paint images".
+    const PNG: &str = "data:image/png;base64,\
+         iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGPQO1MIRAwQ
+         CgAmtgWtpDaw1wAAAABJRU5ErkJggg==";
     let mut img_attr = NodeAttr::default();
     img_attr
         .kv

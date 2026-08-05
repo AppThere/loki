@@ -582,7 +582,10 @@ today.
 9. ~~The virtualisation measurement.~~ **Done — §5.7. The DOM path reaches first
    paint no later than the canvas path finishes laying the same document out;
    memory is the cost that grows.**
-10. Remaining: the letter-spacing defect (§5.6), the image bitmap
-    (`TODO(dom-reflow-image-pixels)`), lists, and the editing surface
-    (`TODO(dom-reflow-editing)`) — after which the DOM view could replace the
-    canvas one and `loki_renderer::measure` goes with it (§3.1, §4).
+10. ~~The image bitmap.~~ **Done 2026-08-05 — there was no defect: the fixture's
+    PNG had a bad IDAT CRC, which `image` refuses and ImageMagick accepts, so
+    the check that cleared it was more lenient than the decoder under test. The
+    `oversized` scenario now counts the figure's own colour in the shot.**
+11. Remaining: lists, and the editing surface (`TODO(dom-reflow-editing)`) —
+    after which the DOM view could replace the canvas one and
+    `loki_renderer::measure` goes with it (§3.1, §4).

@@ -294,11 +294,17 @@ widths and an 8-inch figure in a 420 px column. The reading column ends at the
 same x as the prose in both states, the page is never wider than the window, and
 the toggle appears on the figure and not on the table.
 
-**Not established: the image's pixels.** The box is laid out in the right place
-at the right size — confirmed by giving the element a background, which appears
-exactly where the figure should be — and the `data:` URI's bitmap never lands in
-the probe. T7.3 is about the geometry and the geometry is right;
-`TODO(dom-reflow-image-pixels)` carries the rest.
+**The figure paints**, and the scenario checks that it does rather than showing
+a picture of it: the fixture image is a solid green that appears nowhere else in
+the run, and a count of zero is an error. Green rather than red because red is
+what this view paints its "not rendered" placeholders in — a red check would be
+satisfied by the marker that means the figure is missing.
+
+*This was recorded as an open defect for a day and was not one.* The figure did
+not paint because the fixture's PNG had a bad IDAT CRC — `image` refuses such a
+file, ImageMagick accepts it, and the validation step used the lenient one. The
+background test that followed showed a correctly-sized box, which confirmed the
+geometry and said nothing about the bytes.
 
 **Still true on the canvas path**, which is what ships today: a wide table is
 clipped at the tile. `TODO(t7.3-element-scroller)` stays in

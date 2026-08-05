@@ -25,17 +25,21 @@
 //! done by the layout that paints it. A width computed here would be a second
 //! copy of the arithmetic, resolved against a column measured a frame earlier.
 //!
-//! # Where the pixels come from — and that they do not arrive yet
+//! # Where the pixels come from
 //!
 //! `CollectedImage::src` is already a `data:` URI (the resolver builds it), and
 //! the vendored `blitz-net` provider decodes `data:`, so an `<img>` needs no
-//! media plumbing of its own.
+//! media plumbing of its own. `scripts/sitting/run.sh oversized` checks that the
+//! figure actually paints rather than merely lays out — it counts the fixture
+//! image's colour in the shot and complains at zero.
 //!
-//! **Measured, and it does not paint.** In the `oversized` sitting scenario the
-//! box is laid out in the right place at the right size — confirmed by giving
-//! the element a background, which appears exactly where the figure should be —
-//! and the bitmap never lands. So the geometry T7.3 is about is right and the
-//! decode is not established. `TODO(dom-reflow-image-pixels)`.
+//! *This was recorded as a defect for a day and was not one.* The figure did not
+//! paint because the fixture's PNG had a bad IDAT CRC: `image` refuses such a
+//! file and ImageMagick accepts it, so the check that said "the PNG is fine" was
+//! answering a more lenient question than the decoder under test. Giving the
+//! element a background then showed a correctly-sized box and confirmed the
+//! geometry — and said nothing whatever about the bytes, which is what it was
+//! read as saying.
 //!
 //! # Not covered
 //!
