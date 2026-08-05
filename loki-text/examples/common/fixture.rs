@@ -62,6 +62,9 @@ pub fn from_env() -> (String, Document) {
         // T7.3's two oversized elements: one that can be fitted and one that
         // cannot.
         _ if spec == "oversized" => (spec.clone(), oversized()),
+        // `long:<n>` — n paragraphs of ordinary prose, for ADR-0017's
+        // virtualisation question.
+        Some(("long", n)) => (spec.clone(), long(n.parse().unwrap_or(100))),
         Some(("mixed", case)) => (spec.clone(), mixed_runs(Some(case))),
         _ if spec == "mixed" => (spec.clone(), mixed_runs(None)),
         _ => (
@@ -366,6 +369,34 @@ fn tracked_props() -> CharProps {
         letter_spacing: Some(Points::new(1.5)),
         ..Default::default()
     }
+}
+
+/// `n` paragraphs of ordinary prose (ADR-0017 §3.2's virtualisation risk).
+///
+/// The canvas reflow path lays the whole document out and then rasterises only
+/// the tiles on screen; the DOM path builds a node per run instead. What that
+/// costs at length is the ADR's last unmeasured risk, and this is the document
+/// that asks.
+///
+/// Deliberately plain: one style, no tables, no images. The question is the size
+/// of the tree, and anything else in it would be a second variable.
+pub fn long(n: usize) -> Document {
+    let blocks = (0..n)
+        .map(|i| {
+            Block::StyledPara(StyledParagraph {
+                style_id: Some(StyleId::new("Normal")),
+                direct_para_props: None,
+                direct_char_props: None,
+                // Numbered so a shot says which paragraph it is looking at, and
+                // so no two paragraphs are the same string — a renderer that
+                // deduplicated identical subtrees would otherwise measure as
+                // cheaper than it is.
+                inlines: vec![Inline::Str(format!("{i}. {LEAD}{TAIL}"))],
+                attr: NodeAttr::default(),
+            })
+        })
+        .collect();
+    assemble(blocks)
 }
 
 /// A wide table and a wide image between two paragraphs (Spec 08 T7.3).

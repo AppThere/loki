@@ -129,6 +129,12 @@ reflow view of a long document builds a large tree instead. Blitz's cost profile
 there is unmeasured. *What would settle it:* the `load_bench` open-latency
 benchmark in `loki-acid`, run against a long document on both paths.
 
+*Measured 2026-08-05 — **it does not bite**; see §5.7.* The DOM path reaches
+first paint no later than the canvas path finishes `layout_document` for the same
+document, at every length up to 8000 paragraphs, and both are linear at about the
+same slope. What the canvas path virtualises is **rasterisation**, and layout is
+the larger term. The cost that does grow is memory: ≈ 38 KB per paragraph.
+
 **Two rendering paths remain**, since paginated stays on the canvas. Anything
 shared — spell state, revision display, the measure — is consumed by both, so
 this trades one hazard (ambient state crossing passes) for another (two paths
@@ -486,7 +492,51 @@ support. `TODO(dom-reflow-letter-spacing)`.
 case, then the same paragraph with the neighbours removed one at a time — the
 difference between the two is a Blitz question, and the probe already asks it.
 
-### 5.7 Revised sequencing
+### 5.7 Virtualisation, measured (2026-08-05)
+
+§3.2's last open risk: the canvas path rasterises only the tiles on screen, while
+the DOM path builds a node per run. What that costs at length.
+
+*Procedure.* `LB_FIXTURE=long:<n>` is *n* numbered paragraphs of ordinary prose,
+one style, nothing else — the question is the size of the tree, and anything else
+in the document would be a second variable. `scripts/sitting/run.sh
+virtualisation` launches the DOM view on each and records the time to the first
+frame carrying text (polled at 0.5 s) and the process's peak RSS. The canvas
+path's share is `layout_document` in `LayoutMode::Reflow` on the same documents,
+timed headlessly.
+
+**Debug build.** The absolute numbers are inflated by it; the scaling and the
+ratio between the two paths are the finding.
+
+| paragraphs | DOM: first paint | DOM: peak RSS | canvas: `layout_document` |
+| --- | --- | --- | --- |
+| 100 | 1.23 s | 374 MB | — |
+| 500 | 1.23 s | 390 MB | 0.35 s |
+| 2000 | 2.43 s | 447 MB | 1.35 s |
+| 8000 | 5.15 s | 676 MB | 4.97 s |
+
+*Reading it.* About 1.2 s of the DOM column is process start and GPU
+bring-up — it is the same at 100 and 500 paragraphs, where the document costs
+nothing measurable. Above that both columns grow linearly at roughly the same
+slope (~0.5–0.6 ms per paragraph), and the DOM path reaches **first paint** no
+later than the canvas path finishes the layout it would still have to rasterise.
+
+So the risk as stated does not materialise: what the canvas path virtualises is
+rasterisation, and layout — which both pay in full — is the larger term.
+
+**The cost that is real is memory**: 374 MB at 100 paragraphs to 676 MB at 8000,
+i.e. **≈ 38 KB per paragraph** on a ~370 MB baseline (wgpu, lavapipe, fonts). For
+a `<p>` carrying one `<span>` that is a lot, and it is Blitz's per-node cost
+rather than ours.
+
+**Not established:** the canvas path's memory for the same documents, so the
+38 KB is a number and not yet a comparison; release-build figures; and scroll
+cost once painted, which is where virtualisation would show if it showed
+anywhere. *What would settle those:* the same scenario against the canvas path,
+which needs the harness to open an arbitrary file — the one thing it cannot do
+today.
+
+### 5.8 Revised sequencing
 
 1. ~~Resolve through `StyleCatalog`.~~ **Done — §5.1.**
 2. ~~Route families through `resolve_font_name`.~~ **Done — §5.1a.**
@@ -505,5 +555,10 @@ difference between the two is a Blitz question, and the probe already asks it.
 8. ~~T7.3's per-element scroller.~~ **Done 2026-08-05 — `oversized::AtOversized`,
    with tables and images rendered so it has the elements it exists for. See
    `docs/spec-08-remaining-work.md`.**
-9. Then the virtualisation measurement (`load_bench` on a long document, both
-   paths) — the ADR's last unmeasured risk.
+9. ~~The virtualisation measurement.~~ **Done — §5.7. The DOM path reaches first
+   paint no later than the canvas path finishes laying the same document out;
+   memory is the cost that grows.**
+10. Remaining: the letter-spacing defect (§5.6), the image bitmap
+    (`TODO(dom-reflow-image-pixels)`), lists, and the editing surface
+    (`TODO(dom-reflow-editing)`) — after which the DOM view could replace the
+    canvas one and `loki_renderer::measure` goes with it (§3.1, §4).

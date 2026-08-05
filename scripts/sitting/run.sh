@@ -896,6 +896,54 @@ styledlinebreak)
     --shot "$SHOT_DIR/slb.png" --log "$SHOT_DIR/slb.log" --calibrate "$CAL"
   ;;
 
+virtualisation)
+  # ── ADR-0017 §3.2's last unmeasured risk: what a long document costs in DOM ──
+  #
+  # The canvas reflow path lays the whole document out and rasterises only the
+  # tiles on screen. The DOM path builds a node per run. This measures what that
+  # costs at length: time from launch to the first frame carrying text, and the
+  # process's peak RSS, at each paragraph count in `COUNTS`.
+  #
+  #   COUNTS="100 500 2000" scripts/sitting/run.sh virtualisation
+  #
+  # Time-to-first-paint is polled at 0.5 s, which is coarse — it is meant to
+  # separate "half a second" from "half a minute", not to rank two fast runs.
+  BIN="$ROOT/target/debug/examples/styled_linebreak_probe"
+  if [ ! -x "$BIN" ]; then
+    echo "build it first: cargo build -p loki-text --example styled_linebreak_probe"
+    exit 1
+  fi
+  printf "  %8s %12s %12s\n" "paras" "first paint" "peak RSS"
+  for N in ${COUNTS:-100 500 2000}; do
+    SCREEN="${SCREEN:-900x1000}" start_x || exit 1
+    START=$(date +%s.%N)
+    reset_window_state
+    env LB_FIXTURE="long:$N" STYLED_WIDTHS="${WIDTH:-600}" PROBE_HEIGHT=900 \
+      "$BIN" > "$SHOT_DIR/virt-$N.log" 2>&1 &
+    APP_PID=$!
+    PAINT=""
+    for _ in $(seq 1 240); do
+      kill -0 "$APP_PID" 2>/dev/null || break
+      # Dark pixels anywhere in the reading column mean type has landed. The
+      # window is white before the first frame and the root is black, so this
+      # is specifically "text is on screen", not "a window exists".
+      DARK=$(xwd -root -silent 2>/dev/null | convert xwd:- -depth 8 -crop 400x400+40+40 \
+        +repage -colorspace Gray -format "%[fx:mean]" info: 2>/dev/null)
+      case "$DARK" in ""|1|1.0|0) ;; *)
+        if [ "$(echo "$DARK < 0.99" | bc -l 2>/dev/null)" = "1" ]; then
+          PAINT=$(echo "$(date +%s.%N) - $START" | bc -l); break
+        fi ;;
+      esac
+      sleep 0.5
+    done
+    RSS=$(awk '/VmHWM/{print $2" "$3}' "/proc/$APP_PID/status" 2>/dev/null)
+    shot "virt-$N"
+    kill "$APP_PID" 2>/dev/null; wait "$APP_PID" 2>/dev/null
+    kill "$XVFB_PID" 2>/dev/null; sleep 1
+    printf "  %8s %12s %12s\n" "$N" "${PAINT:-never}" "${RSS:-?}"
+  done
+  ;;
+
 oversized)
   # ── Spec 08 T7.3 on the DOM path: the per-element scrollport ──
   #

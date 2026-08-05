@@ -36,14 +36,6 @@ use loki_i18n::fl;
 
 use appthere_ui::tokens::{colors, spacing};
 
-/// A block that may exceed the reading column, in its own scrollport.
-///
-/// # Touch target
-///
-/// The fit/expand toggle is **44 × 44 logical pixels** (WCAG 2.5.8): `min-width`
-/// and `min-height` come from `appthere_ui::tokens::spacing::TOUCH_MIN` rather
-/// than from the label, which is two words in English and one in several other
-/// languages.
 /// The scrollport's own declarations.
 ///
 /// `overflow-x: auto` on *this* element is the whole of T7.3: whatever the child
@@ -72,6 +64,18 @@ pub(super) fn inner_css(expanded: bool) -> &'static str {
     }
 }
 
+/// A block that may exceed the reading column, in its own scrollport.
+///
+/// `fittable` says whether the child can be made to fit — an image can, a table
+/// at fixed column widths cannot — and decides whether the toggle is offered at
+/// all.
+///
+/// # Touch target
+///
+/// The fit/expand toggle is **44 × 44 logical pixels** (WCAG 2.5.8): `min-width`
+/// and `min-height` come from `appthere_ui::tokens::spacing::TOUCH_MIN` rather
+/// than from the label, which is two words in English and one in several other
+/// languages.
 #[component]
 pub(super) fn AtOversized(children: Element, fittable: bool) -> Element {
     // A component, not a function with an early return, because the state is
