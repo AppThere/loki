@@ -26,7 +26,8 @@
 //!
 //! # What this is not
 //!
-//! **Read-only.** No caret, no selection, no hit-testing, no spell squiggles, no
+//! **Read-only** for editing. T7.3's fit/expand toggle is the one control.
+//! No caret, no selection, no hit-testing, no spell squiggles, no
 //! revision marks. Those are painted from `PositionedItem`s on the canvas path
 //! and each needs a DOM equivalent — ADR-0017 §3.2 lists them, and none is done.
 //! Editing while this view is active edits nothing. `TODO(dom-reflow-editing)`.
@@ -38,7 +39,11 @@ use dioxus::prelude::*;
 use crate::editing::state::DocumentState;
 
 pub mod content;
+mod content_para;
+mod image;
+mod oversized;
 pub mod style;
+mod table;
 
 /// Whether the DOM reflow path is selected.
 ///
@@ -79,9 +84,10 @@ fn column_max_width_pt() -> f32 {
 ///
 /// # Touch target
 ///
-/// No interactive controls — this view is read-only (see the module docs), so
-/// WCAG 2.5.8 has nothing to measure here. The scroll container is the whole
-/// view.
+/// The view carries one interactive control, the fit/expand toggle on an
+/// oversized element ([`oversized::AtOversized`], 44 × 44). Nothing else here is
+/// interactive — the view is read-only for *editing* (see the module docs), and
+/// the scroll container is the whole view.
 pub(super) fn dom_reflow_view(
     doc_state: &Arc<Mutex<DocumentState>>,
     cursor_state: Signal<crate::editing::cursor::CursorState>,

@@ -896,6 +896,31 @@ styledlinebreak)
     --shot "$SHOT_DIR/slb.png" --log "$SHOT_DIR/slb.log" --calibrate "$CAL"
   ;;
 
+oversized)
+  # ── Spec 08 T7.3 on the DOM path: the per-element scrollport ──
+  #
+  # One document with both oversized elements: a table at fixed column widths
+  # (cannot be fitted) and an 8-inch image (can). Two shots — before and after
+  # clicking the first element's fit/expand toggle.
+  #
+  # What to read: in **both** shots the reading column must end at the same x,
+  # and the page must not be wider than the window. That is T7.3's rule; the
+  # table reaching past the column *inside its own box* is the feature.
+  BIN="$ROOT/target/debug/examples/styled_linebreak_probe"
+  if [ ! -x "$BIN" ]; then
+    echo "build it first: cargo build -p loki-text --example styled_linebreak_probe"
+    exit 1
+  fi
+  SCREEN="${SCREEN:-900x1200}" start_x || exit 1
+  NO_ACTIVATE=1 start_app env LB_FIXTURE=oversized STYLED_WIDTHS="${STYLED_WIDTHS:-420}" \
+    PROBE_HEIGHT="${PROBE_HEIGHT:-1100}" || exit 1
+  sleep "${OPEN_SETTLE:-20}"
+  shot ov0-fit
+  CLICK_SETTLE=3 click_at "${BX:-40}" "${BY:-260}" "fit/expand toggle"
+  shot ov1-expanded
+  echo "  Compare ov0-fit and ov1-expanded in $SHOT_DIR."
+  ;;
+
 advances)
   # ── ADR-0017 §5.6: per-run advances, DOM against canvas ──
   #

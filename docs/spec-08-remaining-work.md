@@ -240,7 +240,7 @@ shapes recorded there, applied per element rather than per document. It is not
 being built now because which shape is right depends on the canvas-vs-DOM
 decision T7.3 records, not because P1 ruled it out.
 
-### T7.3 — the document never scrolls horizontally (partial, r108)
+### T7.3 — the document never scrolls horizontally (**closed on the DOM path**, 2026-08-05)
 
 P1 (T7.0) cleared this to proceed, so T7.4's modal-viewer fallback stays unused.
 
@@ -267,33 +267,42 @@ the image — a worse defect than the sideways scroll being removed), scaling
 *up* as well as down, and letting the paginated view fit too. Each kills a
 specific test.
 
-#### Not built: the per-element horizontal scroll container
+#### The per-element horizontal scroll container — built, on the DOM path
 
-An element that **cannot** be scaled — a table with fixed column widths — is now
-clipped at the tile rather than allowed to widen it. That is deliberately a
-worse outcome for that one element and a better one for the document, which is
-the trade T7.3 states; but the task's own answer for it is the per-element
-scroller, and that is not built. `TODO(t7.3-element-scroller)`.
+The architecture question this task could not answer was answered by
+[ADR-0017](adr/0017-reflow-view-is-dom.md): the reflow view is DOM. With that,
+the scroller is what the ADR said it would be — `overflow-x: auto` on one
+element (`dom_reflow::oversized::AtOversized`), and P1's routing measurement is
+finally about the code that runs.
 
-**It needs an architecture decision this task did not anticipate.** P1 measured
-*DOM* nested scroll containers, and they route correctly. But the reflow
-document is painted into a **canvas** (wgpu/vello tiles), not built as DOM — so
-there is no per-element DOM box to make scrollable, and P1's green result does
-not reach the case it was run for. Three shapes, none chosen:
+**Both oversized elements are covered, differently, because they are different
+problems.**
 
-- Hoist oversized elements out of the canvas into real DOM siblings positioned
-  over it. Gets P1's routing for free; needs the canvas and the DOM to agree on
-  position at every scroll offset and zoom.
-- Give the canvas its own per-element scroll state and route wheel/drag to it
-  from the tile hit-test. No DOM involvement, but re-implements what P1 just
-  showed Blitz already does correctly.
-- Keep clipping and offer an explicit "open this table" affordance — closest to
-  T7.4's modal viewer, applied per element rather than per document.
+- An **image** can be fitted: `width: 100%; max-width: <declared>` is
+  `fit_to_column`'s two clauses (shrink to the column, never scale up), and
+  `aspect-ratio` from the *declared* size is its third. The declared ratio
+  rather than `height: auto`: `fit_to_column` scales the declared width and
+  height together, so a document that stretches a square image to 8 × 2 inches
+  must render oblong here too.
+- A **table** cannot: its width is its column widths, and fitting it means
+  redistributing them. It gets the scrollport and **no toggle** — offering
+  fit/expand on an element that overflows in either state is a control that
+  reports success and changes nothing.
 
-**What would settle it:** deciding whether the reflow view stays canvas-painted.
-If it does, the second and third are the only candidates and P1's reading is
-only indirectly relevant — which is worth recording, because P1 was run to gate
-this task and its answer turns out to apply to a DOM path this task may not use.
+Verified in `scripts/sitting/run.sh oversized`: an 8-column table at fixed
+widths and an 8-inch figure in a 420 px column. The reading column ends at the
+same x as the prose in both states, the page is never wider than the window, and
+the toggle appears on the figure and not on the table.
+
+**Not established: the image's pixels.** The box is laid out in the right place
+at the right size — confirmed by giving the element a background, which appears
+exactly where the figure should be — and the `data:` URI's bitmap never lands in
+the probe. T7.3 is about the geometry and the geometry is right;
+`TODO(dom-reflow-image-pixels)` carries the rest.
+
+**Still true on the canvas path**, which is what ships today: a wide table is
+clipped at the tile. `TODO(t7.3-element-scroller)` stays in
+`loki_renderer::doc_page_source` until the DOM reflow view replaces it.
 
 **Also not done:** tables are not shrunk at all — only images are. A table's
 width comes from its column widths, and fitting one to a column means

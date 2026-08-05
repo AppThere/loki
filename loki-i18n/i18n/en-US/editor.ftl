@@ -168,3 +168,9 @@ editor-insert-table-success = Table inserted
 editor-insert-footnote-success = Footnote inserted
 editor-insert-no-cursor = Place the cursor in the document first
 editor-insert-failed = Could not insert here
+
+# Reflow view → oversized elements (Spec 08 T7.3). A block wider than the
+# reading column gets its own horizontal scroll container; the toggle chooses
+# between fitting it to the column and letting it scroll at its own width.
+editor-oversized-expand = Expand
+editor-oversized-fit = Fit to column

@@ -140,7 +140,7 @@ that must agree about the document).
    Extend it to mixed style runs before relying on it further.
 2. ~~Build the DOM reflow view behind the existing view-mode switch, so both
    paths are live and comparable.~~ **Done 2026-08-03 — see §5.**
-3. Move T7.3's per-element scroller onto it.
+3. ~~Move T7.3's per-element scroller onto it.~~ **Done 2026-08-05.**
 4. Delete `loki_renderer::measure` **in the same change** that replaces it —
    see §3.1.
 
@@ -502,4 +502,8 @@ difference between the two is a Blitz question, and the probe already asks it.
    tracking in the DOM path (§5.6). Every other measured case — the screenplay
    at 18 widths, and `plain`, `onerun`, `weight`, `italic`, `size`, `family` and
    `charstyle` at 12 each — agrees exactly.
-8. Then T7.3's per-element scroller, and the virtualisation measurement.
+8. ~~T7.3's per-element scroller.~~ **Done 2026-08-05 — `oversized::AtOversized`,
+   with tables and images rendered so it has the elements it exists for. See
+   `docs/spec-08-remaining-work.md`.**
+9. Then the virtualisation measurement (`load_bench` on a long document, both
+   paths) — the ADR's last unmeasured risk.

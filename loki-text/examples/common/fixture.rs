@@ -59,6 +59,9 @@ pub fn from_env() -> (String, Document) {
         // font-size multiplier.
         Some(("advances", scale)) => (spec.clone(), advance_runs(scale.parse().unwrap_or(1.0))),
         _ if spec == "advances" => (spec.clone(), advance_runs(1.0)),
+        // T7.3's two oversized elements: one that can be fitted and one that
+        // cannot.
+        _ if spec == "oversized" => (spec.clone(), oversized()),
         Some(("mixed", case)) => (spec.clone(), mixed_runs(Some(case))),
         _ if spec == "mixed" => (spec.clone(), mixed_runs(None)),
         _ => (
@@ -363,6 +366,86 @@ fn tracked_props() -> CharProps {
         letter_spacing: Some(Points::new(1.5)),
         ..Default::default()
     }
+}
+
+/// A wide table and a wide image between two paragraphs (Spec 08 T7.3).
+///
+/// The table's columns are **fixed**, which is what makes it unscalable: fitting
+/// it to the column would mean redistributing those widths. The image is wide by
+/// declaration, which is what makes it scalable. One document, both cases, so a
+/// single shot shows the rule applying differently to each.
+pub fn oversized() -> Document {
+    use loki_doc_model::content::table::col::ColSpec;
+    use loki_doc_model::content::table::core::{Table, TableBody, TableFoot, TableHead};
+    use loki_doc_model::content::table::row::{Cell, Row};
+
+    let cell = |text: &str| Cell {
+        attr: NodeAttr::default(),
+        alignment: Default::default(),
+        row_span: 1,
+        col_span: 1,
+        blocks: vec![Block::Para(vec![Inline::Str(text.to_string())])],
+        props: Default::default(),
+    };
+    let cols = 8;
+    let table = Table {
+        attr: NodeAttr::default(),
+        caption: Default::default(),
+        width: None,
+        col_specs: (0..cols)
+            .map(|_| ColSpec::fixed(Points::new(120.0)))
+            .collect(),
+        head: TableHead {
+            attr: NodeAttr::default(),
+            rows: vec![Row::new(
+                (0..cols).map(|i| cell(&format!("Column {i}"))).collect(),
+            )],
+        },
+        bodies: vec![TableBody::from_rows(
+            (0..3)
+                .map(|r| Row::new((0..cols).map(|c| cell(&format!("cell {r}-{c}"))).collect()))
+                .collect(),
+        )],
+        foot: TableFoot::empty(),
+    };
+
+    // A 2x2 solid **red** PNG, declared 8 inches wide. The bytes are irrelevant
+    // to the geometry under test and the declaration is not, so this keeps the
+    // fixture to one line instead of an asset — red rather than white because a
+    // white one is indistinguishable from an image that never loaded, and the
+    // first version of this fixture was.
+    const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAF0lEQVR4nGP8z4APMOGVHZUeGtIACAAA//8DXgBB9lUdWQAAAABJRU5ErkJggg==";
+    let mut img_attr = NodeAttr::default();
+    img_attr
+        .kv
+        .push(("cx_emu".to_string(), (8 * 914_400).to_string()));
+    img_attr
+        .kv
+        .push(("cy_emu".to_string(), (2 * 914_400).to_string()));
+    let image = Block::Para(vec![Inline::Image(
+        img_attr,
+        vec![Inline::Str("a wide figure".to_string())],
+        loki_doc_model::content::inline::LinkTarget::new(PNG),
+    )]);
+
+    assemble(vec![
+        Block::StyledPara(StyledParagraph {
+            style_id: Some(StyleId::new("Normal")),
+            direct_para_props: None,
+            direct_char_props: None,
+            inlines: vec![Inline::Str(LEAD.to_string())],
+            attr: NodeAttr::default(),
+        }),
+        Block::Table(Box::new(table)),
+        image,
+        Block::StyledPara(StyledParagraph {
+            style_id: Some(StyleId::new("Normal")),
+            direct_para_props: None,
+            direct_char_props: None,
+            inlines: vec![Inline::Str(TAIL.to_string())],
+            attr: NodeAttr::default(),
+        }),
+    ])
 }
 
 /// A single-section document carrying `blocks`, a `Normal` paragraph style and
