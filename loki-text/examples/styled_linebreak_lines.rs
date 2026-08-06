@@ -70,14 +70,25 @@ fn main() {
     };
 
     for para in &continuous.paragraphs {
-        let Some(text) = paragraph_text(&doc, para.block_index) else {
-            continue;
-        };
+        // `None` for a block this walker cannot name a paragraph inside — a list
+        // is one block holding many, and its items' text is synthesised during
+        // the flow rather than readable from the block. Its **lines** are still
+        // printed: a paragraph that vanished from this dump entirely is how a
+        // list came to be compared by nothing but its total line count.
+        let text = paragraph_text(&doc, para.block_index);
         let Some(parley) = para.layout.parley_layout.as_ref() else {
             eprintln!("block {}: no retained Parley layout", para.block_index);
             continue;
         };
-        println!("\nblock {} — {} bytes", para.block_index, text.len());
+        match &text {
+            Some(t) => println!("\nblock {} — {} bytes", para.block_index, t.len()),
+            None => println!(
+                "\nblock {} — {} lines, text not addressable by block index",
+                para.block_index,
+                parley.lines().count()
+            ),
+        }
+        let text = text.unwrap_or_default();
         let mut end = 0usize;
         for (i, line) in parley.lines().enumerate() {
             let range = line.text_range();
@@ -113,7 +124,7 @@ fn main() {
         // hidden revisions). Checked rather than assumed: a silent offset would
         // make every printed line one word wrong, which reads as a rendering
         // difference.
-        if end != text.len() {
+        if !text.is_empty() && end != text.len() {
             println!(
                 "  WARNING: lines cover {end} bytes of {} — the text was cleaned, \
                  so these slices are offset",

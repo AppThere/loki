@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 | Field | Value |
 | --- | --- |
-| Status | **Accepted** — 2026-08-03. Direction agreed; view built behind a flag (§5). **Line breaks match the canvas path on every measured fixture and width** (§5.3–§5.6); virtualisation measured and does not bite (§5.7) |
+| Status | **Accepted** — 2026-08-03. Direction agreed; view built behind a flag (§5). **Line breaks match the canvas path on every measured fixture and width** (§5.3–§5.6); virtualisation measured and does not bite (§5.7); lists agree up to one pixel of column, with the remaining difference attributed to a canvas-path defect (§5.9) |
 | Drivers | Spec 08 T7.0 (probe P1), T7.2, T7.3, T7.4 |
 | Affects | `loki-renderer` (reflow path), `loki-layout` (reflow mode), `loki-text` editor route |
 | Makes moot | The ambient reading-measure cap added for T7.2 (`loki_renderer::measure`) |
@@ -561,6 +561,66 @@ anywhere. *What would settle those:* the same scenario against the canvas path,
 which needs the harness to open an arbitrary file — the one thing it cannot do
 today.
 
+### 5.9 Lists (2026-08-06)
+
+The last block kind the view rendered as a placeholder. `loki_layout` already
+owns the three rules — which marker, what step, what indents — so they were
+lifted out of `flow.rs` into `flow_dispatch` (`list_marker`,
+`NESTED_INDENT_PT`, `synthesize_list_item_para`) and the DOM path calls them
+rather than restating them. The first attempt then rendered the synthesised
+paragraph as-is: marker inline, `text-indent: -18pt` for the hang, `tab-size:
+18pt` so the marker's tab would land on it.
+
+It disagreed with the canvas path at **24 of 36** swept widths. Three causes,
+found in this order:
+
+**1. `text-indent` and `tab-size` do not exist in this stack.** `parley` 0.6's
+`TextStyle` carries neither an indent nor a tab stop, and the vendored
+`blitz-dom`'s `stylo_to_parley` never reads either property, so both
+declarations are dropped as unknown. Photographed at 400 px: every line of every
+item — first and continuation alike — began at the same x, and the marker's tab
+painted as a `.notdef` box. A declaration that reads as a fix is worse than no
+declaration, so `resolved_para_css` now emits no `text-indent` at all and a test
+fails if one comes back; the hanging space is a **box** instead
+(`style::hanging_row_css`): a flex row indented to `indent_start −
+indent_hanging`, a marker cell exactly `indent_hanging` wide, the text in the
+rest. Re-measured: markers at x = 33–35, text at 56–57, nested text at 81 —
+18 pt and 36 pt from the column, which is what the canvas path's tab stop
+resolves to.
+
+**2. The family collector never walked into a list.** `requested_families`
+looked at top-level paragraphs only, so a document made entirely of lists
+resolved no families, asked Blitz for "Arial" — which this host does not have —
+and got its default sans, about **14 %** wider. Every item then wrapped a line
+early. This is §5.3's defect a second time, in a second walk; the fix is that
+the collector recurses into lists, quotes and table cells, and the guard is a
+test per container.
+
+**3. A canvas-path defect the comparison found.** `FlowState::current_indent` is
+consumed by `flow_para_place` as a *translation*: an item's non-first blocks are
+laid out against the full `content_width` and then shifted right, so their text
+overruns the column by one step. On a 565 px column the second paragraph of an
+item took two lines on the canvas and three in the DOM, its longest line
+423.6 pt against a 405.75 pt measure. **The DOM path is the correct one here**
+and the canvas is not; it is left as `TODO(list-indent-measure)` because the
+field means two things — an indent inside the measure for a list or a quote, an
+absolute page x for a table cell — and separating them moves line breaks in
+every document with a quote or a multi-block item, which wants its own sweep.
+
+*Where it stands.* All 36 measured DOM counts are reproduced exactly by the
+canvas's own per-paragraph counts under two corrections and no third: (a) the
+item's second paragraph measured at `column − indent` rather than `column`, and
+(b) the DOM breaking as though its column were **one CSS pixel wider** — its
+transition sits one px below the canvas's at every one of the nine transitions
+where they differ, and at all nine `DOM(w) = canvas(w+1)`.
+
+**Not established:** the mechanism of (b). It appears on this fixture and not on
+`screenplay` or `mixed`, which agree at every width, so the flex row is the
+obvious suspect — but expressing the marker cell's width in `px` rather than
+`pt` changes nothing, which rules out that conversion. *What would settle it:*
+the §5.6 box ruler applied to the row's two cells, reading their resolved widths
+directly instead of inferring them from where the text breaks.
+
 ### 5.8 Revised sequencing
 
 1. ~~Resolve through `StyleCatalog`.~~ **Done — §5.1.**
@@ -586,6 +646,11 @@ today.
     PNG had a bad IDAT CRC, which `image` refuses and ImageMagick accepts, so
     the check that cleared it was more lenient than the decoder under test. The
     `oversized` scenario now counts the figure's own colour in the shot.**
-11. Remaining: lists, and the editing surface (`TODO(dom-reflow-editing)`) —
-    after which the DOM view could replace the canvas one and
-    `loki_renderer::measure` goes with it (§3.1, §4).
+11. ~~Lists.~~ **Done 2026-08-06 — §5.9. Three causes: `text-indent`/`tab-size`
+    are inert in this stack (the hanging space is now a box), the family
+    collector did not walk into lists, and a canvas-path indent defect the
+    comparison found (`TODO(list-indent-measure)`). The residual is one CSS
+    pixel of column, unexplained.**
+12. Remaining: the editing surface (`TODO(dom-reflow-editing)`) — after which
+    the DOM view could replace the canvas one and `loki_renderer::measure` goes
+    with it (§3.1, §4).

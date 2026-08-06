@@ -67,6 +67,8 @@ pub fn from_env() -> (String, Document) {
         Some(("long", n)) => (spec.clone(), long(n.parse().unwrap_or(100))),
         // Where in a paragraph a tracked run sits (ADR-0017 §5.6's open defect).
         _ if spec == "trackpos" => (spec.clone(), track_positions()),
+        // Ordered, bulleted, nested, and an item with a second block.
+        _ if spec == "lists" => (spec.clone(), lists()),
         Some(("mixed", case)) => (spec.clone(), mixed_runs(Some(case))),
         _ if spec == "mixed" => (spec.clone(), mixed_runs(None)),
         _ => (
@@ -371,6 +373,47 @@ fn tracked_props() -> CharProps {
         letter_spacing: Some(Points::new(1.5)),
         ..Default::default()
     }
+}
+
+/// Lists: ordered, bulleted, nested, and an item carrying a second paragraph.
+///
+/// Long enough per item that each wraps several times at the widths the sweep
+/// uses — a list that fits on one line says nothing about whether the marker's
+/// tab and the hanging indent put the text in the same place on both paths.
+pub fn lists() -> Document {
+    let para = |text: &str| {
+        Block::StyledPara(StyledParagraph {
+            style_id: Some(StyleId::new("Normal")),
+            direct_para_props: None,
+            direct_char_props: None,
+            inlines: vec![Inline::Str(text.to_string())],
+            attr: NodeAttr::default(),
+        })
+    };
+    let attrs = |start: i32| loki_doc_model::content::block::ListAttributes {
+        start_number: start,
+        style: Default::default(),
+        delimiter: Default::default(),
+    };
+    let item = |n: usize| vec![para(&format!("Item {n}. {LEAD}{TAIL}"))];
+
+    assemble(vec![
+        Block::OrderedList(attrs(1), vec![item(1), item(2)]),
+        Block::BulletList(vec![
+            item(3),
+            // A second block in the item: it takes the item's indent but no
+            // marker, which is the canvas path's rule.
+            vec![
+                para(&format!("Item 4. {LEAD}")),
+                para(&format!("Continued. {TAIL}")),
+            ],
+            // A nested list, whose own step is added to this one.
+            vec![
+                para("Item 5, with a list under it."),
+                Block::BulletList(vec![item(6)]),
+            ],
+        ]),
+    ])
 }
 
 /// The same three-run paragraph three times, differing only in **where** the

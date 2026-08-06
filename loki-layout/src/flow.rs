@@ -52,11 +52,12 @@ mod tail;
 mod textbox_impl;
 
 pub use group::flow_section_group;
-pub(crate) use headers::layout_blocks_reflow;
-pub(crate) use headers::{PagePosition, assign_headers_footers};
+pub(crate) use headers::{PagePosition, assign_headers_footers, layout_blocks_reflow};
 pub(crate) use page_fields::page_layout_has_page_fields;
 use tail::{flow_footnotes, flow_hrule, get_items_max_x};
-// Public for ADR-0017's DOM reflow view — see the note on their definitions.
+// Public for ADR-0017's DOM reflow view: paragraph synthesis and the list
+// marker/indent rules, so neither path states either twice (see their defs).
+pub use dispatch::{NESTED_INDENT_PT, list_marker, synthesize_list_item_para};
 pub use tail::{synthesize_heading_para, synthesize_plain_para};
 
 use std::collections::HashMap;

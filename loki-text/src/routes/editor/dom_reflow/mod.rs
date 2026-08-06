@@ -41,6 +41,7 @@ use crate::editing::state::DocumentState;
 pub mod content;
 mod content_para;
 mod image;
+mod list;
 mod oversized;
 pub mod style;
 mod table;

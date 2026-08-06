@@ -10,7 +10,13 @@ use dioxus::prelude::*;
 use loki_doc_model::style::catalog::StyleCatalog;
 
 use super::content::FamilyMap;
-use super::style::{resolved_para_css, span_css};
+use super::style::{
+    HANGING_BODY_CSS, hanging_body_props, hanging_marker_css, hanging_row_css, resolved_para_css,
+    span_css,
+};
+
+/// One emitted run: its CSS, its OpenType feature list, and its text.
+pub(super) type Run = (String, &'static str, String);
 
 /// A styled paragraph, rendered from **resolved** properties.
 ///
@@ -42,6 +48,36 @@ pub(super) fn styled_para_el(
     catalog: &StyleCatalog,
     families: &FamilyMap,
 ) -> Element {
+    para_el(para, catalog, families, None)
+}
+
+/// A list item's first paragraph, with its marker in the hanging space.
+///
+/// `marker_bytes` is the length of the marker
+/// `loki_layout::flow::synthesize_list_item_para` prefixed into `para`. The
+/// marker is split back out of the **resolved** runs rather than rendered from
+/// the marker string, so it carries the paragraph's own character properties —
+/// which is what the canvas path shapes it with, it being ordinary text there.
+///
+/// See [`super::style::hanging_row_css`] for why the hanging indent is a box on
+/// this path and a `text-indent` on no path at all.
+pub(super) fn hanging_marker_para_el(
+    para: &loki_doc_model::content::block::StyledParagraph,
+    catalog: &StyleCatalog,
+    families: &FamilyMap,
+    marker_bytes: usize,
+) -> Element {
+    para_el(para, catalog, families, Some(marker_bytes))
+}
+
+/// Both of the above: one paragraph, optionally splitting a leading marker out
+/// into the hanging space.
+fn para_el(
+    para: &loki_doc_model::content::block::StyledParagraph,
+    catalog: &StyleCatalog,
+    families: &FamilyMap,
+    marker_bytes: Option<usize>,
+) -> Element {
     let resolved = loki_layout::resolve::resolve_para_props(para, catalog);
     // The note counter is local and discarded: this view does not render
     // footnotes, and advancing a shared counter for numbers nothing shows would
@@ -54,31 +90,87 @@ pub(super) fn styled_para_el(
         None,
         loki_layout::RevisionDisplay::default(),
     );
+    let runs = coalesce(&text, &spans, families);
+    let Some(at) = marker_bytes else {
+        return rsx! {
+            // Images first, as a block-level prefix — the same placement
+            // `stack_block_images` gives them on the canvas path, where Parley
+            // has no inline image box either (`TODO(inline-image-flow)`).
+            { super::image::images_el(&images) }
+            p { style: resolved_para_css(&resolved), { runs_el(runs) } }
+        };
+    };
+    let (marker, body) = split_runs(runs, at);
     rsx! {
-        // Images first, as a block-level prefix — the same placement
-        // `stack_block_images` gives them on the canvas path, where Parley has no
-        // inline image box either (`TODO(inline-image-flow)`).
         { super::image::images_el(&images) }
-        p {
-            style: resolved_para_css(&resolved),
-            for (i, (css, features, slice)) in
-                coalesce(&text, &spans, families).into_iter().enumerate()
+        div {
+            style: hanging_row_css(&resolved),
+            div { style: hanging_marker_css(&resolved), { runs_el(marker) } }
+            div {
+                style: HANGING_BODY_CSS,
+                p { style: resolved_para_css(&hanging_body_props(&resolved)), { runs_el(body) } }
+            }
+        }
+    }
+}
+
+/// The runs of one paragraph, or of one marker cell.
+fn runs_el(runs: Vec<Run>) -> Element {
+    rsx! {
+        for (i, (css, features, slice)) in runs.into_iter().enumerate() {
             {
-                {
-                    rsx! {
-                        span {
-                            key: "{i}",
-                            style: "{css}",
-                            // Not a CSS property: this build's Stylo has no
-                            // `font-kerning`. See `style::span_font_features`.
-                            "data-font-features": "{features}",
-                            "{slice}"
-                        }
+                rsx! {
+                    span {
+                        key: "{i}",
+                        style: "{css}",
+                        // Not a CSS property: this build's Stylo has no
+                        // `font-kerning`. See `style::span_font_features`.
+                        "data-font-features": "{features}",
+                        "{slice}"
                     }
                 }
             }
         }
     }
+}
+
+/// Splits coalesced runs at byte `at` of the flattened text.
+///
+/// The marker was prefixed into the paragraph's inlines, so after resolution it
+/// sits at the front of the first run — usually *inside* it, since it resolves
+/// to the same properties as the text it precedes and [`coalesce`] then joins
+/// the two.
+///
+/// # The trailing tab does not survive the split
+///
+/// On the canvas path the marker's tab is what carries the text to the hanging
+/// indent. Here the marker cell's width does that, so the tab is not text: left
+/// in, it paints as a `.notdef` box, which is what the list fixture rendered
+/// before this existed.
+pub(super) fn split_runs(runs: Vec<Run>, at: usize) -> (Vec<Run>, Vec<Run>) {
+    let (mut marker, mut body) = (Vec::new(), Vec::new());
+    let mut consumed = 0usize;
+    for (css, features, text) in runs {
+        let remaining = at.saturating_sub(consumed);
+        consumed += text.len();
+        if remaining == 0 || !text.is_char_boundary(remaining.min(text.len())) {
+            // Past the marker, or an offset that is not a boundary of this text
+            // — which would mean it did not come from it. The run goes to the
+            // body whole rather than panicking mid-render: a marker rendered
+            // inline is visibly wrong, and a dead application is not.
+            body.push((css, features, text));
+        } else if remaining >= text.len() {
+            marker.push((css, features, text));
+        } else {
+            let (head, tail) = text.split_at(remaining);
+            marker.push((css.clone(), features, head.to_string()));
+            body.push((css, features, tail.to_string()));
+        }
+    }
+    for run in &mut marker {
+        run.2 = run.2.trim_end_matches('\t').to_string();
+    }
+    (marker, body)
 }
 
 /// Resolved spans as `(css, text)` pairs, with adjacent equal-CSS runs joined.
@@ -92,8 +184,8 @@ pub(super) fn coalesce(
     text: &str,
     spans: &[loki_layout::para::StyleSpan],
     families: &FamilyMap,
-) -> Vec<(String, &'static str, String)> {
-    let mut out: Vec<(String, &'static str, String)> = Vec::new();
+) -> Vec<Run> {
+    let mut out: Vec<Run> = Vec::new();
     for span in spans {
         let css = span_css(span, families);
         let features = super::style::span_font_features(span);

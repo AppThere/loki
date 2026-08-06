@@ -179,17 +179,101 @@ pub(super) fn resolved_para_css(p: &ResolvedParaProps) -> String {
         start = p.indent_start,
         end = p.indent_end,
     );
-    // Hanging wins over first-line when set, which is the model's own order:
-    // both write `text-indent`, and a hanging indent is the negative one.
-    if p.indent_hanging > 0.0 {
-        css.push_str(&format!("text-indent: -{}pt; ", p.indent_hanging));
-    } else if p.indent_first_line != 0.0 {
-        css.push_str(&format!("text-indent: {}pt; ", p.indent_first_line));
-    }
+    // No `text-indent`. See `hanging_row_css` for the measurement: this stack
+    // does not implement the property, so emitting it renders a first-line or
+    // hanging indent flush — silently, which is worse than not emitting it,
+    // because a declaration reads as a fix. `TODO(dom-reflow-text-indent)`: a
+    // *positive* first-line indent could be a zero-height inline-block spacer
+    // at the head of the runs (an inline box is how an `<img>` reaches this
+    // inline flow); a hanging one on a paragraph with no marker cannot be
+    // expressed at all, because no box occupies the space it opens up.
     if let Some(bg) = p.background_color {
         css.push_str(&format!("background: {}; ", css_layout_color(bg)));
     }
     css
+}
+
+/// The row that carries a list item's marker beside its text.
+///
+/// # Why a row, and not the hanging indent the model states
+///
+/// A hanging indent is `text-indent: -Xpt`, and the marker reaches the item's
+/// own indent through a **tab stop**. This stack has neither: `parley` 0.6's
+/// `TextStyle` carries no indent and no tab stop, and the vendored `blitz-dom`'s
+/// `stylo_to_parley` never reads `text-indent` or `tab-size` — so both
+/// declarations are dropped as unknown, and a list rendered with them is a list
+/// with no hanging indent whose marker is followed by a literal tab character.
+///
+/// Measured on the list fixture before this existed (ADR-0017 §5.9): every line
+/// of every item, first and continuation alike, began at the same x — 57 px,
+/// which is the paragraph's `padding-inline-start` and nothing else — and the
+/// marker's tab painted as a `.notdef` box.
+///
+/// So the hanging space becomes a **box**: a flex row indented to
+/// `indent_start - indent_hanging`, a marker cell exactly `indent_hanging` wide,
+/// and the text in what is left. The text then starts at `indent_start` on every
+/// line and every line has the same width — which is exactly what the canvas
+/// path's tab stop achieves, so the two break in the same places.
+///
+/// The paragraph's outside space and its background move here (see
+/// [`hanging_body_props`]): margins do not collapse into a flex item, so a
+/// `space_before` left on the `<p>` would push its first line below the
+/// marker's.
+#[must_use]
+pub(super) fn hanging_row_css(p: &ResolvedParaProps) -> String {
+    let mut css = format!(
+        "display: flex; align-items: flex-start; margin: {before}pt 0 {after}pt 0; \
+         padding-inline-start: {lead}pt; ",
+        before = p.space_before,
+        after = p.space_after,
+        // Clamped because CSS padding cannot be negative. It only binds when a
+        // list's indent is smaller than its own hanging step, which
+        // `synthesize_list_item_para` never produces — the marker would then sit
+        // left of the column on the canvas path and flush against it here.
+        lead = (p.indent_start - p.indent_hanging).max(0.0),
+    );
+    if let Some(bg) = p.background_color {
+        css.push_str(&format!("background: {}; ", css_layout_color(bg)));
+    }
+    css
+}
+
+/// The marker cell of a [`hanging_row_css`] row.
+///
+/// `min-width` rather than `width`: a marker wider than the hanging step pushes
+/// the text right instead of overlapping it. That is *not* what the canvas path
+/// does — there the tab advances to the next stop on the default grid, which is
+/// a different number — so a marker wider than the step is where the two part.
+/// `TODO(dom-reflow-wide-marker)`.
+#[must_use]
+pub(super) fn hanging_marker_css(p: &ResolvedParaProps) -> String {
+    format!("min-width: {}pt; flex-shrink: 0;", p.indent_hanging)
+}
+
+/// The text cell of a [`hanging_row_css`] row.
+///
+/// `min-width: 0` because a flex item's automatic minimum is its min-content
+/// width: one unbreakable word longer than the column would otherwise widen the
+/// row rather than overflow it, and the item would break at a width the canvas
+/// path never sees.
+pub(super) const HANGING_BODY_CSS: &str = "flex: 1; min-width: 0;";
+
+/// The paragraph inside a [`hanging_row_css`] row: everything the row does not
+/// already carry.
+///
+/// The indents go to zero because the row states them; the outside space and the
+/// background go to zero because the row paints them. Leaving either in both
+/// places is the same fact derived twice, and here it would be visible — the
+/// indent would apply on top of the row's.
+#[must_use]
+pub(super) fn hanging_body_props(p: &ResolvedParaProps) -> ResolvedParaProps {
+    let mut inner = p.clone();
+    inner.indent_start = 0.0;
+    inner.indent_hanging = 0.0;
+    inner.space_before = 0.0;
+    inner.space_after = 0.0;
+    inner.background_color = None;
+    inner
 }
 
 #[cfg(test)]

@@ -5,9 +5,10 @@
 //! # Coverage, stated rather than implied
 //!
 //! Paragraphs, headings, plain blocks, block quotes, code blocks, line blocks,
-//! the inline marks, **tables** (`super::table`) and a paragraph's **images**
-//! (`super::image`). **Not** lists, footnotes, fields, comments or revision
-//! marks — those reach the fallback below.
+//! the inline marks, **tables** (`super::table`), **lists** (`super::list`) and
+//! a paragraph's **images** (`super::image`). **Not** definition lists,
+//! footnotes, fields, comments or revision marks — those reach the fallback
+//! below.
 //!
 //! An unhandled block renders a visible **placeholder**, not nothing. This view
 //! exists to be compared against the canvas path, and a silently dropped table
@@ -151,7 +152,12 @@ pub(super) fn block_el(block: &Block, catalog: &StyleCatalog, families: &FamilyM
                 { super::table::table_el(t, catalog, families) }
             }
         },
-        Block::OrderedList(..) | Block::BulletList(_) => unsupported("list"),
+        // Rendered with `loki_layout`'s own marker and indent rules rather than
+        // as `<ul>`/`<ol>`, which would produce different ones. See `list`.
+        Block::OrderedList(attrs, items) => {
+            super::list::list_el(Some(attrs), items, 0.0, catalog, families)
+        }
+        Block::BulletList(items) => super::list::list_el(None, items, 0.0, catalog, families),
         _ => unsupported("block"),
     }
 }
@@ -162,43 +168,97 @@ pub(super) fn block_el(block: &Block, catalog: &StyleCatalog, families: &FamilyM
 /// that will be emitted — a collector that walked the catalog instead could miss
 /// one a direct run introduced, and a family that missed the map would be the
 /// only one still emitted unsubstituted.
+///
+/// # It has to walk everything [`block_el`] renders
+///
+/// A family this misses is emitted as the document *requested* it, which leaves
+/// Blitz to fall back by its own policy rather than `loki-layout`'s. Measured
+/// twice, the same way both times: a screenplay's headings (ADR-0017 §5.3), and
+/// then a whole document of **lists**, which this walked past because it only
+/// looked at top-level paragraphs — the canvas path set Arial as the bundled
+/// Arimo and the DOM path in Blitz's default sans, about 14 % wider, so every
+/// item wrapped one line early (§5.9).
 pub(super) fn requested_families(doc: &loki_doc_model::document::Document) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for section in &doc.sections {
-        for block in &section.blocks {
-            // The same synthesis the renderer applies, so a heading's family
-            // reaches the map. Collecting only `StyledPara` would leave every
-            // heading emitting its requested family unsubstituted — the one run
-            // still rendered with a policy that is not ours.
-            let owned;
-            let para = match block {
-                Block::StyledPara(p) => p,
-                Block::Para(items) | Block::Plain(items) => {
-                    owned = loki_layout::flow::synthesize_plain_para(items);
-                    &owned
+        collect_families(&section.blocks, &doc.styles, &mut out);
+    }
+    out
+}
+
+/// [`requested_families`] over a run of blocks, recursing into the containers.
+fn collect_families(blocks: &[Block], catalog: &StyleCatalog, out: &mut Vec<String>) {
+    for block in blocks {
+        // The same synthesis the renderer applies, so a heading's family reaches
+        // the map. Collecting only `StyledPara` would leave every heading
+        // emitting its requested family unsubstituted — the one run still
+        // rendered with a policy that is not ours.
+        let owned;
+        let para = match block {
+            Block::StyledPara(p) => p,
+            Block::Para(items) | Block::Plain(items) => {
+                owned = loki_layout::flow::synthesize_plain_para(items);
+                &owned
+            }
+            Block::Heading(level, attr, items) => {
+                owned = loki_layout::flow::synthesize_heading_para(*level, attr, items);
+                &owned
+            }
+            Block::BlockQuote(kids) => {
+                collect_families(kids, catalog, out);
+                continue;
+            }
+            // A list item's marker adds no family of its own — it resolves with
+            // the paragraph it is prefixed to — so the raw item paragraphs are
+            // the whole answer and the synthesis can be skipped here.
+            Block::OrderedList(_, items) | Block::BulletList(items) => {
+                for item in items {
+                    collect_families(item, catalog, out);
                 }
-                Block::Heading(level, attr, items) => {
-                    owned = loki_layout::flow::synthesize_heading_para(*level, attr, items);
-                    &owned
+                continue;
+            }
+            Block::Table(table) => {
+                for row in table_rows(table) {
+                    for cell in &row.cells {
+                        collect_families(&cell.blocks, catalog, out);
+                    }
                 }
-                _ => continue,
-            };
-            let mut notes = 0u32;
-            let (_, spans, _, _) = loki_layout::resolve::flatten_paragraph_with_base(
-                para,
-                &doc.styles,
-                &mut notes,
-                None,
-                loki_layout::RevisionDisplay::default(),
-            );
-            for span in &spans {
-                if let Some(name) = &span.font_name
-                    && !out.iter().any(|n| n == name)
-                {
-                    out.push(name.clone());
-                }
+                continue;
+            }
+            _ => continue,
+        };
+        let mut notes = 0u32;
+        let (_, spans, _, _) = loki_layout::resolve::flatten_paragraph_with_base(
+            para,
+            catalog,
+            &mut notes,
+            None,
+            loki_layout::RevisionDisplay::default(),
+        );
+        for span in &spans {
+            if let Some(name) = &span.font_name
+                && !out.iter().any(|n| n == name)
+            {
+                out.push(name.clone());
             }
         }
     }
-    out
+}
+
+/// Every row of a table, in the order [`super::table::table_el`] renders them.
+fn table_rows(
+    table: &loki_doc_model::content::table::Table,
+) -> Vec<&loki_doc_model::content::table::Row> {
+    table
+        .head
+        .rows
+        .iter()
+        .chain(
+            table
+                .bodies
+                .iter()
+                .flat_map(|b| b.head_rows.iter().chain(b.body_rows.iter())),
+        )
+        .chain(table.foot.rows.iter())
+        .collect()
 }

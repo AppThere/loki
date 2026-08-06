@@ -853,10 +853,23 @@ styledlinebreak)
   #
   # `LB_FIXTURE` selects the document (both halves read it): `screenplay`, or
   # `mixed`, or `mixed:<case>` for one of weight/italic/size/family/charstyle/
-  # spacing. Run the six cases in a loop to attribute a disagreement:
+  # spacing, or `lists`. Run the six mixed cases in a loop to attribute a
+  # disagreement:
   #
   #   for c in weight italic size family charstyle spacing; do
   #     LB_FIXTURE=mixed:$c scripts/sitting/run.sh styledlinebreak; done
+  #
+  # A fixture with many transitions does not fit one row — `lists` has 18, and
+  # the ~20 000 px window that needs takes wgpu's `create_texture` down. Run it
+  # in batches, each **ending at the same width**, and pass that width to
+  # `CALIBRATE`: a batch calibrated on its own widest column hides a constant
+  # disagreement inside the constant, and one shared width shows the constant is
+  # a property of the document rather than of the batch (it came out 184 px for
+  # all five batches of `lists`).
+  #
+  #   for b in "278,279,284,285,288,289,308,720" ...; do
+  #     LB_FIXTURE=lists STYLED_WIDTHS="$b" CALIBRATE=720:17 \
+  #       PROBE_HEIGHT=1600 scripts/sitting/run.sh styledlinebreak; done
   BIN="$ROOT/target/debug/examples/styled_linebreak_probe"
   SWEEP="$ROOT/target/debug/examples/styled_linebreak_sweep"
   if [ ! -x "$BIN" ] || [ ! -x "$SWEEP" ]; then

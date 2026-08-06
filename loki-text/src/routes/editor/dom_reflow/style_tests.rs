@@ -8,7 +8,10 @@
 //! here is a difference between the two paths and nothing else.
 
 use super::super::content::FamilyMap;
-use super::{css_layout_color, resolved_para_css, span_css};
+use super::{
+    css_layout_color, hanging_body_props, hanging_marker_css, hanging_row_css, resolved_para_css,
+    span_css,
+};
 use loki_layout::color::LayoutColor;
 use loki_layout::para::{ResolvedParaProps, StyleSpan};
 
@@ -208,34 +211,88 @@ fn a_resolved_paragraph_emits_its_geometry() {
     assert!(css.contains("text-align:"), "{css}");
 }
 
-/// **A hanging indent wins over a first-line one**, which is the model's own
-/// order. Both write `text-indent`, so emitting each would let the later one
-/// silently replace the earlier.
+/// **`text-indent` is never emitted, at any value**, because this stack does not
+/// implement it: `parley` 0.6 carries no indent and `blitz-dom`'s
+/// `stylo_to_parley` never reads the property, so a declaration is dropped as
+/// unknown and the paragraph renders flush.
+///
+/// This is the marking, not a preference. A version that emitted it looked
+/// correct in the CSS and rendered a list with no hanging indent at all
+/// (measured, ADR-0017 §5.9) — so the failure mode is precisely a declaration
+/// that reads as a fix, and the only mechanical guard against re-adding one is a
+/// test that fails when it comes back.
 #[test]
-fn a_hanging_indent_beats_a_first_line_one() {
-    let both = resolved_para_css(&ResolvedParaProps {
-        indent_first_line: 18.0,
-        indent_hanging: 36.0,
-        ..ResolvedParaProps::default()
-    });
-    assert_eq!(
-        both.matches("text-indent").count(),
-        1,
-        "two text-indent declarations: {both}"
-    );
-    assert!(both.contains("text-indent: -36pt"), "{both}");
+fn no_indent_is_emitted_as_text_indent_because_the_renderer_ignores_it() {
+    for p in [
+        ResolvedParaProps {
+            indent_first_line: 18.0,
+            ..ResolvedParaProps::default()
+        },
+        ResolvedParaProps {
+            indent_hanging: 36.0,
+            ..ResolvedParaProps::default()
+        },
+        ResolvedParaProps {
+            indent_first_line: 18.0,
+            indent_hanging: 36.0,
+            ..ResolvedParaProps::default()
+        },
+        ResolvedParaProps::default(),
+    ] {
+        let css = resolved_para_css(&p);
+        assert!(!css.contains("text-indent"), "{css}");
+    }
+}
 
-    // First-line alone is the positive one.
-    let first = resolved_para_css(&ResolvedParaProps {
-        indent_first_line: 18.0,
+/// **The hanging space is a box of exactly the hanging step**, and the row is
+/// indented by what is left — so the text starts at `indent_start` on every
+/// line, which is where the canvas path's tab stop puts it.
+#[test]
+fn a_hanging_marker_row_puts_the_text_at_the_paragraphs_indent() {
+    let p = ResolvedParaProps {
+        indent_start: 36.0,
+        indent_hanging: 18.0,
+        space_before: 6.0,
+        space_after: 12.0,
         ..ResolvedParaProps::default()
-    });
-    assert!(first.contains("text-indent: 18pt"), "{first}");
+    };
+    let row = hanging_row_css(&p);
+    assert!(row.contains("display: flex"), "{row}");
+    // 36 − 18: the row starts where the marker does, and the marker's own cell
+    // carries the text the rest of the way in.
+    assert!(row.contains("padding-inline-start: 18pt"), "{row}");
+    assert!(row.contains("margin: 6pt 0 12pt 0"), "{row}");
+    assert!(hanging_marker_css(&p).contains("min-width: 18pt"), "marker");
+    // The inversion: a cell that could shrink would let a long first word pull
+    // the text left of the indent, which is the defect the box exists to fix.
+    assert!(hanging_marker_css(&p).contains("flex-shrink: 0"), "marker");
+}
 
-    // Neither: no declaration at all, rather than a zero that would override an
-    // ancestor's.
-    let none = resolved_para_css(&ResolvedParaProps::default());
-    assert!(!none.contains("text-indent"), "{none}");
+/// **The paragraph inside the row carries none of what the row carries.** Both
+/// would apply, and the indent would be counted twice — the same defect the
+/// nested-list wrapper had.
+#[test]
+fn the_row_and_its_paragraph_do_not_both_state_the_geometry() {
+    let p = ResolvedParaProps {
+        indent_start: 36.0,
+        indent_end: 9.0,
+        indent_hanging: 18.0,
+        space_before: 6.0,
+        space_after: 12.0,
+        background_color: Some(LayoutColor::new(1.0, 0.0, 0.0, 1.0)),
+        ..ResolvedParaProps::default()
+    };
+    let inner = resolved_para_css(&hanging_body_props(&p));
+    assert!(inner.contains("padding-inline-start: 0pt"), "{inner}");
+    assert!(inner.contains("margin: 0pt 0 0pt 0"), "{inner}");
+    assert!(!inner.contains("background"), "{inner}");
+    // What the row does *not* carry stays on the paragraph: the right indent is
+    // the text column's, not the row's, and alignment is per line.
+    assert!(inner.contains("padding-inline-end: 9pt"), "{inner}");
+    assert!(inner.contains("text-align:"), "{inner}");
+    // …and the row does carry the background, so it spans the marker too — the
+    // canvas path paints one box for the whole paragraph.
+    assert!(hanging_row_css(&p).contains("background"), "row");
 }
 
 /// **A requested family is emitted as the one that will actually be used.**
