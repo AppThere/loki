@@ -298,9 +298,27 @@ fn layout_paragraph_uncached(
         };
     }
 
-    // NOTE(indent-hanging-width): Parley 0.6 exposes no per-line width control,
-    // so a hanging-indent paragraph's first line wraps at the same `line_w` as
-    // the rest, getting `indent_hanging` px less space. Fidelity gap #8 (partial).
+    // NOTE(indent-hanging-width): a hanging-indent paragraph's first line wraps
+    // at the same `line_w` as the rest, so it holds `indent_hanging` less text
+    // than it should — it is *placed* that far to the left (see the per-line
+    // `indent_x` below) without being given the room that opens up. Fidelity
+    // gap #8 (partial).
+    //
+    // **The reason first written here — "Parley 0.6 exposes no per-line width
+    // control" — is no longer true.** This crate is on parley 0.10, which has
+    // `BreakLines::set_line_max_advance` (break line 0 at `line_w +
+    // indent_hanging`, the rest at `line_w`) and, better, a native
+    // `Layout::set_indent(indent_hanging, IndentOptions { hanging: true })`
+    // that expresses the whole rule — at which point the manual `indent_x`
+    // shift below becomes the double application.
+    //
+    // Measured 2026-08-06 (ADR-0017 §5.9): this is the whole of the residual
+    // between this path and the DOM reflow view, which gets it right because
+    // the marker sits in its own box. On a 278 px column a nested item's first
+    // line filled 170.06 pt of the 172.50 pt it was given, and the word it then
+    // dropped needed 190.08 pt — inside the 190.50 pt it was entitled to. The
+    // fix moves line breaks in every list and every hanging paragraph, so it
+    // wants its own comparison sweep rather than a rider on one.
     let line_w = (available_width - para_props.indent_start - para_props.indent_end).max(0.0);
 
     // ── Tab stop expansion (gap #7) ───────────────────────────────────────────

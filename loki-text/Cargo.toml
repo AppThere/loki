@@ -124,6 +124,16 @@ label = "Loki Text"
 path = "../target/android-pkg/signing.keystore"
 keystore_password = "android"
 
+[dev-dependencies]
+# **For the headless layout probes only** (`hanging_row_geometry`), which lay a
+# tree out through the very engine the app renders with and read its boxes and
+# line breaks as numbers instead of photographing them. `blitz-dom` resolves to
+# the vendored copy via the workspace `[patch.crates-io]`, so the probe measures
+# the patched engine and not a crates.io one.
+blitz-dom    = "0.2.4"
+blitz-html   = "0.2.0"
+blitz-traits = "0.2.0"
+
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { workspace = true }
 blitz-shell = "0.2.3"

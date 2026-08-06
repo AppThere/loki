@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 | Field | Value |
 | --- | --- |
-| Status | **Accepted** — 2026-08-03. Direction agreed; view built behind a flag (§5). **Line breaks match the canvas path on every measured fixture and width** (§5.3–§5.6); virtualisation measured and does not bite (§5.7); lists agree up to one pixel of column, with the remaining difference attributed to a canvas-path defect (§5.9) |
+| Status | **Accepted** — 2026-08-03. Direction agreed; view built behind a flag (§5). **Line breaks match the canvas path on every measured fixture and width** (§5.3–§5.6); virtualisation measured and does not bite (§5.7); lists agree except where the canvas path is itself wrong — two located defects, both canvas-side (§5.9, §5.9a) |
 | Drivers | Spec 08 T7.0 (probe P1), T7.2, T7.3, T7.4 |
 | Affects | `loki-renderer` (reflow path), `loki-layout` (reflow mode), `loki-text` editor route |
 | Makes moot | The ambient reading-measure cap added for T7.2 (`loki_renderer::measure`) |
@@ -607,19 +607,83 @@ field means two things — an indent inside the measure for a list or a quote, a
 absolute page x for a table cell — and separating them moves line breaks in
 every document with a quote or a multi-block item, which wants its own sweep.
 
-*Where it stands.* All 36 measured DOM counts are reproduced exactly by the
+*Where it stood.* All 36 measured DOM counts were reproduced exactly by the
 canvas's own per-paragraph counts under two corrections and no third: (a) the
 item's second paragraph measured at `column − indent` rather than `column`, and
 (b) the DOM breaking as though its column were **one CSS pixel wider** — its
-transition sits one px below the canvas's at every one of the nine transitions
-where they differ, and at all nine `DOM(w) = canvas(w+1)`.
+transition sat one px below the canvas's at all nine transitions where they
+differed, and `DOM(w) = canvas(w+1)` at every one of them.
 
-**Not established:** the mechanism of (b). It appears on this fixture and not on
-`screenplay` or `mixed`, which agree at every width, so the flex row is the
-obvious suspect — but expressing the marker cell's width in `px` rather than
-`pt` changes nothing, which rules out that conversion. *What would settle it:*
-the §5.6 box ruler applied to the row's two cells, reading their resolved widths
-directly instead of inferring them from where the text breaks.
+### 5.9a The residual was not a pixel (2026-08-06)
+
+**(b) was a fit, not a mechanism**, and reading counts is what made it look like
+one. The real difference is **18 pt on the first line only**, which costs a whole
+line at some widths and none at others — and an intermittent whole-line
+difference is exactly what a one-pixel column shift also produces in an
+aggregate count. This is rule 3's fourth failure: an instrument correctly placed,
+reporting a quantity *adjacent* to the one asked for.
+
+**The instrument that settled it** is `loki-text/examples/hanging_row_geometry`,
+which lays a tree out through the same vendored `blitz-dom` the app renders with
+— headlessly, via `blitz-html` — and prints each box's resolved geometry and each
+line's advance and text, beside `loki_layout::layout_paragraph`'s answer for the
+same paragraph at the same column. Boxes and breaks as numbers, from both
+engines, on one page. No window, no Xvfb, no pixels.
+
+*It exonerated the flex row first.* The row's `<p>` and a plain `<p>` whose
+indent is a `padding-inline-start` break **identically**, line for line, at both
+indent levels — same ranges, same advances. The row resolves to exactly the
+boxes it should (`cell` 24.0000 px, `body` 254.0000 px of a 278 px column, and
+`unrounded` equal to `final` throughout, so Taffy's rounding is not in it
+either).
+
+*What it found instead is on the canvas side.* A hanging paragraph's first line
+is **placed** `indent_hanging` further left — the marker hangs correctly — but it
+is **broken at the same width as every other line**, so the marker eats the first
+line's text budget rather than the hanging space. `NOTE(indent-hanging-width)` in
+`loki-layout/src/para.rs` has said so all along; it is fidelity gap #8, partial.
+
+Two independent instances, each discriminating rather than fitted — in both, the
+first line filled the budget it was given to within half a point, and the word it
+then dropped fits the budget it was entitled to and not the one it got:
+
+| Column | Indent | Line 0 given | Line 0 used | Entitled | Line 0 + the dropped word |
+|---|---|---|---|---|---|
+| 278 px | 36 pt (nested) | 172.500 pt | 170.057 | 190.500 pt | 190.08 — fits *entitled*, not *given* |
+| 374 px | 18 pt (top level) | 262.500 pt | 262.125 | 280.500 pt | 275.47 — fits *entitled*, not *given* |
+
+*And the inversion.* Take the hanging indent away — and with it the marker,
+whose tab is only a tab stop because of the hanging indent — and lay the same
+text out at the same measure on both engines. They agree on **all nine line
+breaks, byte for byte**, and on every advance to the printed precision:
+`175.412 / 170.109 / 170.098 / 162.779 / …` pt on the canvas against
+`233.883 / 226.812 / 226.797 / 217.039 / …` px in the DOM, which is the same
+number in the other unit. So the disagreement is not metrics, not rounding, not
+the row, and not parley 0.6 against 0.10: it is present when the paragraph hangs
+and absent when it does not. (That is also a sharper re-confirmation of §5.6
+than §5.6 had — the advances agree exactly, not merely to the pixel a box is
+rounded to.)
+
+So **the DOM path is right and the canvas path is short**, for the same reason as
+(a): the DOM gives the first line its proper measure because the marker occupies
+its own box. It also explains why `screenplay` and `mixed` agree at every width —
+neither has a hanging paragraph — and why the residual could not be found in the
+row.
+
+**The stated reason for gap #8 is stale.** The note says "Parley 0.6 exposes no
+per-line width control"; this crate is on parley **0.10**, which has
+`BreakLines::set_line_max_advance` (break line 0 at `line_w + indent_hanging`,
+the rest at `line_w`) and, better, a native `Layout::set_indent(amount,
+IndentOptions { hanging: true })` that states the whole rule — at which point
+`para.rs`'s manual per-line `indent_x` shift becomes a double application and
+comes out.
+
+**Not done, deliberately:** the fix. It moves line breaks in every list and every
+hanging-indent paragraph on the canvas path, and touches the tab-stop probe and
+the editing hit-test offsets that read the same geometry — so it wants its own
+comparison sweep and an ACID pass, not a rider on this one. Both residuals now
+outstanding are canvas defects with the DOM path as the reference:
+`TODO(list-indent-measure)` and gap #8.
 
 ### 5.8 Revised sequencing
 
@@ -649,8 +713,10 @@ directly instead of inferring them from where the text breaks.
 11. ~~Lists.~~ **Done 2026-08-06 — §5.9. Three causes: `text-indent`/`tab-size`
     are inert in this stack (the hanging space is now a box), the family
     collector did not walk into lists, and a canvas-path indent defect the
-    comparison found (`TODO(list-indent-measure)`). The residual is one CSS
-    pixel of column, unexplained.**
+    comparison found (`TODO(list-indent-measure)`). The residual is not a pixel
+    — §5.9a: the canvas breaks a hanging paragraph's first line at the same
+    width as the rest, 18 pt short. Both remaining differences are canvas
+    defects, with the DOM path as the reference.**
 12. Remaining: the editing surface (`TODO(dom-reflow-editing)`) — after which
     the DOM view could replace the canvas one and `loki_renderer::measure` goes
     with it (§3.1, §4).

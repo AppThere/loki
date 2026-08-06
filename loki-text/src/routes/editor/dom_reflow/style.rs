@@ -158,7 +158,7 @@ pub fn span_font_features(s: &StyleSpan) -> &'static str {
 /// struct's own docs say they are "handled by the caller, not included in
 /// `ParagraphLayout::height`" — and a CSS margin is that same outside space.
 #[must_use]
-pub(super) fn resolved_para_css(p: &ResolvedParaProps) -> String {
+pub fn resolved_para_css(p: &ResolvedParaProps) -> String {
     // Matched on the `Debug` form: `parley::Alignment` is not re-exported by
     // `loki-layout` and this crate does not depend on Parley directly. Adding a
     // Parley dependency to the app for one enum would put a shaping crate in the
@@ -220,7 +220,7 @@ pub(super) fn resolved_para_css(p: &ResolvedParaProps) -> String {
 /// `space_before` left on the `<p>` would push its first line below the
 /// marker's.
 #[must_use]
-pub(super) fn hanging_row_css(p: &ResolvedParaProps) -> String {
+pub fn hanging_row_css(p: &ResolvedParaProps) -> String {
     let mut css = format!(
         "display: flex; align-items: flex-start; margin: {before}pt 0 {after}pt 0; \
          padding-inline-start: {lead}pt; ",
@@ -246,7 +246,7 @@ pub(super) fn hanging_row_css(p: &ResolvedParaProps) -> String {
 /// a different number — so a marker wider than the step is where the two part.
 /// `TODO(dom-reflow-wide-marker)`.
 #[must_use]
-pub(super) fn hanging_marker_css(p: &ResolvedParaProps) -> String {
+pub fn hanging_marker_css(p: &ResolvedParaProps) -> String {
     format!("min-width: {}pt; flex-shrink: 0;", p.indent_hanging)
 }
 
@@ -256,7 +256,7 @@ pub(super) fn hanging_marker_css(p: &ResolvedParaProps) -> String {
 /// width: one unbreakable word longer than the column would otherwise widen the
 /// row rather than overflow it, and the item would break at a width the canvas
 /// path never sees.
-pub(super) const HANGING_BODY_CSS: &str = "flex: 1; min-width: 0;";
+pub const HANGING_BODY_CSS: &str = "flex: 1; min-width: 0;";
 
 /// The paragraph inside a [`hanging_row_css`] row: everything the row does not
 /// already carry.
@@ -266,7 +266,7 @@ pub(super) const HANGING_BODY_CSS: &str = "flex: 1; min-width: 0;";
 /// places is the same fact derived twice, and here it would be visible — the
 /// indent would apply on top of the row's.
 #[must_use]
-pub(super) fn hanging_body_props(p: &ResolvedParaProps) -> ResolvedParaProps {
+pub fn hanging_body_props(p: &ResolvedParaProps) -> ResolvedParaProps {
     let mut inner = p.clone();
     inner.indent_start = 0.0;
     inner.indent_hanging = 0.0;
