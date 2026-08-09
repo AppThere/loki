@@ -16,11 +16,14 @@ use crate::error::StoreError;
 /// `{doc_id}/blob/{blob_id}` for attachments. The backing [`ObjectStore`] is
 /// chosen by config URL (Hetzner Object Storage or MinIO — ADR-C016).
 ///
-/// `TODO(server-blob-at-rest)`: the ADR-C014/C016 at-rest encryption (SSE-C or
-/// app-layer AEAD) is **not yet applied here** — `put_*` writes plaintext and no
-/// SSE-C config is threaded through. Until it is, operators must rely on
-/// volume/bucket-level encryption; do not read this type as providing at-rest
-/// encryption itself.
+/// At-rest encryption (ADR-C014/C016) is applied by the *caller*, not here:
+/// this type stores whatever bytes it is handed. For Tier 0/1 **attachments**
+/// the API layer (`loki-server-api` `routes::blobs`) now seals with the
+/// per-document DEK before `put_attachment` and unseals after `get`, so those
+/// objects are ciphertext at rest. `TODO(server-blob-at-rest)`: **snapshots**
+/// (`put_snapshot`) are still written in the clear — the compactor path is not
+/// yet sealed — so operators must rely on volume/bucket-level encryption for
+/// snapshot objects until it is.
 #[derive(Clone)]
 pub struct BlobStore {
     inner: Arc<dyn ObjectStore>,

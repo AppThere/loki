@@ -39,22 +39,28 @@ impl IdentityVerifier for StubVerifier {
     }
 }
 
-fn test_router() -> Router {
+fn test_router_with_object_store() -> (Router, Arc<dyn object_store::ObjectStore>) {
+    let object_store: Arc<dyn object_store::ObjectStore> = Arc::new(InMemory::new());
     let stores = MemoryStores::new().into_stores();
     let collab = CollabState::new(
         Arc::clone(&stores.oplog),
         Arc::new(InMemoryBus::new()),
         Uuid::new_v4(),
     );
-    router(ApiState {
+    let app = router(ApiState {
         stores,
-        blob: BlobStore::new(Arc::new(InMemory::new())),
+        blob: BlobStore::new(Arc::clone(&object_store)),
         collab,
         verifier: Arc::new(StubVerifier),
         tier_kek: Arc::new(AeadKeyWrap::new(Kek::generate())),
         residency: Residency::parse("fsn1").unwrap(),
         default_tier: EncryptionTier::TransportAtRest,
-    })
+    });
+    (app, object_store)
+}
+
+fn test_router() -> Router {
+    test_router_with_object_store().0
 }
 
 async fn send(
@@ -427,4 +433,71 @@ async fn client_snapshot_upload_is_forward_only() {
     let path5 = format!("/v1/documents/{doc_id}/snapshot?up_to=5");
     let (status, _) = send_bytes(&app, "PUT", &path5, "bob", b"snap").await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn tier01_attachments_are_sealed_at_rest_and_round_trip() {
+    let (app, store) = test_router_with_object_store();
+
+    // A Tier-0 workspace/doc (default_tier = transport-at-rest) carries a
+    // server-held per-document DEK, so the server seals attachments at rest.
+    let (_, ws) = send(
+        &app,
+        "POST",
+        "/v1/workspaces",
+        Some("alice"),
+        Some(json!({"name": "Docs"})),
+    )
+    .await;
+    let ws_id = ws["id"].as_str().unwrap().to_owned();
+    let (_, doc) = send(
+        &app,
+        "POST",
+        &format!("/v1/workspaces/{ws_id}/documents"),
+        Some("alice"),
+        Some(json!({"title": "Report"})),
+    )
+    .await;
+    let doc_id = doc["id"].as_str().unwrap().to_owned();
+
+    let payload = b"attachment plaintext \x00\x01\x02 secret".to_vec();
+    let (status, created) = send_bytes(
+        &app,
+        "POST",
+        &format!("/v1/documents/{doc_id}/blobs"),
+        "alice",
+        &payload,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let key = created["key"].as_str().unwrap().to_owned();
+    let blob_id = key.rsplit('/').next().unwrap().to_owned();
+
+    // At rest the stored object is ciphertext, never the plaintext — the AEAD
+    // nonce + tag also make it strictly longer than the input.
+    let raw = store
+        .get(&object_store::path::Path::from(key))
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    assert_ne!(raw.as_ref(), payload.as_slice(), "stored object is sealed");
+    assert!(raw.len() > payload.len(), "AEAD adds a nonce + tag");
+
+    // Download unseals it: a byte-exact round-trip.
+    let dl = Request::builder()
+        .method("GET")
+        .uri(format!("/v1/documents/{doc_id}/blobs/{blob_id}"))
+        .header(header::AUTHORIZATION, "Bearer alice")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(dl).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let got = resp.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(
+        got.as_ref(),
+        payload.as_slice(),
+        "download == uploaded bytes"
+    );
 }

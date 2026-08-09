@@ -171,9 +171,12 @@ a tier-specific **KEK**:
 - **Tier 0.** TLS 1.3 in transit. At rest: encrypted Postgres volume (LUKS/pgcrypto) and
   **SSE-C or app-layer AEAD** for object storage — needed because Hetzner Object Storage
   has **no default at-rest encryption**. Baseline; all features available. *(Implementation
-  status: object-storage at-rest encryption is **not yet wired** — `BlobStore` writes plaintext
-  and there is no SSE-C config field; `TODO(server-blob-at-rest)`. Until then operators must rely
-  on volume/bucket-level encryption at the storage layer.)*
+  status: app-layer AEAD is wired for **attachments** — the API layer
+  (`loki-server-api` `routes::blobs`) seals each Tier 0/1 attachment with the
+  per-document DEK (AAD = object key) before `put_attachment` and unseals it on
+  download. **Snapshots** are still written in the clear (`TODO(server-blob-at-rest)`,
+  the compactor path); until that is sealed operators must rely on
+  volume/bucket-level encryption for snapshot objects.)*
 - **Tier 1 (CMK).** Per-document DEK wrapped by a customer-controlled KEK in their KMS/HSM.
   The server decrypts *inside the customer's trust boundary* to run server-side features. Keys
   never leave the customer's jurisdiction. This is the sovereignty sweet spot: confidentiality
