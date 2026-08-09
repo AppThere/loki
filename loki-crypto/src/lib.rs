@@ -2,9 +2,12 @@
 
 //! Envelope encryption and crypto-agile key wrapping (ADR-C014).
 //!
-//! Every document has a per-document **DEK** (data-encryption key). Content
-//! is sealed with the DEK via XChaCha20-Poly1305. The DEK itself is wrapped
-//! by a tier-specific **KEK** through the [`KeyWrap`] trait:
+//! Every document has a per-document **DEK** (data-encryption key). [`Dek::seal`]
+//! seals content with the DEK via XChaCha20-Poly1305 — the primitive intended
+//! for **Tier-2, client-side** content encryption; the server does not seal
+//! Tier-0/1 content (it sees plaintext by design, ADR-C014), so on the server
+//! the DEK is used only for key-wrapping and crypto-shred metadata. The DEK is
+//! wrapped by a tier-specific **KEK** through the [`KeyWrap`] trait:
 //!
 //! - Tier 0/1: a symmetric KEK ([`AeadKeyWrap`]) held by the platform KMS
 //!   (Tier 0) or the customer's KMS/HSM (Tier 1).

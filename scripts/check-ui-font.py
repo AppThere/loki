@@ -66,7 +66,7 @@ def load_allowlist() -> set[str]:
     if not ALLOWLIST_FILE.exists():
         return set()
     out = set()
-    for raw in ALLOWLIST_FILE.read_text().splitlines():
+    for raw in ALLOWLIST_FILE.read_text(encoding="utf-8").splitlines():
         line = raw.split("#", 1)[0].strip()
         if line:
             out.add(line)
@@ -74,6 +74,11 @@ def load_allowlist() -> set[str]:
 
 
 def main() -> int:
+    # The report uses non-ASCII glyphs (✗, —); force UTF-8 output so a violation
+    # message does not itself crash on a cp1252 console (Windows-local runs).
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     allow = load_allowlist()
     violations: list[str] = []
     seen: set[str] = set()
@@ -83,7 +88,9 @@ def main() -> int:
             rel = path.relative_to(REPO).as_posix()
             if rel == THE_DECLARATION or rel.endswith("_tests.rs"):
                 continue
-            for n, line in enumerate(path.read_text().splitlines(), 1):
+            for n, line in enumerate(
+                path.read_text(encoding="utf-8", errors="replace").splitlines(), 1
+            ):
                 # Prose about the property is not a declaration of it.
                 stripped = line.lstrip()
                 if stripped.startswith("//"):

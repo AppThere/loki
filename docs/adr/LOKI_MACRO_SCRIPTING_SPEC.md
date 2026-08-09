@@ -482,9 +482,15 @@ asserting each row raises `ErrFeatureRefused` (§12).
   budget (config constant, order 10⁸ steps) — exhausting it suspends with
   a "macro is taking a long time — Continue / Stop" infobar. UDFs get a
   much smaller fixed budget with **no** continue option.
-- **Memory caps:** interpreter heap (strings, arrays, objects) accounted
-  and capped (order 256 MiB); exceeding → runtime error, not OOM.
-- **Recursion/depth caps** and per-run **wall-clock watchdog**.
+- **Memory caps:** *(not yet implemented as described — `TODO(macro-heap-caps)`.)*
+  There is currently no interpreter-heap **byte** accounting; the only bound is a
+  per-array element-count cap (`MAX_ELEMENTS`), so an unbounded string concat or
+  `String(n)`/`Space(n)` can still OOM rather than raising a runtime error. The
+  intended design is to account strings/arrays/objects against an order-256-MiB
+  budget and raise a runtime error (not OOM) on exceed.
+- **Recursion/depth caps.** *(A per-run **wall-clock watchdog** is not
+  implemented — `TODO(macro-watchdog)`; a run is bounded by fuel metering, the
+  always-available **Stop**, and the 30 s per-HTTP-request timeout.)*
 - **Threading:** macros execute on a worker thread; the UI thread renders
   progress and the always-available **Stop** control. Document mutation
   batches apply via the normal signal path on the UI thread.

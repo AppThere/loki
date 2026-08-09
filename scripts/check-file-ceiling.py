@@ -139,6 +139,11 @@ def claude_md_drift(baseline: dict[str, int]) -> list[str]:
 
 
 def main() -> int:
+    # The report uses a non-ASCII glyph (✗); force UTF-8 output so a violation
+    # message does not itself crash on a cp1252 console (Windows-local runs).
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     counts = production_files()
     if "--update" in sys.argv:
         write_baseline(counts)

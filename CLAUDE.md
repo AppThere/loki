@@ -297,9 +297,9 @@ file does not. Three techniques (the third added 2026-07-08):
 | File | Current lines | Priority |
 |---|---|---|
 | `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1013 | High |
-| `loki-text/src/routes/editor/editor_inner.rs` | 800 | High |
-| `loki-layout/src/para.rs` | 767 | Med |
-| `loki-text/src/routes/editor/editor_canvas.rs` | 432 | Low |
+| `loki-text/src/routes/editor/editor_inner.rs` | 798 | High |
+| `loki-layout/src/para.rs` | 752 | Med |
+| `loki-text/src/routes/editor/editor_canvas.rs` | 336 | Low |
 
 *(The whole baseline, not the worst of it — there are four entries. Refreshed
 2026-08-02 by reading `scripts/file-ceiling-baseline.txt`; `flow.rs`,

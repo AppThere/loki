@@ -1,6 +1,6 @@
 # ADR-0006: CRDT-Based Document Mutation Model
 
-**Status:** Proposed  
+**Status:** Accepted — implemented in `loki-doc-model::loro_bridge` (Decision 1 Option B; `loro` is a real dependency). The Step-1 audit table below is a decision-time (2026-04-25) snapshot, not current.  
 **Date:** 2026-04-25  
 **Deciders:** AppThere engineering
 

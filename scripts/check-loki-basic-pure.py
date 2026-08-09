@@ -49,7 +49,7 @@ def dep_names(manifest: Path) -> set[str]:
     """Crate names in every `[dependencies*]` table of a Cargo.toml (naive TOML)."""
     names: set[str] = set()
     in_deps = False
-    for line in manifest.read_text().splitlines():
+    for line in manifest.read_text(encoding="utf-8", errors="replace").splitlines():
         s = line.strip()
         if s.startswith("["):
             in_deps = "dependencies" in s and not s.startswith("[package")
@@ -63,6 +63,11 @@ def dep_names(manifest: Path) -> set[str]:
 
 
 def main() -> int:
+    # The report uses a non-ASCII em dash; force UTF-8 output so it renders
+    # (and cannot crash) on a cp1252 console (Windows-local runs).
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     errors: list[str] = []
 
     basic = ROOT / "loki-basic" / "Cargo.toml"

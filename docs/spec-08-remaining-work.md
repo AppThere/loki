@@ -119,7 +119,7 @@ baseline predated the `recent.json` reset, so the two runs had different Recent
 lists. Re-baselined by stashing the cleanup, rebuilding, and re-shooting.
 
 **Locked by `scripts/check-ui-font.py`** (gate 15, and in CI): no component may
-declare `font-family`; the four exceptions live in `ui-font-allowlist.txt` keyed
+declare `font-family`; the exceptions (six today — r95's four plus the two document-content faces ADR-0017's DOM reflow view added) live in `ui-font-allowlist.txt` keyed
 by *family* rather than line number, and an allowlist entry whose declaration
 has gone also fails. A deleted duplicate comes back, and two of the 91 had
 already drifted without review noticing — a `font-family` line looks like

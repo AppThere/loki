@@ -837,7 +837,10 @@ Spec 08 T4.1's root-hosted popover does.
 
 ---
 
-### anyrender_vello — 0.6.2
+## Active patch — anyrender_vello (0.6.2)
+
+*(A live `[patch.crates-io]` entry — kept as its own `##` section so it is not
+filed under "Documented stack deviations (not patches)" above, which it is not.)*
 
 **Source:** `patches/anyrender_vello/` (local), vendored from crates.io 0.6.2.
 
@@ -1009,11 +1012,15 @@ Let `OLD` be the current pin and `NEW` the target (e.g. `OLD=0.7.4`,
 5. **Move the pin** in every crate that declares dioxus:
 
    ```bash
-   for f in Cargo.toml loki-renderer/Cargo.toml appthere-canvas/Cargo.toml \
+   for f in Cargo.toml loki-renderer/Cargo.toml \
             loki-text/Cargo.toml loki-presentation/Cargo.toml loki-spreadsheet/Cargo.toml; do
      sed -i "s/version = \"=$OLD\"/version = \"=$NEW\"/" "$f"
    done
    ```
+
+   (`appthere-canvas` declares no `dioxus` dependency, so it is not in the list;
+   `appthere-ui` uses `dioxus = { workspace = true }` and inherits the pin from
+   the root `Cargo.toml` bump above — no per-file `sed` needed.)
 
    Also update the pin comment in the root `Cargo.toml` and the version in the
    two patch section headers in this file.

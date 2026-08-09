@@ -72,8 +72,10 @@ Consequences of the pattern:
 2. **The parent does not grow.** Mounting is a single boundary expression
    (`{cond.then(|| rsx!{ … })}`); no per-panel responsive plumbing lands in
    `editor_inner.rs`, so its ceiling pressure disappears.
-3. **Panels are born responsive.** Every Spec 05 family panel and sub-panel is a
-   component from the start, each able to read the breakpoint.
+3. **Panels are born responsive** — the standing convention. (Adoption is still
+   in progress: the Spec 05 style panel is at present a plain fn threading a
+   breakpoint flag, and `AtPanelHost` has no mount sites yet — tracked as Spec 08
+   I-27. `SpellPopover` is the first `#[component]` migration.)
 
 ### `AtPanelHost` — the reusable boundary
 
@@ -85,8 +87,9 @@ Medium/Expanded**. It renders a titled, closable container (close control ≥
 `TOUCH_MIN` = 44 px). Per the Blitz constraints (CLAUDE.md): elevation is token
 border/background (**no `box-shadow`**) and it lives in flow (**no
 `position: fixed`**; use `position: absolute` in a positioned ancestor when a
-caller needs to dock it, per the spell-panel precedent). Spec 05 panels mount
-their inspector inside it.
+caller needs to dock it, per the spell-panel precedent). Spec 05 panels are
+intended to mount their inspector inside it; adoption is pending — `AtPanelHost`
+has no mount sites yet (Spec 08 I-27).
 
 The responsive **decision** is a pure function (`PanelPosture::for_breakpoint`),
 matching the Spec 03 D1 discipline that responsive behaviour be testable without
@@ -105,7 +108,8 @@ a real window; the component merely applies it.
   establishes the pattern (and `AtPanelHost`) that R-13g needs.
 - **Existing plain-fn panels are migrated opportunistically.** They are not
   broken today (they render full chrome via the `Expanded` fallback), so each is
-  converted when its area is next touched — Spec 05's panels adopt the pattern
-  from the start; the editor's legacy panels follow as they are revisited.
+  converted when its area is next touched — Spec 05's panels are being migrated
+  to the pattern (still pending, Spec 08 I-27); the editor's legacy panels follow
+  as they are revisited.
 - No change to `use_breakpoint`'s resilience contract; this ADR is about *where*
   the hook may be called (a component), not the hook itself.

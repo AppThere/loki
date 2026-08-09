@@ -4,7 +4,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # ADR-0009: Target layering & crate-dependency invariants
 
-**Status:** Proposed
+**Status:** Accepted — the M-1 dependency-direction gate is implemented and CI-enforced (see body).
 **Date:** 2026-06-28
 **Deciders:** AppThere engineering
 **Companion to:** [`spec-01-codebase-audit-and-architecture.md`](spec-01-codebase-audit-and-architecture.md) (§5)

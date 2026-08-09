@@ -14,9 +14,13 @@ use crate::error::StoreError;
 ///
 /// Keys follow the spec layout: `{doc_id}/snap/{version}` for snapshots and
 /// `{doc_id}/blob/{blob_id}` for attachments. The backing [`ObjectStore`] is
-/// chosen by config URL (Hetzner Object Storage or MinIO — ADR-C016); at-rest
-/// encryption (SSE-C or app-layer AEAD) is applied by the caller or the
-/// transport, since Hetzner provides none by default.
+/// chosen by config URL (Hetzner Object Storage or MinIO — ADR-C016).
+///
+/// `TODO(server-blob-at-rest)`: the ADR-C014/C016 at-rest encryption (SSE-C or
+/// app-layer AEAD) is **not yet applied here** — `put_*` writes plaintext and no
+/// SSE-C config is threaded through. Until it is, operators must rely on
+/// volume/bucket-level encryption; do not read this type as providing at-rest
+/// encryption itself.
 #[derive(Clone)]
 pub struct BlobStore {
     inner: Arc<dyn ObjectStore>,

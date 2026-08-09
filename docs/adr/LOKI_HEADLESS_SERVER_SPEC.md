@@ -71,8 +71,8 @@ Crates:
 | Crate | Responsibility |
 |---|---|
 | `loki-headless` | Worker binary + CLI + optional Axum HTTP endpoint. |
-| `loki-render-cpu` | vello_cpu render path; deterministic rasterisation. |
-| `loki-pdf` | krilla-based PDF/PDF-A/PDF-X emission. |
+| `loki-render-cpu` | vello_cpu render path; deterministic rasterisation (raster/thumbnail jobs — deferred for headless, not the print/convert path). |
+| `loki-pdf` | pdf-writer-based PDF/X emission (PDF/A + krilla migration deferred). |
 | `loki-print` | IPP client; printer discovery; job dispatch. |
 | `loki-convert` | Format matrix orchestration over existing import/export. |
 | (reuses) `loki-text`, `loki-doc-model`, `loki-fonts`, `appthere-conformance` |
@@ -87,10 +87,13 @@ Crates:
 determinism. Loki already chose `vello_cpu` for deterministic headless conformance rendering
 (the `appthere-conformance` crate, ~141 cases via the promoted `loki-acid` harness).
 
-**Decision.** The headless render path uses `vello_cpu` exclusively — the **same** path the
-conformance harness exercises. No wgpu, no surface, no GPU dependency. This means the print
-output and the conformance-tested output are produced by identical code, so print fidelity is
-covered by the existing test suite rather than a parallel, untested path.
+**Decision.** The headless path is GPU-free and deterministic. The shipped **print/convert**
+path is vector **layout → PDF via `loki-pdf`** (pdf-writer), which is already CPU-only and needs
+no rasteriser. The `vello_cpu` raster path (`loki-render-cpu`) — the same one the conformance
+harness exercises — is scoped to **raster/thumbnail** output and is deferred for headless
+(`TODO(headless-c021)`); it is **not** on the print/convert path, so print output is not produced
+by the identical code the SSIM conformance suite rasterises. No wgpu, no surface, no GPU
+dependency on any path.
 
 **Consequences.** Runs on any Linux box (CCX server, office NUC, container). Print regressions
 are caught by the conformance harness. No display server required.
@@ -102,11 +105,16 @@ are caught by the conformance harness. No display server required.
 **Context.** The Cloud spec already chose `krilla` as the PDF backend. Office printing and
 archival need conformance profiles, not just "a PDF".
 
-**Decision.** `loki-pdf` emits via krilla with selectable profiles:
+**Decision.** `loki-pdf` emits PDF/X via the **`pdf-writer`** crate (the krilla migration below is
+future work), with selectable conformance profiles:
 
-- **PDF 1.7** — default general output.
-- **PDF/A-2b** — archival (records retention, GDPR-adjacent recordkeeping).
-- **PDF/X-4** — print-production colour fidelity (ties into `appthere-color` ICC/CMYK).
+- **PDF/X-1a** — the current default (PDF 1.4, DeviceCMYK, no transparency).
+- **PDF/X-3** and **PDF/X-4** — also supported.
+- **PDF/A-2b** — *planned*, gated on the krilla engine migration; today the token is recognised
+  but returns a typed `ProfileUnsupported` (`TODO(headless-c022)`).
+
+krilla (and a general PDF-1.7 default) remain the **target** engine; the shipped engine is
+pdf-writer. Colour is DeviceCMYK with an embedded CMYK output-intent profile.
 
 Colour management routes through the published `appthere-color` crate (moxcms, CMYK, ICC, soft
 proofing) so print colour matches Loki's on-screen soft-proof.
