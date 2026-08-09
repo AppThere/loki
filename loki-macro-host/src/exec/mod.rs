@@ -164,6 +164,8 @@ pub struct ExecutionHost<B: MacroBackend> {
     broker: CapabilityBroker,
     backend: B,
     doc: DocFacade,
+    /// Dialog rate limiter (spec §5.5): suspends a macro that storms dialogs.
+    dialog_rate: crate::dialog_rate::DialogRate,
 }
 
 impl<B: MacroBackend> ExecutionHost<B> {
@@ -174,6 +176,7 @@ impl<B: MacroBackend> ExecutionHost<B> {
             broker,
             backend,
             doc: DocFacade::new(title, text),
+            dialog_rate: crate::dialog_rate::DialogRate::new(),
         }
     }
 
@@ -246,6 +249,10 @@ impl<B: MacroBackend> Host for ExecutionHost<B> {
 
     fn dialog(&mut self, req: &DialogRequest) -> Result<Value, RuntimeError> {
         self.gate(Capability::UiDialog)?;
+        // Suspend a macro that storms dialogs past the rate limit (spec §5.5).
+        if !self.dialog_rate.try_consume() {
+            return Err(RuntimeError::dialog_rate_limited());
+        }
         Ok(match self.backend.show_dialog(req) {
             DialogOutcome::Button(code) => Value::from_i64_fit(code),
             DialogOutcome::Text(s) => Value::Str(s),

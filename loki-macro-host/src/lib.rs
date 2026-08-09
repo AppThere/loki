@@ -30,6 +30,7 @@
 
 pub mod broker;
 pub mod capability;
+mod dialog_rate;
 pub mod error;
 pub mod events;
 pub mod exec;
