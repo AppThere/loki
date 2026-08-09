@@ -29,21 +29,25 @@ impl UserStore for PgStores {
         &self,
         oidc_sub: &str,
         display_name: &str,
-    ) -> Result<UserRecord, StoreError> {
+    ) -> Result<(UserRecord, bool), StoreError> {
         // Just-in-time provisioning on first login (ADR-C017): identity is
-        // whatever the IdP asserts; the display name follows the IdP.
+        // whatever the IdP asserts; the display name follows the IdP. `(xmax = 0)`
+        // is Postgres's upsert-detect idiom — true for a fresh INSERT, false for
+        // an ON CONFLICT UPDATE — so the caller audits a first login exactly once.
         let row = sqlx::query(
             "INSERT INTO app_user (id, oidc_sub, display_name)
              VALUES ($1, $2, $3)
              ON CONFLICT (oidc_sub) DO UPDATE SET display_name = EXCLUDED.display_name
-             RETURNING id, oidc_sub, display_name, public_key",
+             RETURNING id, oidc_sub, display_name, public_key, (xmax = 0) AS newly_provisioned",
         )
         .bind(UserId::new().as_uuid())
         .bind(oidc_sub)
         .bind(display_name)
         .fetch_one(self.pool())
         .await?;
-        user_from_row(row)
+        let newly_provisioned: bool = row.try_get("newly_provisioned").unwrap_or(false);
+        let user = user_from_row(row)?;
+        Ok((user, newly_provisioned))
     }
 
     async fn get_user(&self, id: UserId) -> Result<Option<UserRecord>, StoreError> {

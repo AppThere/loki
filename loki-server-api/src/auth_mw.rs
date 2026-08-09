@@ -7,6 +7,7 @@ use axum::extract::{Request, State};
 use axum::http::header;
 use axum::middleware::Next;
 use axum::response::Response;
+use loki_server_audit::AuditAction;
 use loki_server_store::UserRecord;
 
 use crate::error::ApiError;
@@ -33,11 +34,25 @@ pub async fn require_auth(
         tracing::debug!(%error, "bearer token rejected");
         ApiError::Unauthorized
     })?;
-    let user = state
+    let (user, newly_provisioned) = state
         .stores
         .users
         .upsert_user_by_oidc(&identity.oidc_sub, &identity.display_name)
         .await?;
+    // Audit a first login once per account (ADR-C020 auth events), keyed by the
+    // provisioning boundary so we don't append on every authenticated request.
+    // Best-effort: an audit-write failure must not block authentication.
+    if newly_provisioned {
+        let actor = user.id.to_string();
+        if let Err(error) = state
+            .stores
+            .audit
+            .append_audit(&actor, AuditAction::AuthLogin, &actor)
+            .await
+        {
+            tracing::warn!(%error, "failed to audit first login");
+        }
+    }
     request.extensions_mut().insert(CurrentUser(user));
     Ok(next.run(request).await)
 }

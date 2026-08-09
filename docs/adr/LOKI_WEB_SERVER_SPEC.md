@@ -325,9 +325,11 @@ residency, and portability — not on marketing.
 
 - **Append-only, hash-chained audit log** (`loki-server-audit`): each entry carries the prior
   entry's hash → tamper-evident. **Currently emitted:** workspace/document creation, ACL
-  changes, and GDPR export/erase. Auth events, tier changes, and deletions are modelled
-  (`AuditAction` variants) but **not yet written** — they land with their endpoints (the auth
-  middleware, and the tier-change/delete routes, which are themselves not yet exposed).
+  changes, GDPR export/erase, and a first-login `AuthLogin` (once per account, at JIT
+  provisioning in the auth middleware — keyed by the provisioning boundary so it does not append
+  on every authenticated request). Tier changes and deletions remain modelled (`AuditAction`
+  variants) but unemitted — their routes are not yet exposed. Per-session login/logout auditing
+  beyond first provisioning needs a session model (`TODO`).
 - **Retention & legal hold** via object-storage **Object Lock** (retention + legal hold),
   available on Hetzner and MinIO.
 - **GDPR operations** as first-class endpoints: data export (portability), right-to-erasure,

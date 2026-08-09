@@ -26,12 +26,15 @@ pub trait WorkspaceStore: Send + Sync {
 /// User accounts (OIDC-delegated identity, ADR-C017).
 #[async_trait]
 pub trait UserStore: Send + Sync {
-    /// Finds a user by OIDC subject or provisions one just-in-time.
+    /// Finds a user by OIDC subject or provisions one just-in-time. The `bool`
+    /// is `true` when the user was **newly provisioned** (first login), so the
+    /// caller can emit an `AuthLogin` audit entry once per account (ADR-C020)
+    /// rather than on every authenticated request.
     async fn upsert_user_by_oidc(
         &self,
         oidc_sub: &str,
         display_name: &str,
-    ) -> Result<UserRecord, StoreError>;
+    ) -> Result<(UserRecord, bool), StoreError>;
     /// Loads a user by id.
     async fn get_user(&self, id: UserId) -> Result<Option<UserRecord>, StoreError>;
     /// Registers the member's X25519 public key (Tier 2 sharing).
