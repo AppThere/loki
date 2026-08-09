@@ -34,12 +34,10 @@ use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_app_shell::spell::SpellService;
 use loki_doc_model::document::Document;
-use loki_doc_model::loro_bridge::derive_loro_cursor;
-use loki_renderer::{DocumentView, RendererCursorPos, TileContext, ViewMode};
+use loki_renderer::ViewMode;
 
 use super::editor_canvas_loading::loading_view;
-use super::editor_canvas_metrics::{CANVAS_CONTENT_PADDING_PX, DEFAULT_VIEWPORT_HEIGHT_PX};
-use super::editor_canvas_spell::open_spell_panel_at;
+use super::editor_canvas_metrics::CANVAS_CONTENT_PADDING_PX;
 use super::editor_caret_follow::CaretFollow;
 use super::editor_error_view::EditorErrorView;
 use super::editor_keydown::make_keydown_handler;
@@ -51,8 +49,7 @@ use super::editor_scrollbar::{
     CanvasMounted, ScrollMetrics, ThumbDrag, horizontal_scrollbar, vertical_scrollbar,
 };
 use super::editor_spell::SpellMenu;
-use crate::editing::cursor::{CursorState, DocumentPosition};
-use crate::editing::hit_test::open_or_run;
+use crate::editing::cursor::CursorState;
 use crate::editing::{state::DocumentState, touch::TouchInteractionState};
 use crate::error::LoadError;
 
@@ -80,7 +77,7 @@ pub(super) fn render_canvas_area(
     mut current_page: Signal<u32>,
     total_pages: Signal<u32>,
     view_mode: Signal<ViewMode>,
-    mut cursor_state: Signal<CursorState>,
+    cursor_state: Signal<CursorState>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     undo_manager: Signal<Option<loro::UndoManager>>,
     can_undo: Signal<bool>,
@@ -102,7 +99,17 @@ pub(super) fn render_canvas_area(
 ) -> Element {
     // ADR-0017: DOM reflow behind `LOKI_REFLOW_DOM=1`. See `dom_reflow`.
     if view_mode() == ViewMode::Reflow && super::dom_reflow::enabled() {
-        return super::dom_reflow::dom_reflow_view(&doc_state_render, cursor_state);
+        return super::dom_reflow::dom_reflow_view(
+            &doc_state_render,
+            cursor_state,
+            super::dom_reflow::EditorSignals {
+                loro_doc,
+                undo_manager,
+                can_undo,
+                can_redo,
+                save_request,
+            },
+        );
     }
     rsx! {
         // Outer wrapper: the editor column's flex:1 slot — scroll viewport
@@ -282,126 +289,23 @@ pub(super) fn render_canvas_area(
                 Some((loaded_path, Ok(doc)))
                     if loaded_path == &path_signal() && total_pages() > 0 =>
                 {
-                    // Use the live post-mutation document from doc_state when
-                    // available; fall back to the original resource doc before
-                    // seed_layout_from_document has run. Read the matching
-                    // paginated layout under the same lock so the renderer can
-                    // reuse it (single canonical layout) instead of recomputing.
-                    let (doc_opt, paginated_layout) = match doc_state_render.lock() {
-                        Ok(s) => (s.document.clone(), s.paginated_layout.clone()),
-                        Err(_) => (None, None),
-                    };
-                    let arc_doc = doc_opt.unwrap_or_else(|| Arc::new(doc.clone()));
-                    let (cursor_pos, selection_anchor) = {
-                        let cs = cursor_state.read();
-                        let to_renderer = |pos: &DocumentPosition| RendererCursorPos {
-                            page_index: pos.page_index,
-                            paragraph_index: pos.paragraph_index,
-                            byte_offset: pos.byte_offset,
-                        };
-                        (
-                            cs.focus.as_ref().map(to_renderer),
-                            cs.anchor.as_ref().map(to_renderer),
-                        )
-                    };
-                    rsx! {
-                        DocumentView {
-                            doc: arc_doc,
-                            paginated_layout,
-                            zoom: zoom_percent() as f64 / 100.0,
-                            // Real measured viewport height (falls back to a
-                            // sensible default before the first measure). Drives
-                            // tile virtualization: only pages within ~one screen
-                            // of the viewport are GPU-rendered.
-                            viewport_height_px: {
-                                let h = scroll_metrics().client_height as f64;
-                                if h > 1.0 { h } else { DEFAULT_VIEWPORT_HEIGHT_PX }
-                            },
-                            // Real scroll offset so the renderer can virtualize
-                            // tiles to the viewport (this scroll container is the
-                            // editor's, so the position must be passed in).
-                            viewport_top_px: scroll_offset() as f64,
-                            cursor_pos,
-                            selection_anchor,
-                            view_mode: view_mode(),
-                            // Width for reflow layout; <= 0 until the canvas is
-                            // measured (mount rect or first scroll event).
-                            reflow_width_px: scroll_metrics().client_width as f64,
-                            // Design tokens injected so the render layer need not
-                            // depend on appthere_ui (Spec 01 audit A-8).
-                            page_gap_px: tokens::PAGE_GAP_PX as f64,
-                            content_padding_bottom_px: CANVAS_CONTENT_PADDING_PX,
-                            // The same fact the CSS above applies, reaching the
-                            // residency plan so it measures visibility from the
-                            // origin the scroll offset actually uses.
-                            content_padding_top_px: CANVAS_CONTENT_PADDING_PX,
-                            // Resident page-texture budget (Spec 08 T2.1), from
-                            // the live DeviceProfile, plus the display's device
-                            // pixel ratio — the renderer needs both to decide what
-                            // to mount and at what rasterisation scale, and
-                            // neither is reachable from L4 (DeviceProfile is L5).
-                            texture_budget: crate::texture_budget::current(),
-                            device_scale_factor: crate::texture_budget::device_scale_factor(),
-                            // Paginated: hit-test against the editor's paginated
-                            // layout (reflow clicks arrive via on_reflow_click).
-                            on_tile_click: {
-                                let mut ctx = super::editor_canvas_click::TileClickCtx {
-                                    doc_state: doc_state_mousedown.clone(),
-                                    loro_doc,
-                                    cursor_state,
-                                    macro_run_request,
-                                };
-                                move |c: (usize, f32, f32, bool)| {
-                                    super::editor_canvas_click::on_tile_click(
-                                        &mut ctx, c.0, c.1, c.2, c.3,
-                                    )
-                                }
-                            },
-                            // Reflow: DocumentView already resolved the click to a
-                            // (paragraph, byte) position in the continuous layout.
-                            on_reflow_click: move |(para, byte): (usize, usize)| {
-                                let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
-                                    derive_loro_cursor(ldoc, para, byte)
-                                });
-                                // page_index is meaningless in reflow (the caret is
-                                // painted from paragraph/byte); 0 is a placeholder.
-                                let pos = DocumentPosition::top_level(0, para, byte);
-                                let mut cs = cursor_state.write();
-                                cs.loro_cursor = loro_cursor;
-                                cs.anchor = Some(pos.clone());
-                                cs.focus = Some(pos);
-                            },
-                            // Reflow Ctrl/Cmd+click on a link (URL already resolved).
-                            on_open_link: move |url: String| {
-                                open_or_run(&url, macro_run_request);
-                            },
-                            // Reflow drag-select: move only the focus, keeping the
-                            // anchor so a range selection grows under the pointer.
-                            on_reflow_drag: move |(para, byte): (usize, usize)| {
-                                let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
-                                    derive_loro_cursor(ldoc, para, byte)
-                                });
-                                let mut cs = cursor_state.write();
-                                cs.loro_cursor = loro_cursor;
-                                cs.focus = Some(DocumentPosition::top_level(0, para, byte));
-                            },
-                            // Right-click → spelling menu (paginated only). Uses
-                            // accurate tile-local coordinates from the tile event.
-                            on_tile_context: move |ctx: TileContext| {
-                                if view_mode() == ViewMode::Reflow {
-                                    return;
-                                }
-                                open_spell_panel_at(
-                                    ctx,
-                                    &doc_state_context,
-                                    loro_doc,
-                                    &service,
-                                    cursor_state,
-                                    spell_menu,
-                                );
-                            },
-                        }
-                    }
+                    super::editor_canvas_document::render_loaded_document(
+                        doc,
+                        &super::editor_canvas_document::LoadedDocumentCtx {
+                            doc_state_render: &doc_state_render,
+                            doc_state_mousedown: &doc_state_mousedown,
+                            doc_state_context: &doc_state_context,
+                            cursor_state,
+                            loro_doc,
+                            macro_run_request,
+                            view_mode,
+                            zoom_percent,
+                            scroll_metrics,
+                            scroll_offset,
+                            service: &service,
+                            spell_menu,
+                        },
+                    )
                 },
 
                 Some((loaded_path, Err(e))) if loaded_path == &path_signal() => {

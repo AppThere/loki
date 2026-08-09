@@ -24,23 +24,33 @@
 //! subset of the document (see [`content`]) and is not something to offer a
 //! reader in a menu until it renders all of it.
 //!
-//! # What this is not
+//! # What this is, and is not, wired for editing
 //!
-//! **Read-only** for editing. T7.3's fit/expand toggle is the one control.
-//! No caret, no selection, no hit-testing, no spell squiggles, no
-//! revision marks. Those are painted from `PositionedItem`s on the canvas path
-//! and each needs a DOM equivalent — ADR-0017 §3.2 lists them, and none is done.
-//! Editing while this view is active edits nothing. `TODO(dom-reflow-editing)`.
+//! **Click-to-place-caret, typing, Backspace/Delete/Enter, and Ctrl
+//! shortcuts work** (`editing.rs`, `keydown.rs`) — the first slice of
+//! `TODO(dom-reflow-editing)`, reusing the canvas-reflow path's own
+//! hit-test/caret-geometry primitives (`ContinuousLayout::hit_test`,
+//! `cursor_rect_canvas`) rather than a second implementation.
+//!
+//! **Still not built:** drag-selection and shift-extend (no selection
+//! highlight is painted), arrow/Home/End caret navigation
+//! (`TODO(dom-reflow-caret-nav)`, see `keydown.rs`'s module docs), hit-testing
+//! into nested containers (table cells, note bodies), spell squiggles, and
+//! revision marks. Those are painted from `PositionedItem`s on the canvas
+//! path and each needs its own DOM equivalent — ADR-0017 §3.2 lists them.
 
 use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 
+use crate::editing::cursor::CursorState;
 use crate::editing::state::DocumentState;
 
 pub mod content;
 mod content_para;
+mod editing;
 mod image;
+mod keydown;
 mod list;
 mod oversized;
 pub mod style;
@@ -77,7 +87,23 @@ fn column_max_width_pt() -> f32 {
     )
 }
 
-/// The DOM reflow view: the document's blocks in a centred reading column.
+/// The mutation-side signals [`dom_reflow_view`] needs beyond `doc_state` and
+/// `cursor_state`, bundled into one parameter so the call site in
+/// `editor_canvas.rs` — a baselined 300-line-ceiling file
+/// (`scripts/file-ceiling-baseline.txt`) that must not grow — stays three
+/// arguments instead of seven.
+#[derive(Clone, Copy)]
+pub(super) struct EditorSignals {
+    pub(super) loro_doc: Signal<Option<loro::LoroDoc>>,
+    pub(super) undo_manager: Signal<Option<loro::UndoManager>>,
+    pub(super) can_undo: Signal<bool>,
+    pub(super) can_redo: Signal<bool>,
+    pub(super) save_request: Signal<u32>,
+}
+
+/// The DOM reflow view: the document's blocks in a centred reading column,
+/// with click-to-place-caret, typing and the caret overlay wired in (see the
+/// module docs for what is and is not covered).
 ///
 /// A plain function, not a `#[component]`: `Arc<Mutex<DocumentState>>` has no
 /// meaningful `PartialEq`, which component props require, and the editor's
@@ -85,14 +111,23 @@ fn column_max_width_pt() -> f32 {
 ///
 /// # Touch target
 ///
-/// The view carries one interactive control, the fit/expand toggle on an
-/// oversized element ([`oversized::AtOversized`], 44 × 44). Nothing else here is
-/// interactive — the view is read-only for *editing* (see the module docs), and
-/// the scroll container is the whole view.
+/// Discrete controls: the fit/expand toggle on an oversized element
+/// ([`oversized::AtOversized`], 44 × 44). The reading column itself is a
+/// text-editing surface, not a discrete control — WCAG 2.5.8 does not apply
+/// to continuous text input, the same reasoning the canvas path's own text
+/// area uses.
 pub(super) fn dom_reflow_view(
     doc_state: &Arc<Mutex<DocumentState>>,
-    cursor_state: Signal<crate::editing::cursor::CursorState>,
+    cursor_state: Signal<CursorState>,
+    sig: EditorSignals,
 ) -> Element {
+    let EditorSignals {
+        loro_doc,
+        undo_manager,
+        can_undo,
+        can_redo,
+        save_request,
+    } = sig;
     // **The read is the subscription.** `doc_state` is a mutex, not reactive
     // state, so reading the document through it does not tell Dioxus to
     // re-render when the document changes — this view would paint what it first
@@ -114,29 +149,22 @@ pub(super) fn dom_reflow_view(
     // and holding that lock across the render would put a shaping mutex in the
     // middle of the UI thread's tree build.
     let families = resolve_families(&state.shared_font_resources, doc);
+    let ctx = editing::EditingCtx {
+        doc_state: Arc::clone(doc_state),
+        cursor_state,
+        loro_doc,
+        undo_manager,
+        can_undo,
+        can_redo,
+        save_request,
+    };
+    let click_ctx = ctx.clone();
 
-    document_view(doc, &families, max_w)
-}
-
-/// The reading column for one document, at one column width.
-///
-/// Split out from [`dom_reflow_view`] so the *tree* can be built without the
-/// editor's state around it. That is what lets the styled-document line-break
-/// comparison (`loki-text/examples/styled_linebreak_probe.rs`, ADR-0017 §5.3
-/// step 3) render through **this** code rather than through a second emitter:
-/// a probe with its own copy of the CSS would agree with the canvas path
-/// exactly as far as the copy did, which is the one thing the comparison must
-/// not depend on.
-pub fn document_view(
-    doc: &loki_doc_model::document::Document,
-    families: &content::FamilyMap,
-    max_w: f32,
-) -> Element {
     rsx! {
+        // The scroll container. `overflow-x: hidden` is T7.3's rule stated
+        // in one declaration: whatever an element does inside, the document
+        // itself does not scroll sideways.
         div {
-            // The scroll container. `overflow-x: hidden` is T7.3's rule stated
-            // in one declaration: whatever an element does inside, the document
-            // itself does not scroll sideways.
             style: "flex: 1; overflow-y: auto; overflow-x: hidden; \
                     background: #ffffff; color: #000000;",
             div {
@@ -144,20 +172,73 @@ pub fn document_view(
                 // ADR-0017 is about — on the canvas path the same decision needs
                 // a resolved cap in a process-wide static, read by four call
                 // sites across two crates.
-                // No `font-family` here on purpose. The column is a box, not a
-                // typeface: the document's own character properties supply the
-                // face per run (`style::char_css`), and hardcoding one would
-                // override every document with whatever this line happened to
-                // say — which is the r94 defect in miniature.
+                style: format!("max-width: {max_w}pt; margin: 0 auto; padding: 24pt 18pt;"),
+                div {
+                    // `position: relative` makes this the containing block for
+                    // the caret overlay, and (with no padding of its own) its
+                    // border edge is exactly `ContinuousLayout`'s (0, 0) — see
+                    // `editing.rs`'s module docs for why that means the click
+                    // handler needs no origin computation.
+                    // No `font-family` here on purpose. The column is a box, not
+                    // a typeface: the document's own character properties supply
+                    // the face per run (`style::char_css`), and hardcoding one
+                    // would override every document with whatever this line
+                    // happened to say — which is the r94 defect in miniature.
+                    style: "position: relative; font-size: 12pt;",
+                    // 44×44 touch target: N/A — this is a text-editing surface,
+                    // not a discrete control; WCAG 2.5.8 does not apply to
+                    // continuous text input.
+                    tabindex: "0",
+                    autofocus: true,
+                    onclick: move |evt: MouseEvent| {
+                        let c = evt.element_coordinates();
+                        editing::place_caret_at_click(&click_ctx, c.x as f32, c.y as f32, max_w);
+                    },
+                    onkeydown: keydown::make_dom_reflow_keydown_handler(ctx.clone()),
+                    { blocks_el(doc, &families) }
+                    { editing::caret_el(&ctx, max_w) }
+                }
+            }
+        }
+    }
+}
+
+/// The reading column for one document, at one column width.
+///
+/// Used by the styled-document line-break comparison
+/// (`loki-text/examples/styled_linebreak_probe.rs`, ADR-0017 §5.3 step 3),
+/// which renders a document with no editor around it — so this stays a plain
+/// read-only shell. [`blocks_el`] is the part it shares with
+/// [`dom_reflow_view`]: rendering through **this** code rather than through a
+/// second emitter is what lets a comparison between the two paths be a
+/// comparison of *rendering*, not of two copies of the CSS.
+pub fn document_view(
+    doc: &loki_doc_model::document::Document,
+    families: &content::FamilyMap,
+    max_w: f32,
+) -> Element {
+    rsx! {
+        div {
+            style: "flex: 1; overflow-y: auto; overflow-x: hidden; \
+                    background: #ffffff; color: #000000;",
+            div {
                 style: format!(
                     "max-width: {max_w}pt; margin: 0 auto; padding: 24pt 18pt; \
                      font-size: 12pt;"
                 ),
-                for (si, section) in doc.sections.iter().enumerate() {
-                    for (bi, block) in section.blocks.iter().enumerate() {
-                        { rsx! { div { key: "{si}-{bi}", { content::block_el(block, &doc.styles, families) } } } }
-                    }
-                }
+                { blocks_el(doc, families) }
+            }
+        }
+    }
+}
+
+/// Every block of every section, in document order — the part
+/// [`document_view`] and [`dom_reflow_view`] share.
+fn blocks_el(doc: &loki_doc_model::document::Document, families: &content::FamilyMap) -> Element {
+    rsx! {
+        for (si, section) in doc.sections.iter().enumerate() {
+            for (bi, block) in section.blocks.iter().enumerate() {
+                { rsx! { div { key: "{si}-{bi}", { content::block_el(block, &doc.styles, families) } } } }
             }
         }
     }

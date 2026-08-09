@@ -305,6 +305,18 @@ fn a_family_is_collected_from_every_container_that_renders_one() {
         super::super::content::requested_families(&one_block_doc(quoted)),
         ["Carlito"]
     );
+
+    // A table cell — the load-bearing arm. Mutating away `collect_families`'
+    // `Block::Table` case routes cells to the `_ => continue` catch-all, silently
+    // killing table-cell font substitution (the §5.3/§5.9 ~14 %-wide early-wrap
+    // defect) with no other test failing. This inverts that arm.
+    use loki_doc_model::content::table::Table;
+    let mut table = Table::grid(1, 1);
+    table.bodies[0].body_rows[0].cells[0].blocks = vec![Block::StyledPara(para_in("Gelasio"))];
+    assert_eq!(
+        super::super::content::requested_families(&one_block_doc(Block::Table(Box::new(table)))),
+        ["Gelasio"]
+    );
 }
 
 /// The inversion: a document that names no family collects none, so an empty map

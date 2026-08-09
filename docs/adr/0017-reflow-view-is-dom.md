@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 | Field | Value |
 | --- | --- |
-| Status | **Accepted** — 2026-08-03. Direction agreed; view built behind a flag (§5). **Line breaks match the canvas path on every measured fixture and width** (§5.3–§5.6); virtualisation measured and does not bite (§5.7); lists agree except where the canvas path is itself wrong — two located defects, both canvas-side (§5.9, §5.9a) |
+| Status | **Accepted** — 2026-08-03. Direction agreed; view built behind a flag (§5). **Line breaks match the canvas path on every measured fixture and width** (§5.3–§5.6); virtualisation measured and does not bite (§5.7); lists agree except where the canvas path is itself wrong — two located defects, both canvas-side (§5.9, §5.9a). **Editing surface, first slice landed** (§5.10, 2026-08-08): click-to-place-caret, typing, and the caret overlay — not interactively verified on a live screen (no Xvfb in the building session); selection, arrow-nav, spell squiggles and revision marks remain |
 | Drivers | Spec 08 T7.0 (probe P1), T7.2, T7.3, T7.4 |
 | Affects | `loki-renderer` (reflow path), `loki-layout` (reflow mode), `loki-text` editor route |
 | Makes moot | The ambient reading-measure cap added for T7.2 (`loki_renderer::measure`) |
@@ -717,6 +717,92 @@ outstanding are canvas defects with the DOM path as the reference:
     — §5.9a: the canvas breaks a hanging paragraph's first line at the same
     width as the rest, 18 pt short. Both remaining differences are canvas
     defects, with the DOM path as the reference.**
-12. Remaining: the editing surface (`TODO(dom-reflow-editing)`) — after which
-    the DOM view could replace the canvas one and `loki_renderer::measure` goes
-    with it (§3.1, §4).
+12. The editing surface (`TODO(dom-reflow-editing)`), first slice: **done
+    2026-08-08 — §5.10.** Click-to-place-caret, typing, Backspace/Delete/Enter
+    and Ctrl shortcuts, and the caret overlay. **Still open:** drag-selection
+    and shift-extend, arrow/Home/End caret navigation
+    (`TODO(dom-reflow-caret-nav)`), hit-testing into nested containers (table
+    cells, note bodies), spell squiggles, revision marks — after which the DOM
+    view could replace the canvas one and `loki_renderer::measure` goes with
+    it (§3.1, §4).
+
+### 5.10 The editing surface, first slice: hit-testing, caret, and typing (2026-08-08)
+
+**What was reused rather than reinvented.** The canvas-based reflow view
+already has a full-document `ContinuousLayout` built purely for hit-testing
+and caret geometry (`ensure_reflow_layout`), with `hit_test` and
+`cursor_rect_canvas` already tested against the touch and mouse click paths
+(`crate::editing::hit_test`, `editor_pointer_touch.rs`). This slice calls the
+same two queries against the same layout rather than shaping a second time —
+the new part is only how the click's local coordinates are obtained.
+
+**Why the DOM path needs no Strategy-C origin computation.** `hit_test.rs`'s
+"Strategy C" (a computed canvas origin from measured viewport width) exists
+because `MountedData::get_client_rect()` / `offset_x` / `offset_y` are
+`unimplemented!()` for a **canvas** element in this Blitz build. The DOM
+reflow view paints ordinary `div`/`span` elements, for which
+`element_coordinates()` **is** implemented (`patches/dioxus-native-dom`,
+`NativeClickData::element_coordinates`, computed via `Node::absolute_position`
+at dispatch time) — it reports the click position relative to the target
+element's own padding edge, "as on the web". The reading column was split
+into an **outer** div (padding, centring — unchanged) and an **inner** div
+(`position: relative`, the click target, no padding of its own), so the
+inner div's origin already coincides with `ContinuousLayout`'s (0, 0): no
+computed offset, no scroll-position bookkeeping, just a px→pt conversion
+(`loki-text/src/routes/editor/dom_reflow/editing.rs`).
+
+**The caret overlay** is an absolutely-positioned line, sized from
+`cursor_rect_canvas(paragraph_index, byte_offset)` and placed inside the same
+`position: relative` inner div — an absolutely positioned child's `left`/`top`
+resolve against its containing block's padding edge, the same origin
+`cursor_rect_canvas` uses, so no further conversion happens there either.
+`pointer-events: none` so the caret itself is never the click target.
+
+**Typing reuses the canvas path's own mutation handlers.**
+`loki-text/src/routes/editor/dom_reflow/keydown.rs` dispatches
+character/Backspace/Delete/Enter/Ctrl keys to the *same* handler functions
+`editor_keydown.rs` calls — not a second implementation of Loro mutation,
+undo/redo, or revision marking.
+
+**Arrow/Home/End navigation is deliberately not wired.** `editor_keydown.rs`'s
+arrow branch resolves reflow navigation against `ensure_reflow_layout` built
+at the **viewport-responsive** width the canvas-reflow tile paints at
+(`reflow_layout_content_width_pt(scroll_metrics.client_width)`). This view's
+column width (`column_max_width_pt`) is a fixed reading measure, not
+viewport-derived; the DOM column still narrows on a small window (ordinary CSS
+`max-width` constrained by its flex parent), but a `ContinuousLayout` built
+from the Rust-side fixed width would not reflect that narrower box on such a
+window. Reusing the arrow branch unmodified would silently navigate against
+the wrong line geometry exactly where the two widths disagree — worse than not
+navigating at all. `TODO(dom-reflow-caret-nav)`: reconcile the two width
+sources, most likely by measuring the column's real rendered width via
+`get_client_rect` (available here, unlike on the canvas path) rather than
+trusting the Rust-side constant.
+
+**Tested:** the click→`DocumentPosition` resolution and the caret CSS are
+split into pure functions (`resolve_click_position`, `caret_css`) and tested
+against `ContinuousLayout` fixtures built through the real `layout_paragraph`
+— five tests in `editing_tests.rs`, covering both paragraphs of a two-paragraph
+document, the empty-layout edge case, the top-level/page-zero invariant
+`cursor_rect_canvas` depends on, and the caret's `pointer-events: none`.
+Signal-writing glue (`place_caret_at_click`, the keydown dispatcher) is not
+directly unit tested — the same split this crate uses throughout
+`editing::hit_test` vs. `routes::editor::editor_pointer`, since a `Signal`
+cannot be constructed outside a Dioxus runtime.
+
+**Not established:** interactive verification on a live screen. The Linux
+sitting harness (`scripts/sitting/run.sh`, Xvfb + lavapipe) that verified every
+other step of this ADR was unavailable in the session that built this slice
+(Windows host). `loki-text-desktop` was confirmed to launch and run without
+crashing with `LOKI_REFLOW_DOM=1` and this code path compiled in, which is
+weaker evidence than a photographed click — it rules out a wiring panic, not a
+misplaced caret. **What would settle it:** `scripts/sitting/run.sh` against a
+new `domreflowedit` scenario — click a known point, type a known string,
+diff the shot against the canvas path typing the same string at the same
+position.
+
+**Still not built, each unimplemented rather than faked:** drag-selection and
+shift-extend (no selection highlight is painted on this path), hit-testing
+into nested containers (table cells, note bodies — `place_caret_at_click`
+only ever produces a `DocumentPosition::top_level`), spell squiggles, and
+revision marks.

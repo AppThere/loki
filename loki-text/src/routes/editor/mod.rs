@@ -13,6 +13,7 @@ pub mod dom_reflow;
 mod editor_calibrate;
 mod editor_canvas;
 mod editor_canvas_click;
+mod editor_canvas_document;
 mod editor_canvas_loading;
 mod editor_canvas_metrics;
 mod editor_canvas_spell;
