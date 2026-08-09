@@ -15,6 +15,7 @@
 //! deferred to a future Parley (workaround would be U+202B/U+200F controls).
 
 use loki_doc_model::content::block::StyledParagraph;
+use loki_doc_model::content::inline::NoteKind;
 
 use crate::para::{ParagraphLayout, ResolvedParaProps, layout_paragraph_spelled};
 use crate::resolve::resolve_para_props;
@@ -95,9 +96,15 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     // Measure this paragraph's footnote band now; `place_with_footnote_band`
     // applies it after placement (shrinking `content_bottom()` for following
     // content) iff the paragraph stays on `page_before_para`.
-    let footnote_reserve = super::tail::footnote_reservation(state, &notes);
+    // Footnotes render in a per-page band (reserved here); endnotes are held for
+    // the section-end flush (`flow_footnotes`) and get no per-page reservation.
+    let (footnotes, endnotes): (Vec<_>, Vec<_>) = notes
+        .into_iter()
+        .partition(|n| n.kind == NoteKind::Footnote);
+    let footnote_reserve = super::tail::footnote_reservation(state, &footnotes);
     let page_before_para = state.page_number;
-    state.pending_footnotes.extend(notes);
+    state.pending_footnotes.extend(footnotes);
+    state.pending_endnotes.extend(endnotes);
 
     // Floating image/text-box wrap (gap #12): plan the paragraph's own float,
     // set its wrap band on `resolved`, and drop the floated image from the

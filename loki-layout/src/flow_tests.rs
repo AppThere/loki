@@ -1086,6 +1086,51 @@ fn keep_with_next_paragraph_keeps_its_footnote() {
 }
 
 #[test]
+fn endnotes_render_at_the_section_end_not_per_page() {
+    use loki_doc_model::content::inline::NoteKind;
+
+    let mut r = test_resources();
+    // An endnote referenced on the first page, then enough filler to span several
+    // pages. Unlike a footnote (per-page band), the endnote body must render at
+    // the END of the section (the last page), not on the referencing page.
+    let note_body = vec![Block::StyledPara(make_para("Endnote body text."))];
+    let mut paras = vec![StyledParagraph {
+        style_id: None,
+        direct_para_props: None,
+        direct_char_props: None,
+        inlines: vec![
+            Inline::Str("Reference".into()),
+            Inline::Note(NoteKind::Endnote, note_body),
+        ],
+        attr: NodeAttr::default(),
+    }];
+    for i in 0..40 {
+        paras.push(make_para(&format!("Filler body line number {i}.")));
+    }
+    let section = section_of(paras, tiny_layout());
+    let (pages, _) = flow_paginated(&mut r, &section);
+    assert!(
+        pages.len() >= 2,
+        "filler should span pages, got {}",
+        pages.len()
+    );
+    let has_rule = |items: &[PositionedItem]| {
+        items
+            .iter()
+            .any(|i| matches!(i, PositionedItem::HorizontalRule(_)))
+    };
+    // The endnote (its separator rule) is at the section end, not on page 1.
+    assert!(
+        !has_rule(&pages[0].content_items),
+        "an endnote must not render on the referencing (first) page"
+    );
+    assert!(
+        has_rule(&pages.last().expect("pages").content_items),
+        "an endnote must render at the section end (last page)"
+    );
+}
+
+#[test]
 fn footnote_band_stays_within_the_content_area() {
     use loki_doc_model::content::inline::NoteKind;
 

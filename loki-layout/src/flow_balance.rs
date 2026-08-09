@@ -200,6 +200,14 @@ fn run_capped(
     let has_notes = state.note_counter > 0;
     // `finish_page` lays out the final page's footnote band (per-page placement).
     super::finish_page(&mut state);
+    // Endnotes render at the **section end** (Word's default), on a fresh page
+    // after the last content — not in the per-page band like footnotes (which
+    // `finish_page` already placed). They paginate if they overflow.
+    if !state.pending_endnotes.is_empty() {
+        let notes = std::mem::take(&mut state.pending_endnotes);
+        super::tail::render_footnote_bodies(&mut state, notes);
+        super::finish_page(&mut state);
+    }
     let pages = state.pages.len();
     let candidate = state.tail_candidate.take();
     (
