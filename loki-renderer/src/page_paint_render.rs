@@ -5,20 +5,54 @@
 //! `page_paint_source.rs` for the 300-line ceiling. Both are pure helpers that
 //! take only the data the render loop passes in — no `LokiPageSource` state is
 //! reached except through the `source` handle.
+//!
+//! # `gpu_submit_ms` is submission, not completion (Spec 08 r55)
+//!
+//! Both paint log lines carry a duration around `render_to_texture`, and it
+//! measures **the wrong side of the CPU/GPU boundary for the question people
+//! will ask of it**. Read from source: vello's `render_to_texture` calls
+//! `run_recording`, which ends at `queue.submit(...)` — no `device.poll`, no
+//! `Maintain::Wait`, no buffer map. It returns as soon as the commands are
+//! encoded and handed to the driver.
+//!
+//! An earlier draft named it `gpu_render_ms`. That is exactly the failure this
+//! program keeps meeting: a small, stable number measuring the wrong quantity,
+//! from which "re-rasterisation is cheap" would follow with nothing visibly
+//! wrong. **It bounds the CPU work the paint callback blocks the frame with; it
+//! says nothing about how long the GPU then takes.**
+//!
+//! Completion timing is deliberately not added. `device.poll(Wait)` would
+//! serialise the pipeline in production to satisfy a diagnostic, and timestamp
+//! queries are a feature-gated apparatus for a question with a cheaper
+//! observable: **total frame time**, which does not require getting this
+//! boundary right at all. The structural half needs no instrument either —
+//! `LokiPageSource::render` *is* Blitz's paint callback, so the work is
+//! synchronous on the calling thread whatever the split between the two halves.
 
 use anyrender_vello::wgpu::{
     Device, Extent3d, Texture, TextureDimension, TextureFormat, TextureUsages, TextureView,
     TextureViewDescriptor,
 };
+use appthere_canvas::residency::{TextureResidency, texture_bytes};
 
 use crate::doc_page_source::DocPageSource;
 use crate::document_view::RendererSelection;
 
 /// Allocate the per-page GPU texture and its default view.
 ///
+/// Records the allocation with [`TextureResidency`] (Spec 08 T2.5). This is the
+/// only live texture-allocation site in the workspace — the standalone
+/// `impl PageSource for DocPageSource` in `page_source_impl.rs` also allocates
+/// but has no callers — so the counter's `resident` figure is the process's
+/// page-texture residency, not a sample of it. Every release path in
+/// `page_paint_source.rs` records the matching free; an unbalanced pair drifts
+/// the counter for the rest of the session rather than mis-reporting once.
+///
 // COMPAT(blitz): Rgba8Unorm + STORAGE_BINDING|TEXTURE_BINDING matches the
 // format expected by anyrender_vello `register_texture`; COPY_SRC allows the
-// composited read-back path.
+// composited read-back path. The format is why
+// `appthere_canvas::residency::BYTES_PER_TEXEL` is 4 — changing one without the
+// other makes every Phase 2 byte figure wrong.
 pub(super) fn allocate_page_texture(
     device: &Device,
     w_phys: u32,
@@ -41,6 +75,7 @@ pub(super) fn allocate_page_texture(
         view_formats: &[],
     });
     let view = texture.create_view(&TextureViewDescriptor::default());
+    TextureResidency::record_alloc(texture_bytes(w_phys, h_phys));
     (texture, view)
 }
 

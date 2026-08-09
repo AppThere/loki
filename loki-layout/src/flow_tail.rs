@@ -99,15 +99,10 @@ fn measure_note_height(state: &mut FlowState, note: &CollectedNote) -> f32 {
 }
 
 /// Lay out the current page's footnotes at the foot of the page. Called by
-/// `finish_page` before the page is finalized (so each footnote sits on the page
-/// carrying its reference, matching Word). Single-column body flow only.
-///
-/// The band is bottom-aligned at `page_content_height − total`, but never above
-/// where content stopped (`cursor_y`). Body content already stops above it via
-/// the per-reference reservation ([`footnote_reservation`] +
-/// [`FlowState::content_bottom`]); this bottom-aligns the actual render.
-/// Pagination is disabled during rendering (the band is self-contained) and a
-/// re-entrancy guard blocks recursion.
+/// `finish_page` (so each sits on the page carrying its reference, matching
+/// Word). Single-column only; bottom-aligned but never above `cursor_y`, with
+/// pagination disabled and a re-entrancy guard during the self-contained band.
+/// Endnotes are excluded — they are held for the section-end flush.
 pub(super) fn flow_page_footnotes(state: &mut FlowState) {
     if state.pending_footnotes.is_empty() || state.rendering_footnotes || state.columns != 1 {
         return;
@@ -130,18 +125,24 @@ pub(super) fn flow_page_footnotes(state: &mut FlowState) {
     state.rendering_footnotes = false;
 }
 
-/// Render any remaining footnotes at the current position — the non-paginated
-/// (canvas / reflow) tail, which has no per-page bands to place them in.
+/// Render remaining footnotes, then endnotes, at the current position — the
+/// section-end flush (paginated; footnotes are mostly placed per-page by now)
+/// and the non-paginated (reflow) tail. Endnotes are rendered **only** here,
+/// never in the per-page band, so they land at the end of the section, matching
+/// Word's default endnote placement.
 pub(super) fn flow_footnotes(state: &mut FlowState) {
-    if state.pending_footnotes.is_empty() {
-        return;
+    for notes in [
+        std::mem::take(&mut state.pending_footnotes),
+        std::mem::take(&mut state.pending_endnotes),
+    ] {
+        if !notes.is_empty() {
+            render_footnote_bodies(state, notes);
+        }
     }
-    let notes = std::mem::take(&mut state.pending_footnotes);
-    render_footnote_bodies(state, notes);
 }
 
 /// Emit the separator rule and each note body from `state.cursor_y` downward.
-fn render_footnote_bodies(state: &mut FlowState, notes: Vec<CollectedNote>) {
+pub(super) fn render_footnote_bodies(state: &mut FlowState, notes: Vec<CollectedNote>) {
     let sep_w = state.content_width / 3.0;
     state.cursor_y += SEP_GAP;
     state
@@ -194,9 +195,12 @@ fn footnote_mark(n: u32) -> String {
     }
 }
 
-// ── Paragraph synthesisers ────────────────────────────────────────────────────
-
-pub(super) fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
+/// A bare inline run as the styled paragraph the resolver understands.
+///
+/// `pub`, not `pub(super)`: ADR-0017's DOM reflow view needs this same mapping
+/// before it can resolve, and a second copy would decide which style a heading
+/// level names for a second time.
+pub fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
     StyledParagraph {
         style_id: None,
         direct_para_props: None,
@@ -206,11 +210,9 @@ pub(super) fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
     }
 }
 
-pub(super) fn synthesize_heading_para(
-    level: u8,
-    attr: &NodeAttr,
-    inlines: &[Inline],
-) -> StyledParagraph {
+/// A heading as the styled paragraph the resolver understands. `pub` for the
+/// same reason as [`synthesize_plain_para`].
+pub fn synthesize_heading_para(level: u8, attr: &NodeAttr, inlines: &[Inline]) -> StyledParagraph {
     use loki_doc_model::style::catalog::StyleId;
     use loki_doc_model::style::props::para_props::{ParaProps, ParagraphAlignment};
     // Prefer the style name carried in NodeAttr (set by the ODF mapper from

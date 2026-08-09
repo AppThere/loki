@@ -201,8 +201,9 @@ pub struct CharProps {
     /// Kerning enabled. ODF `style:letter-kerning`; OOXML `w:kern`.
     pub kerning: Option<bool>,
 
-    /// Horizontal text scaling as a percentage (100.0 = normal).
-    /// ODF `style:text-scale`; OOXML `w:w`.
+    /// Horizontal text scaling as a **fraction** (1.0 = normal, 1.5 = 150 %).
+    /// Both importers divide by 100 on read (ODF `style:text-scale` percent;
+    /// OOXML `w:w` integer percent) and both exporters multiply by 100 on write.
     pub scale: Option<f32>,
 
     // ── Language ──────────────────────────────────────────────────────────

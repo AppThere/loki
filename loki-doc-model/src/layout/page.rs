@@ -109,21 +109,27 @@ pub struct PageSize {
 
 impl PageSize {
     /// ISO 216 A4 page size (595 × 842 pt).
+    ///
+    /// Defined by the catalogue entry that also *names* it, so the dimensions
+    /// this returns and the dimensions a page is recognised by are one fact.
     #[must_use]
     pub fn a4() -> Self {
-        Self {
-            width: Points::new(595.28),
-            height: Points::new(841.89),
-        }
+        crate::layout::paper_catalog::A4.portrait()
     }
 
-    /// US Letter page size (612 × 792 pt).
+    /// US Letter page size (612 × 792 pt) — likewise from the catalogue.
     #[must_use]
     pub fn letter() -> Self {
-        Self {
-            width: Points::new(612.0),
-            height: Points::new(792.0),
-        }
+        crate::layout::paper_catalog::US_LETTER.portrait()
+    }
+
+    /// The catalogued paper this size is, or `None` for a user-defined size.
+    /// Orientation-independent; see [`paper_for`].
+    ///
+    /// [`paper_for`]: crate::layout::paper_catalog::paper_for
+    #[must_use]
+    pub fn paper(&self) -> Option<&'static crate::layout::paper_catalog::Paper> {
+        crate::layout::paper_catalog::paper_for(self)
     }
 }
 
@@ -206,6 +212,33 @@ impl SectionColumns {
     }
 }
 
+pub use super::page_usage::PageUsage;
+
+impl PageLayout {
+    /// Sets the page size **and brings [`orientation`](Self::orientation) with
+    /// it**.
+    ///
+    /// The two are one fact recorded twice: `w:orient` and `w:w`/`w:h` in OOXML,
+    /// and in this model a `PageOrientation` beside a `PageSize`. Word keeps
+    /// them agreeing — a landscape page has its width and height already
+    /// swapped *and* `w:orient="landscape"` — and every consumer here assumes
+    /// the same. They drifted wherever a caller assigned `page_size` on its own:
+    /// a typed custom size or a seeded app default produced landscape
+    /// dimensions under a `Portrait` flag, so the exporter wrote
+    /// `w:orient="portrait"` for a page that is plainly landscape while the
+    /// panel's Landscape button — which reads the dimensions — lit up.
+    ///
+    /// Assign through here rather than to the field, and the pair cannot part.
+    pub fn set_page_size(&mut self, size: PageSize) {
+        self.orientation = if size.width.value() > size.height.value() {
+            PageOrientation::Landscape
+        } else {
+            PageOrientation::Portrait
+        };
+        self.page_size = size;
+    }
+}
+
 /// The complete page layout for a section.
 ///
 /// TR 29166 §7.2.8 (Section and page layout) and §6.2.3 (header/footer).
@@ -223,6 +256,11 @@ pub struct PageLayout {
     pub orientation: PageOrientation,
     /// Multi-column layout, if any. `None` = single column.
     pub columns: Option<SectionColumns>,
+    /// Which pages of a spread this layout applies to, and whether its margins
+    /// mirror (ODF `style:page-usage`; OOXML's document-wide
+    /// `w:mirrorMargins` collapses into this on import).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub page_usage: PageUsage,
     /// The default (odd/right-page) header.
     pub header: Option<HeaderFooter>,
     /// The default (odd/right-page) footer.
@@ -253,21 +291,5 @@ pub struct PageLayout {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a4_dimensions() {
-        let size = PageSize::a4();
-        // A4 is approximately 595 × 842 pt
-        assert!((size.width.value() - 595.28).abs() < 0.1);
-        assert!((size.height.value() - 841.89).abs() < 0.1);
-    }
-
-    #[test]
-    fn default_page_layout_portrait() {
-        let layout = PageLayout::default();
-        assert_eq!(layout.orientation, PageOrientation::Portrait);
-        assert!(layout.header.is_none());
-    }
-}
+#[path = "page_tests.rs"]
+mod tests;

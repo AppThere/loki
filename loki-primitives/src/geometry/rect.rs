@@ -69,7 +69,37 @@ impl<U: Copy> Rect<U> {
             && p.y.value() < self.max_y().value()
     }
 
-    /// Tests for crossing
+    /// Tests for crossing. **Edges open**: rects that merely touch do not
+    /// intersect.
+    ///
+    /// # The hazard is flush contact, and degenerate rects are all contact
+    ///
+    /// Stated precisely because the loose version — "an open test is false for
+    /// any degenerate rect" — is not true, and the test below is what settled
+    /// it: a zero-width rect *strictly inside* another does intersect it. What
+    /// an open test rejects is **touching**, and a degenerate rect is entirely
+    /// boundary, so it is rejected exactly when it lies flush with an edge.
+    ///
+    /// That distinction decides whether the trap fires, because UI geometry
+    /// *aligns* things: put a caret on a page's left margin, or start a menu at
+    /// the caret's x, and flush contact is the normal case rather than an edge
+    /// case. That is how it produced a live defect one crate over — a popover's
+    /// "does the menu cover its own caret" assertion used an open intersection
+    /// against a zero-width, left-aligned caret, so `menu.x < caret.right()`
+    /// read `400.0 < 400.0` and the test could not fail.
+    ///
+    /// # Stated because it has no caller yet, which is when a trap is cheapest
+    /// to label
+    ///
+    /// The workspace has four `Rect` types with three different edge
+    /// conventions: this one is open, `loki_layout::LayoutRect::intersects` is
+    /// closed (its docs say so), and `contains_point` is half-open here and
+    /// closed in `loki-layout` and `loki-graphics`. None of the names disclose
+    /// it. Whatever first calls this should decide, deliberately, whether a
+    /// collapsed selection, an empty line box or a hairline rule flush with a
+    /// boundary must count.
+    ///
+    /// [`Self::intersection`] inherits the convention.
     #[must_use]
     pub fn intersects(self, other: Self) -> bool {
         self.min_x().value() < other.max_x().value()
@@ -158,6 +188,52 @@ mod tests {
             Length::new(30.0),
         );
         assert!(r1.intersection(disjoint).is_none());
+    }
+
+    /// The open convention pinned where it bites, and where it does not.
+    ///
+    /// Written to check the loose claim that an open test is false for *any*
+    /// degenerate rect; it is not, and knowing which half is true is what tells
+    /// a future caller whether it is exposed. Both halves are asserted so the
+    /// distinction cannot be lost to a later edit.
+    ///
+    /// Not a fix — nothing calls `intersects` yet, and changing a shared
+    /// primitive's semantics for a hypothetical caller is worse than labelling
+    /// it. This exists so the first caller meets the convention as a test it can
+    /// read rather than as a defect it has to find, which is the order it went
+    /// in one crate over.
+    #[test]
+    fn a_degenerate_rect_intersects_unless_it_lies_flush_with_an_edge() {
+        let page = Rect::<Pt>::from_ltrb(
+            Length::new(0.0),
+            Length::new(0.0),
+            Length::new(10.0),
+            Length::new(10.0),
+        );
+        let caret_inside = Rect::<Pt>::from_ltrb(
+            Length::new(5.0),
+            Length::new(2.0),
+            Length::new(5.0),
+            Length::new(8.0),
+        );
+        assert!(
+            page.intersects(caret_inside),
+            "a zero-width caret strictly inside does intersect — the collapse is \
+             not degeneracy on its own",
+        );
+        let caret_on_the_margin = Rect::<Pt>::from_ltrb(
+            Length::new(0.0),
+            Length::new(2.0),
+            Length::new(0.0),
+            Length::new(8.0),
+        );
+        assert!(
+            !page.intersects(caret_on_the_margin),
+            "a caret flush with the left margin is reported as outside the page \
+             it sits in — this is the case that bites, and UI geometry aligns \
+             things to edges as a matter of course",
+        );
+        assert!(page.intersection(caret_on_the_margin).is_none());
     }
 
     #[test]

@@ -66,12 +66,69 @@ pub(crate) fn layout_blocks_reflow(
     }
 }
 
+/// A variant laid out once and shared by every page that shows it, or `None`
+/// when it contains a PAGE / NUMPAGES field and must be re-laid-out per page.
+type Prelaid = Option<(Vec<PositionedItem>, f32)>;
+
+/// The first / even / default variants of one region, each with its pre-laid
+/// items — what [`Variants::select`] chooses between.
+struct Variants<'a> {
+    first: (&'a Option<HeaderFooter>, &'a Option<Prelaid>),
+    even: (&'a Option<HeaderFooter>, &'a Option<Prelaid>),
+    default: (&'a Option<HeaderFooter>, &'a Option<Prelaid>),
+}
+
+impl<'a> Variants<'a> {
+    /// The variant page `pn` shows.
+    ///
+    /// `is_first` is the caller's answer to "is this the first page of *this
+    /// section*" — not `pn == 1`, which asks about the document and is what
+    /// stopped every section after the first from ever showing its first-page
+    /// variant.
+    fn select(&self, pn: usize, is_first: bool) -> Option<(&'a HeaderFooter, &'a Prelaid)> {
+        let pick = if is_first && self.first.0.is_some() {
+            self.first
+        } else if pn.is_multiple_of(2) && self.even.0.is_some() {
+            self.even
+        } else {
+            self.default
+        };
+        pick.0.as_ref().zip(pick.1.as_ref())
+    }
+}
+
+/// Where the section being laid out sits in the finished document.
+///
+/// The two travel together because neither can be derived from the `pages`
+/// slice: it is not necessarily the whole document (so the total is unknown)
+/// and not necessarily the whole section (so its start is unknown).
+#[derive(Clone, Copy)]
+pub(crate) struct PagePosition {
+    /// Document-global page number of this section's **first** page, 1-indexed.
+    ///
+    /// Two quantities depend on it: which page gets the first-page variant, and
+    /// where a `w:pgNumType` restart counts from.
+    ///
+    /// Supplied rather than read off `pages.first()` because `pages` is not
+    /// guaranteed to be the whole section — the incremental path passes only the
+    /// re-flowed middle. *Today* that middle always is the whole section (there
+    /// is one checkpoint per section, at block 0, so every resume starts there —
+    /// see `the_property_tests_only_ever_resume_from_block_zero`), so inferring
+    /// it from the slice would give the same answer. Once T3.4 makes checkpoints
+    /// per-page, resumes begin mid-section and the inference silently becomes
+    /// wrong for both quantities. Taking it from the caller, who knows it either
+    /// way, is what stops that from being a change nobody remembers to make.
+    pub section_first_page: usize,
+    /// Total pages in the finished document, for NUMPAGES.
+    pub total_page_count: u32,
+}
+
 /// Populate header/footer items for each page in `pages`.
 ///
 /// Variants without PAGE / NUMPAGES fields are laid out once (in reflow mode)
 /// and cloned onto each page. Variants containing page fields are re-laid-out
 /// per page with a [`crate::FieldContext`] carrying the real page number and
-/// `total_page_count`, so "Page X of Y" chrome renders correctly.
+/// `pos.total_page_count`, so "Page X of Y" chrome renders correctly.
 ///
 /// Items are translated to page-local coords: header top `margins.header`;
 /// footer top `page_height - margins.footer - footer_height`.
@@ -81,7 +138,7 @@ pub(crate) fn assign_headers_footers(
     resources: &mut FontResources,
     catalog: &StyleCatalog,
     display_scale: f32,
-    total_page_count: u32,
+    pos: PagePosition,
 ) {
     let content_width = pages
         .first()
@@ -116,31 +173,20 @@ pub(crate) fn assign_headers_footers(
     let ftr_margin = pts_to_f32(layout.margins.footer);
     let left_margin = pts_to_f32(layout.margins.left);
 
-    // Selects the variant for page `pn`: (source blocks, pre-laid items).
-    // `pre` is `None` when the variant contains page fields and must be
-    // re-laid-out for each page.
-    #[allow(clippy::type_complexity)] // local helper; aliasing hides intent
-    fn select<'a>(
-        pn: usize,
-        first_src: &'a Option<HeaderFooter>,
-        first_pre: &'a Option<Option<(Vec<PositionedItem>, f32)>>,
-        even_src: &'a Option<HeaderFooter>,
-        even_pre: &'a Option<Option<(Vec<PositionedItem>, f32)>>,
-        def_src: &'a Option<HeaderFooter>,
-        def_pre: &'a Option<Option<(Vec<PositionedItem>, f32)>>,
-    ) -> Option<(&'a HeaderFooter, &'a Option<(Vec<PositionedItem>, f32)>)> {
-        if pn == 1 && first_src.is_some() {
-            first_src.as_ref().zip(first_pre.as_ref())
-        } else if pn.is_multiple_of(2) && even_src.is_some() {
-            even_src.as_ref().zip(even_pre.as_ref())
-        } else {
-            def_src.as_ref().zip(def_pre.as_ref())
-        }
-    }
-
-    // First physical page of this section, used to offset the displayed number
-    // when the section restarts numbering (w:pgNumType @w:start).
-    let section_first_pn = pages.first().map(|p| p.page_number).unwrap_or(1);
+    // The three variants of one region (header or footer), each paired with its
+    // pre-laid items. Grouped into a struct rather than passed as six loose
+    // arguments: they arrive in first/even/default order twice over, and a
+    // transposed pair between the two calls would type-check.
+    let headers = Variants {
+        first: (&layout.header_first, &hdr_first),
+        even: (&layout.header_even, &hdr_even),
+        default: (&layout.header, &hdr_default),
+    };
+    let footers = Variants {
+        first: (&layout.footer_first, &ftr_first),
+        even: (&layout.footer_even, &ftr_even),
+        default: (&layout.footer, &ftr_default),
+    };
 
     for page in pages.iter_mut() {
         let page_h = page.page_size.height;
@@ -149,33 +195,18 @@ pub(crate) fn assign_headers_footers(
         // following pages increment from there. Absent a restart, use the
         // document-global physical page number.
         let display_pn = match layout.page_number_start {
-            Some(start) => start as usize + pn.saturating_sub(section_first_pn),
+            Some(start) => start as usize + pn.saturating_sub(pos.section_first_page),
             None => pn,
         };
         let ctx = crate::FieldContext {
             page_number: display_pn as u32,
-            page_count: total_page_count,
+            page_count: pos.total_page_count,
             number_format: layout.page_number_format,
         };
 
-        let hdr = select(
-            pn,
-            &layout.header_first,
-            &hdr_first,
-            &layout.header_even,
-            &hdr_even,
-            &layout.header,
-            &hdr_default,
-        );
-        let ftr = select(
-            pn,
-            &layout.footer_first,
-            &ftr_first,
-            &layout.footer_even,
-            &ftr_even,
-            &layout.footer,
-            &ftr_default,
-        );
+        let is_first = pn == pos.section_first_page;
+        let hdr = headers.select(pn, is_first);
+        let ftr = footers.select(pn, is_first);
 
         if let Some((hf, pre)) = hdr {
             let (mut items, h) = match pre {

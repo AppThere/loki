@@ -52,12 +52,13 @@ mod tail;
 mod textbox_impl;
 
 pub use group::flow_section_group;
-pub(crate) use headers::assign_headers_footers;
-pub(crate) use headers::layout_blocks_reflow;
+pub(crate) use headers::{PagePosition, assign_headers_footers, layout_blocks_reflow};
 pub(crate) use page_fields::page_layout_has_page_fields;
-use tail::{
-    flow_footnotes, flow_hrule, get_items_max_x, synthesize_heading_para, synthesize_plain_para,
-};
+use tail::{flow_footnotes, flow_hrule, get_items_max_x};
+// Public for ADR-0017's DOM reflow view: paragraph synthesis and the list
+// marker/indent rules, so neither path states either twice (see their defs).
+pub use dispatch::{NESTED_INDENT_PT, list_marker, synthesize_list_item_para};
+pub use tail::{synthesize_heading_para, synthesize_plain_para};
 
 use std::collections::HashMap;
 
@@ -177,13 +178,13 @@ pub(super) struct FlowState<'a> {
     pub(super) prev_list_id: Option<ListId>,
     /// Footnote/endnote counter for the section (bumped by `walk_inlines`).
     pub(super) note_counter: u32,
-    /// Footnotes whose reference has been placed on the **current page**, laid
-    /// out at their bottom by `finish_page`. Their height is reserved from
-    /// [`page_content_height`](Self::page_content_height) as each is collected,
-    /// so body content stops above the footnote band (per-page placement,
-    /// matching Word — a footnote sits at the foot of the page carrying its
-    /// reference, not dumped at the section end).
+    /// Footnotes whose reference is on the **current page**, laid out at its
+    /// foot by `finish_page` (their height reserved from `page_content_height`
+    /// so body content stops above the band — per-page, matching Word).
     pub(super) pending_footnotes: Vec<CollectedNote>,
+    /// Endnotes, held for the section-end flush (`flow_footnotes`) rather than
+    /// the per-page footnote band.
+    pub(super) pending_endnotes: Vec<CollectedNote>,
     /// Points reserved at the foot of the **current page** for the footnotes
     /// collected so far (separator band + each note's measured height). Shrinks
     /// [`content_bottom`](Self::content_bottom) so body content stops above the

@@ -42,6 +42,32 @@ which never re-creates, kept working). The patch:
 **Removal condition:** upstream `loki-file-access` ships the equivalent fix;
 then drop the `[patch]` entry and `patches/loki-file-access/`.
 
+### appthere-color — 0.1.1 (vendored, not patched)
+
+**Source:** `patches/appthere-color/`, copied unmodified from the crates.io
+`0.1.1` tarball. Full detail — the compliance measurement, what was deliberately
+*not* changed, and the re-vendoring procedure — is in
+[`patches/appthere-color/VENDORED.md`](../patches/appthere-color/VENDORED.md).
+
+**This entry is different in kind from every other one on this page.** The rest
+exist because upstream has a defect, and each names the upstream fix that would
+let it be deleted. This one has no defect: `appthere-color` is AppThere's own
+crate, and Spec 08 Phase 5's colour work changes it and its consumers together,
+so vendoring removes a crates.io release cycle from each iteration. It is a
+working copy, not a workaround.
+
+**Local modifications:** none as of the fork point.
+
+**Removal condition:** when Phase 5's colour work is finished and the API has
+settled, publish the accumulated changes as `0.1.2+` and delete the entry. An
+entry still present with no local modifications has outlived its reason — which
+is the check to make, because a vendoring that costs nothing to keep is also one
+nobody notices keeping.
+
+**Added:** 2026-08-02 (Spec 08 T5.1 / D-09).
+
+---
+
 ### dioxus-native-dom — 0.7.9
 
 **Version pin:** the whole dioxus family is pinned to `=0.7.9` in the root
@@ -67,6 +93,37 @@ programmatic scroll the scrollbar thumb-drag uses. If this patch is dropped, the
 content still scrolls (blitz-shell handles the wheel) but the thumb freezes and
 drag is a no-op.
 
+**Wheel-event dispatch (PATCH(loki), 2026-08-02).** `DioxusDocument::handle_wheel`
+dispatches a bubbling DOM `wheel` event, and `convert_wheel_data` is implemented
+against a new `NativeWheelData` (exported from the crate root). Before this,
+`onwheel` was `unimplemented!()` and no wheel gesture reached Dioxus at all —
+blitz-shell consumed the whole event. Three things in it are deliberate:
+
+- **It bubbles, and starts at the nearest Dioxus-mapped ancestor.** A wheel's
+  target is a hit-test result, routinely a text node with no `data-dioxus-id`;
+  dispatching only at mapped nodes (as the scroll path does) would make the hook
+  silent in the case it exists for. The nodes stepped over carry no Dioxus
+  listeners, so nothing is skipped.
+- **`NativeWheelData` carries a scrollport-relative position** as well as the
+  usual target-relative `element_*`. The two frames differ by however far the
+  target sits inside the scrolled content, and a consumer cannot convert between
+  them — recovering the scrollport frame needs the target's position within it,
+  which is exactly what the event does not carry. Pointer-anchored zoom needs the
+  scrollport frame; a sitting measured the gap at 135 px. It comes from
+  `BaseDocument::scrollport_origin`.
+- **`trigger_button()` is `None` and `held_buttons()` empty.** A wheel turn is
+  not a button press, and the shell tracks no button state on this path.
+
+If this patch is dropped, Ctrl+wheel zoom stops working (ordinary scrolling is
+unaffected — that is blitz-shell's).
+
+**Element-origin fix (PATCH(loki), 2026-08-02).** `element_*` coordinates now
+come from `Node::border_box_position` rather than `absolute_position`, which
+subtracts the node's *own* scroll offset and so places the origin at the top of
+the node's scrolled content. Invisible on the click path (a click targets a leaf,
+and a leaf scrolls nothing) and wrong by the full scroll offset the moment the
+target is a scroll container.
+
 **Fixes:** The upstream dioxus-native-dom 0.7.4 panics at runtime for any
 event type whose `HtmlEventConverter` implementation is a placeholder
 `unimplemented!()`. The affected methods include:
@@ -87,6 +144,55 @@ for the embedder to fire. `mounted.rs` provides the `MountedElement`
 `RenderedElementBacking` plus a `MountedBackend` trait — the transport that
 actually touches the live document, implemented in `dioxus-native` so this crate
 stays free of any winit/shell dependency.
+
+**Programmatic focus (PATCH(loki), 2026-08-02).**
+`RenderedElementBacking::set_focus` is a trait method with a `NotSupported`
+default, and the vendored backing did not override it — so **no component in
+this workspace could move focus at all**. That is disqualifying for any overlay:
+returning focus to the control that opened a menu is the single most-relied-on
+behaviour of the class, and losing it to the document root on close is the
+commonest accessibility defect there is. It surfaced in Spec 08 T4.5, where
+`focus_after_dismiss` and `dismiss_sequence` turned out to be decisions with no
+*possible* caller rather than ones with a forgotten caller.
+
+`MountedElement::set_focus` now routes to a new `MountedBackend::focus_node`,
+implemented in `dioxus-native` as a `DioxusNativeEvent::FocusNode` posted to the
+event loop — exactly the shape `scroll` already used for `scroll_node_to`. On
+the event-loop side it calls `BaseDocument::set_focus_to` / `clear_focus`, both
+of which already existed and are already driven by the mouse path; the handler
+checks `get_node` first, because focus restoration on dismissal races the
+unmount that caused it and a stale node id must not reach `set_focus_to`.
+
+Fire-and-forget, like `scroll`: the document lives on the event-loop side, so a
+round trip would make focus restoration await a frame it is racing. Callers
+therefore get `Ok(())` meaning *posted*, not *focused*.
+
+If this patch is dropped, every popover stops returning focus on dismissal and
+`appthere_ui::components::popover::focus_tests::restoring_focus_to_the_anchor_is_a_real_action`
+fails — deliberately, so the loss is a test failure rather than a silent
+regression in behaviour nothing asserts.
+
+**Focus preservation must not overrule a deliberate move (PATCH(loki),
+2026-08-02).** `DioxusDocument::poll` captures the focused node's Dioxus
+`ElementId` before `render_immediate` and restores it after, so focus survives a
+re-render that rebuilds the focused node. The mutation flush is also where
+`autofocus` fires — so a render that *deliberately* moved focus (mounting an
+`autofocus` overlay) had it handed straight back to whatever held it before.
+Combined with the click-focus ordering above, an overlay could be focused twice
+and lose it twice, and the symptom was identical either way: a menu opens and
+every key still goes to the trigger.
+
+The restoration is now skipped when focus changed during the render *to a node
+that still exists*. Focus that is merely stale — its node removed, or its id
+reused — is the case this restoration exists for, and it is exactly the case
+where the current focus does not name a live node, so the discriminator is a
+before/after pair rather than a smarter element lookup.
+
+**Not covered:** "focus the node *after* this one", which
+`DismissStep::AdvanceFocusPastAnchor` (Tab out of a menu) needs.
+`set_focus` takes a `bool`, and blitz-dom's `focus_next_node` — which would
+serve it — is reachable only by depending on the renderer crate from
+`appthere-ui`. Tracked in `scripts/pending-questions.txt`.
 
 Vendoring the crate locally means Loki can build against a known snapshot and
 apply targeted fixes without being blocked by an upstream release. See
@@ -119,6 +225,26 @@ events are available without panicking.
 
 **Source:** `patches/blitz-shell/` (local, vendored from crates.io version 0.2.3,
 checksum `61ecda230035f39b13383f08e0cfc7159c92d194650ac8d57871a207ea0e52b7`).
+
+**Wheel reporting, and the modified-wheel policy (PATCH(loki), 2026-08-02).**
+The `MouseWheel` arm now reports every gesture to the embedder via
+`Document::handle_wheel` *before* deciding whether to scroll with it, and
+declines to scroll any wheel carrying a modifier.
+
+Two details are load-bearing. First, the report carries the **platform's own**
+delta and unit (`WheelUnit::Lines` / `Pixels`), not the `scroll_x`/`scroll_y`
+this handler computes — those have been through a line-to-pixel factor that is a
+scroll-speed tuning constant, not a measured line height, so forwarding them
+would answer "how far did the wheel turn" with a number meaning "how far should
+this scroll". Second, the decline test is **any** modifier rather than Control:
+which modifiers mean zoom is the embedder's choice (Ctrl on Windows/Linux, Cmd
+→ `SUPER` on macOS), and two modifier lists that have to agree across a crate
+boundary is how a wheel comes to zoom *and* scroll at once. The broader set
+cannot be narrower than whatever the embedder picks; the cost is that Shift and
+Alt no longer scroll, which is no loss — neither had a meaning here.
+
+Only the shell can honour this policy: by the time an embedder sees a
+notification, the scroll has already happened.
 
 **Fixes:** `WindowEvent::Touch` events are discarded in the upstream
 `handle_winit_event` match arm (the arm body is `{}` with a
@@ -371,6 +497,14 @@ events through the event-loop proxy. `flush_mounted` drains
 `mounted` event with a `MountedElement` backing, so `onmounted` fires. This is
 what enables the editor's draggable scrollbar thumb.
 
+**`FocusNode` (PATCH(loki), 2026-08-02).** A third `DioxusNativeEvent` variant,
+backing `MountedData::set_focus` — see the dioxus-native-dom entry for why
+programmatic focus did not exist at all before this. `ProxyMountedBackend::focus_node`
+posts it; the handler calls `BaseDocument::set_focus_to` (or `clear_focus`) after
+checking `get_node`, then polls and requests a redraw so the focus ring and any
+`onfocus` handler land in the same frame. Same shape as `ScrollNode`, deliberately:
+one transport, one place a node id is validated.
+
 **`autofocus` enabled by default (PATCH(loki), 2026-06-20).** `autofocus` is
 added to the `default` feature set in `patches/dioxus-native/Cargo.toml` (it
 forwards to `blitz-dom/autofocus`). Upstream ships this feature **off**, and the
@@ -408,6 +542,44 @@ is made synchronous (the `todo(jon)` comment in the original acknowledges this).
 
 ---
 
+### parley — 0.6.0
+
+**Source:** `patches/parley/` (local, vendored from crates.io 0.6.0).
+
+**Fix (one hunk, `src/shape/mod.rs`):** when the shaper breaks a run it refreshes
+every field of the current shape item **except** `letter_spacing` and
+`word_spacing`. The item therefore keeps the *first* style's spacing for the
+whole layout, so a styled run that asks for letter-spacing gets it only when it
+is the paragraph's first run — and then every other run gets it too.
+
+**How it was found, and why it took a patch.** ADR-0017 §5.6: the DOM reflow
+view's line breaks matched the canvas path on every fixture except a paragraph
+with a letter-spaced run in it. Measured with `advance_probe`'s structural rows,
+one span against three: a tracked span **first** widened all 36 characters of the
+row (+288 px at 6 pt), and a tracked span anywhere else widened none. The canvas
+path was correct on the same document — because `loki-layout` is on **parley
+0.10**, where the two lines are present, while the Blitz stack is still on 0.6.
+So the two paths disagreed for a reason visible in neither.
+
+Bumping Blitz instead is not a two-line change: `blitz-dom`, `blitz-shell` **and
+`blitz-paint`** share parley 0.6 types, and `blitz-paint` is not vendored here.
+
+**Scope.** The `[patch.crates-io]` entry carries `version = "0.6.0"`, which
+satisfies the Blitz crates' `^0.6` and leaves `loki-layout`'s `^0.10` resolving
+from the registry. `cargo metadata` shows both, which is the check that this
+stayed narrow.
+
+**Removal condition:** the Blitz stack moves to parley ≥ 0.10. Watch for
+`warning: Patch ... was not used` — if the Blitz crates' requirement moves off
+`^0.6` the patch stops applying **silently as far as behaviour goes**, and the
+defect returns; the line-break comparison
+(`scripts/sitting/run.sh styledlinebreak` with `LB_FIXTURE=mixed:spacing`) is
+what notices.
+
+**Added:** 2026-08-05.
+
+---
+
 ### blitz-dom — 0.2.4
 
 **Source:** `patches/blitz-dom/` (local).
@@ -420,7 +592,49 @@ is made synchronous (the `todo(jon)` comment in the original acknowledges this).
    nearest `tabindex="0"` ancestor, preventing `onkeydown` from firing. The
    patch checks `is_focussable()` and calls `set_focus_to()` instead.
 
-2. **Scroll-change collection (PATCH(loki), 2026-06-10).**
+   **Moved to mousedown 2026-08-02 (r79).** The focus assignment itself now
+   happens in `handle_mousedown` (`focus_from_pointer`), not in `handle_click`.
+   The driver runs the embedder's handler *before* blitz's default action, so
+   focus assigned during `handle_click` lands **after** anything that handler
+   did — including mounting an `autofocus` element. Every "click a button, a
+   menu opens" interaction was therefore broken in the same way: the menu did
+   receive focus, and the trigger took it straight back, leaving a raised
+   overlay whose every key went to the button behind it. Browsers focus on
+   mousedown for precisely this ordering reason, so this is the platform
+   behaviour rather than a workaround for it. `handle_click` keeps the ancestor
+   walk (it still decides where a default action applies) and the `label`
+   branch focuses its bound input explicitly, since mousedown hit the label.
+
+2. **Enter and Space activate a focused control (PATCH(loki), 2026-08-02).**
+   `handle_keypress` did nothing at all for anything that was not a text input,
+   so a `button` could be reached by Tab and never pressed — **every control in
+   an embedder's UI was pointer-only**, WCAG 2.1.1. Tab traversal already
+   worked, which is what made the gap hard to see: focus visibly moves, and then
+   the keyboard stops.
+
+   The patch dispatches a synthetic click `DomEvent` for Enter and Space on a
+   focused non-text element, so the handler written for the pointer is the
+   handler the keyboard runs. It goes through `dispatch_event`, **not** through
+   `handle_click`: the latter is the *default action* for a click the embedder
+   has already been told about, so calling it directly runs the built-in
+   behaviour while the embedder's own `onclick` never fires — which is the whole
+   point in a Dioxus app, where every button's behaviour lives in an `onclick`.
+
+3. **`tabindex="-1"` is focusable but not tabbable (PATCH(loki), 2026-08-02).**
+   `is_focussable` answered the tab-order question — `Some(index) => index >= 0`
+   — so `tabindex="-1"` came out `false` and every consumer that meant "can this
+   hold focus at all" got the wrong answer. That is exactly the combination HTML
+   defines for a programmatically-focused container (an overlay, a dialog, a
+   menu: focus it on open, never land on it while Tabbing past), so `autofocus`
+   silently did nothing on any such element and the overlay's own key handler
+   never saw a key.
+
+   Split into two flags, because they are two questions: `is_focussable` for
+   "may hold focus" and `is_tab_focussable` for "is in the sequential navigation
+   order". `focus_next_node` takes the narrower one; `autofocus`, click-focus
+   and the embedder's programmatic focus take the wider one.
+
+4. **Scroll-change collection (PATCH(loki), 2026-06-10).**
    `scroll_node_by_collect` records each node whose scroll offset changed
    during a scroll gesture (including bubbling), and the `Document` trait
    gains a default-no-op `handle_scroll_changes` hook. blitz-shell calls the
@@ -430,19 +644,19 @@ is made synchronous (the `todo(jon)` comment in the original acknowledges this).
    Routed through the `Document` trait because blitz-traits 0.2 has no
    scroll `DomEventData` variant.
 
-3. **Absolute scroll (PATCH(loki), 2026-06-11).** `scroll_node_to_collect`
+5. **Absolute scroll (PATCH(loki), 2026-06-11).** `scroll_node_to_collect`
    scrolls a node to an absolute `(x, y)` offset (clamped, change-collecting),
    implemented on top of `scroll_node_by_collect`. Backs `MountedData::scroll`
    in the dioxus-native patch (draggable scrollbar thumb, scroll-to-cursor).
 
-4. **Scroll-container enumeration (PATCH(loki), 2026-06-12).**
+6. **Scroll-container enumeration (PATCH(loki), 2026-06-12).**
    `collect_scroll_containers` returns every node whose computed overflow is
    `scroll`/`auto`. blitz-shell calls it after a viewport resize (and after a
    scroll container mounts) and feeds the result to `handle_scroll_changes`, so
    the embedder re-receives `onscroll` with the new client size — letting the
    reflow view relayout to the window width without a user scroll.
 
-5. **Non-viewport-bubbling scroll (PATCH(loki), 2026-06-20).**
+7. **Non-viewport-bubbling scroll (PATCH(loki), 2026-06-20).**
    `scroll_node_within_collect` mirrors `scroll_node_by_collect` but drops any
    scroll that bubbles past the root element instead of moving the viewport
    (both delegate to a shared `scroll_node_by_collect_inner` taking a
@@ -451,7 +665,7 @@ is made synchronous (the `todo(jon)` comment in the original acknowledges this).
    overruns the document, or starts over the ribbon, does nothing rather than
    jiggling the UI by the sub-pixel root/window slack.
 
-6. **Static canvases don't force a per-frame redraw (PATCH(loki), 2026-06-21).**
+8. **Static canvases don't force a per-frame redraw (PATCH(loki), 2026-06-21).**
    `is_animating()` returns `has_canvas | has_active_animations`, and the shell's
    redraw loop re-requests a redraw every frame while it is true. Loki paints
    every document page as a `<canvas src>` custom-paint tile, so `has_canvas` is
@@ -467,7 +681,7 @@ is made synchronous (the `todo(jon)` comment in the original acknowledges this).
    updates correct while idle frames stop. (`is_animating()` is left intact for
    any other consumer.)
 
-7. **Embedder-supplied font blobs (PATCH(loki), 2026-06-27).** `DocumentConfig`
+9. **Embedder-supplied font blobs (PATCH(loki), 2026-06-27).** `DocumentConfig`
    gains `extra_fonts: Vec<Vec<u8>>`; `BaseDocument::new` registers each blob into
    the parley `FontContext` (on top of the system fonts and the default bullet
    font) at construction. This lets an app bundle its UI/fallback fonts and have
@@ -476,20 +690,157 @@ is made synchronous (the `todo(jon)` comment in the original acknowledges this).
    the UI typeface on Android). `dioxus-native`'s `Config::with_fonts(..)` feeds
    this field; the Loki apps pass `loki_fonts::ui_font_blobs()`.
 
+10. **Wheel-gesture hook (PATCH(loki), 2026-08-02).** `Document::handle_wheel`
+    reports one `WheelGesture` (node, delta, `WheelUnit`, pointer position,
+    modifiers) to the embedder; the default is a no-op. A hook rather than a
+    `DomEventData` variant for the same reason `handle_scroll_changes` is one —
+    blitz-traits 0.2 has no wheel variant, and adding one means vendoring
+    blitz-traits, which cascades into blitz-dom, blitz-paint and blitz-shell:
+    four forks for one event.
+
+    The delta and its unit travel together in `WheelGesture` because there is no
+    honest conversion between them — turning lines into pixels needs a line
+    height, and picking one fabricates a number the platform never gave.
+
+11. **Scrollport geometry (PATCH(loki), 2026-08-02).**
+    `BaseDocument::scrollport_origin` returns the origin of the innermost
+    scrolling ancestor of a node, and `Node::border_box_position` returns a
+    node's own box origin — `absolute_position` subtracts the node's *own*
+    scroll offset, which places the origin at the top of its scrolled content.
+
+    Both exist because an embedder cannot compute either: a DOM event's
+    `offsetX`/`offsetY` are relative to its *target*, and recovering the
+    scrollport frame from them needs the target's position within the
+    scrollport, which is exactly what the event does not carry. The
+    scroll-container test is shared with `scroll_node_by_collect_inner` rather
+    than copied — two answers to "what counts as a scroll container" agree
+    everywhere except on `overflow: visible` on `html`/`body`, which scrolls
+    despite the value that normally means it does not.
+
+10. **Per-run OpenType features via `data-font-features` (PATCH(loki),
+    2026-08-05).** Stylo 0.8 gates both `font-kerning` and
+    `font-feature-settings` to the Gecko engine, so in this build neither
+    property exists and `stylo_to_parley::style` sets Parley's `font_features`
+    to an unconditional empty list — leaving the shaper's default, which is
+    **kerning on**. A document renderer needs it off unless the document asks:
+    Word's `w:kern` and ODF's `style:letter-kerning` both default to off, and
+    `loki-layout` already disables the feature accordingly
+    (`para_build.rs`, gap #23).
+
+    The gap was measured, not assumed (ADR-0017 §5.6): the same string set by
+    the two paths came out **0.13 % narrower** in the DOM for ordinary serif
+    prose and **7.7 % narrower** for a kern-heavy one, which moves a line break
+    by several words. `build_inline_layout_recursive` now reads a
+    `data-font-features` attribute off the inline element and passes it to
+    Parley as `FontSettings::Source`; `dom_reflow::style::span_font_features`
+    emits it. After the patch every case agrees to the pixel the box is rounded
+    to.
+
+    Attribute rather than CSS **because there is no CSS to use** — a
+    `font-kerning` declaration is dropped as an unknown property, which is worse
+    than nothing since it reads like a fix.
+
 **Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
 for non-input elements, dispatches scroll events to embedders, exposes an
-absolute node-scroll API, and stops treating a static canvas as perpetually
-animating (e.g. a per-source "needs animation" signal).
+absolute node-scroll API, stops treating a static canvas as perpetually
+animating (e.g. a per-source "needs animation" signal), and Stylo exposes
+`font-feature-settings` to the servo engine (at which point the reflow view
+emits the CSS property and the `data-font-features` read goes away).
 
 **Added:** 2026-05-18 (focus); extended 2026-06-10 (scroll events),
 2026-06-11 (absolute scroll), 2026-06-21 (`needs_animation_tick` — stop the
-idle canvas redraw loop, paired with the blitz-shell `redraw()` change), and
-2026-06-27 (`extra_fonts` — synchronous bundled-font registration), together
-with matching changes in the blitz-shell and dioxus-native(-dom) patches.
+idle canvas redraw loop, paired with the blitz-shell `redraw()` change),
+2026-06-27 (`extra_fonts` — synchronous bundled-font registration),
+2026-08-02 (`handle_wheel` + scrollport geometry), and 2026-08-05
+(`data-font-features` — per-run kerning), together with matching changes in the
+blitz-shell and dioxus-native(-dom) patches.
 
 ---
 
-### anyrender_vello — 0.6.2
+## Documented stack deviations (not patches)
+
+Behaviours where this Blitz stack differs from the specification a reader would
+otherwise assume. Not patched — either because the deviation is upstream's to
+fix, or because working around it locally would be worse than knowing about it.
+Recorded here because the failure mode is always the same: a call site that
+reads correctly against the spec and is wrong against the implementation, which
+no amount of care at the call site can catch.
+
+**Three of these have been found one at a time, each by a consumer walking into
+it rather than by anyone reading a list** — `position: fixed`, the coordinate
+swap, and the absent `mouseleave`. Each cost a debugging session. The list is the
+artifact rather than the individual entries: **before writing against a DOM
+behaviour in this stack, read this section.** The next consumer of mouse events
+will otherwise make the same inference from the same specification.
+
+### `mouseenter` / `mouseleave` are not dispatched, and CSS `:hover` does nothing
+
+**What the DOM guarantees:** a pointer entering and leaving an element produces
+`mouseenter`/`mouseleave`, and `:hover` styles apply for the duration.
+
+**What this stack does:** neither. Blitz dispatches no enter/leave pair and
+honours no `:hover` rule, so an element cannot learn that the pointer has left
+it.
+
+**The consequence, and the shape of the workaround:** hover state has to be
+tracked positively from `onmousemove` on each candidate element — entering a row
+sets its key — and cleared by a *sibling* that covers the area outside them. The
+spelling menu does exactly this, and it is why
+`PopoverRequest::on_outside_move` exists: when the menu's own backdrop moved to
+the popover host (r64), the clear signal had to move with it or the row tint
+would have stuck to whichever row the pointer last crossed.
+
+**Watch for:** any control whose appearance depends on the pointer being over it.
+It will look correct while the pointer is moving and wrong the moment it stops
+somewhere else, which reads as a repaint bug rather than a missing event.
+
+### `clientX`/`clientY` are page coordinates, and `pageX`/`pageY` are missing
+
+**What the DOM guarantees:** `clientX/clientY` are **viewport**-relative and
+exclude scroll; `pageX/pageY` are **document**-relative and include it.
+
+**What this stack does:** `blitz-dom/src/events/driver.rs` builds the mouse
+event as
+
+```rust
+UiEvent::MouseDown(data) => DomEventData::MouseDown(BlitzMouseButtonEvent {
+    x: data.x + viewport_scroll.x as f32 / zoom,
+    y: data.y + viewport_scroll.y as f32 / zoom,
+```
+
+— winit's window-relative cursor position **plus the viewport scroll** — and
+`dioxus-native-dom/src/events.rs` returns that verbatim from
+`client_coordinates()`. That is the DOM's `pageX/pageY`. Meanwhile
+`page_coordinates()` is `unimplemented!()`.
+
+**So the two are swapped, not approximated.** A call site reading `client_x` gets
+the opposite of the guarantee it is relying on, and the error is invisible
+wherever scroll happens to be zero — which is most of the time, and all of the
+time in a fixture.
+
+**Same class as `position: fixed` collapsing to `absolute`** (see
+`appthere-ui/src/components/overlay.rs`): a spec-conformant reading of the call
+site is wrong, and only the source settles it.
+
+**Consequence for anyone consuming mouse coordinates:** the value is
+window-relative plus *top-level* scroll. **Inner scroll-container scroll is not
+included.** Today that is harmless in `loki-text` — the app root is `100vh` with
+`overflow: hidden` so top-level scroll is always zero, and the spelling menu's
+containing block is the editor root, so an inner scroll moves anchor and
+containing block together. It stops being harmless the moment a consumer's
+containing block is *not* the anchor's scroll parent — which is exactly what
+Spec 08 T4.1's root-hosted popover does.
+
+**Found:** 2026-07-27, tracing Spec 08 T4.1's coordinate-space question.
+**Upstream status:** not filed. **Removal condition:** a Blitz release where
+`client_coordinates()` excludes scroll and `page_coordinates()` is implemented.
+
+---
+
+## Active patch — anyrender_vello (0.6.2)
+
+*(A live `[patch.crates-io]` entry — kept as its own `##` section so it is not
+filed under "Documented stack deviations (not patches)" above, which it is not.)*
 
 **Source:** `patches/anyrender_vello/` (local), vendored from crates.io 0.6.2.
 
@@ -553,6 +904,52 @@ renderer is `Active`) before suspending and dropping the source.
 
 **Updated:** 2026-06-21
 
+**Additional fix (a custom source may return a smaller texture than its box):**
+`VelloScenePainter::fill` now compares the texture a custom paint source
+returned against the dimensions it was asked for, and scales the image brush to
+compensate when they differ.
+
+- *Root cause:* `render_custom_source` wraps the returned texture in an
+  `ImageBrush` and `fill` passes the caller's `brush_transform` through
+  untouched — which `blitz-paint`'s `draw_canvas` leaves `None`. The image is
+  therefore sampled 1:1 against a rect sized from the element's content box, so
+  a texture smaller than that box lands in the top-left corner with the rest of
+  the box showing the brush's extend mode. Not a scaled-down page; a broken one.
+- *Loki consumer:* Spec 08 T2.2. The resident-texture budget reduces the
+  rasterisation scale of off-centre pages under memory pressure
+  (`appthere_canvas::residency::plan_residency`), which is exactly this case —
+  the tile keeps its on-screen box and its texture shrinks. Without the patch
+  the budget's only remaining lever would be evicting visible content, which
+  ADR L08-002 forbids.
+- *Inert without a consumer:* the branch only fires when a source returns a
+  texture of a different size from the one requested, which no upstream source
+  does and which Loki itself does not do until the budget binds.
+- *Upstream status:* candidate upstream fix — the custom-paint API already lets
+  a source return any texture it likes, so the compositing side arguably has to
+  handle the size mismatch rather than silently mis-sampling it.
+- *Removal condition:* an anyrender_vello release that either scales a
+  mismatched custom-paint texture itself or forwards the source's own brush
+  transform.
+- *Tested:* `scene_brush_fit_tests.rs`, against `fit_brush_to_box` — the
+  arithmetic extracted from `fill` so it can be asserted without a GPU. The
+  assertions are **point mappings, not scale factors**: brush space is texture
+  space for an image brush, so "the texture covers its box" is "the transform
+  carries `(0,0)` to the box origin and `(got.w, got.h)` to the box's far
+  corner". Correct factors composed on the wrong side still read as `sx = 0.5`
+  while placing the texture elsewhere, and the corner is what a reader would
+  see. Verified discriminating by mutation: dropping the correction, swapping
+  `pre_scale` for `then_scale`, and using one factor for both axes each fail
+  it.
+- **Sub-pixel correctness is still open**, and only that. Filtering choice and
+  half-texel edge offsets need pixels; the gross case no longer does.
+
+  *Previously this bullet read "the arithmetic and the policy that drives it
+  are unit-tested headlessly". Only the policy was — `plan_residency` had
+  tests, `fill`'s correction had none. The claim was corrected on 2026-07-27
+  when the tests above were written.*
+
+**Updated:** 2026-07-27
+
 ---
 
 ## Upgrading Dioxus
@@ -615,11 +1012,15 @@ Let `OLD` be the current pin and `NEW` the target (e.g. `OLD=0.7.4`,
 5. **Move the pin** in every crate that declares dioxus:
 
    ```bash
-   for f in Cargo.toml loki-renderer/Cargo.toml appthere-canvas/Cargo.toml \
+   for f in Cargo.toml loki-renderer/Cargo.toml \
             loki-text/Cargo.toml loki-presentation/Cargo.toml loki-spreadsheet/Cargo.toml; do
      sed -i "s/version = \"=$OLD\"/version = \"=$NEW\"/" "$f"
    done
    ```
+
+   (`appthere-canvas` declares no `dioxus` dependency, so it is not in the list;
+   `appthere-ui` uses `dioxus = { workspace = true }` and inherits the pin from
+   the root `Cargo.toml` bump above — no per-file `sed` needed.)
 
    Also update the pin comment in the root `Cargo.toml` and the version in the
    two patch section headers in this file.
@@ -642,7 +1043,7 @@ Let `OLD` be the current pin and `NEW` the target (e.g. `OLD=0.7.4`,
    `cargo clippy --workspace -- -D warnings` must all pass. Finally, run the app
    and confirm scroll-wheel moves the thumb and thumb-drag scrolls the page.
 
-8. **Update docs:** the two patch section headers and re-vendor dates here, and
+10. **Update docs:** the two patch section headers and re-vendor dates here, and
    the Dioxus pin note in `CLAUDE.md`.
 
 ## Removing a patch

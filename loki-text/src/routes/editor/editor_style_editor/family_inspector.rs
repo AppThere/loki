@@ -13,7 +13,8 @@ use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
-use super::panel_data::{CharSelection, ListSelection, PageSelection};
+use super::panel_data::{CharSelection, ListSelection};
+use super::panel_data_page::PageSelection;
 use super::posture::StylePanelPosture;
 use super::provenance::CharRowsSection;
 

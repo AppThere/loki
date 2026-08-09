@@ -55,6 +55,10 @@ loki-epub       = { path = "../loki-epub" }
 loki-layout     = { path = "../loki-layout" }
 # Shared AppThere design tokens and UI components.
 appthere-ui     = { path = "../appthere-ui" }
+# Spec 08 T2.1: the resident page-texture budget's arithmetic. Taken directly
+# (rather than through loki-renderer) because this crate is the only layer that
+# sees both it and `appthere_ui::DeviceProfile`, which supplies its inputs.
+appthere-canvas = { workspace = true }
 loki-app-shell  = { path = "../loki-app-shell" }
 # Cross-platform file picker (crates.io).
 loki-file-access.workspace = true
@@ -64,6 +68,10 @@ webbrowser       = "1"
 thiserror       = "2"
 # Async event tracing — used for warn!/error!.
 tracing          = "0.1"
+# Desktop log sink. Without a subscriber every `tracing` macro in the workspace is
+# a no-op, which silently disabled the diagnostics the Spec 08 screen procedure
+# depends on — see `main.rs`.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Force fontconfig-dlopen on fontique so it uses the same dlopen path as
 # fontique v0.6 (pulled in by blitz-dom), which activates
 # yeslogic-fontconfig-sys/dlopen for the whole workspace.  Without this,
@@ -115,6 +123,16 @@ label = "Loki Text"
 [package.metadata.android.signing.release]
 path = "../target/android-pkg/signing.keystore"
 keystore_password = "android"
+
+[dev-dependencies]
+# **For the headless layout probes only** (`hanging_row_geometry`), which lay a
+# tree out through the very engine the app renders with and read its boxes and
+# line breaks as numbers instead of photographing them. `blitz-dom` resolves to
+# the vendored copy via the workspace `[patch.crates-io]`, so the probe measures
+# the patched engine and not a crates.io one.
+blitz-dom    = "0.2.4"
+blitz-html   = "0.2.0"
+blitz-traits = "0.2.0"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { workspace = true }

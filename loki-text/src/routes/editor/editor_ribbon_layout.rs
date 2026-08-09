@@ -15,6 +15,9 @@ use appthere_ui::{
     AtRibbonGroups, AtRibbonIconButton, RibbonGroupSpec, estimate_group_metrics,
 };
 use dioxus::prelude::*;
+use loki_doc_model::layout::page::PageSize;
+use loki_doc_model::layout::paper_catalog::{self, Paper};
+use loki_doc_model::loki_primitives::units::Points;
 use loki_doc_model::{
     MutationError, document_column_count, document_is_landscape, document_margins,
     document_page_size, set_document_columns, set_document_margins, set_document_orientation,
@@ -64,10 +67,20 @@ fn margin_matches(current: Option<(f64, f64, f64, f64)>, preset: (f64, f64, f64,
     close(t, preset.0) && close(b, preset.1) && close(l, preset.2) && close(r, preset.3)
 }
 
-/// A page-size preset: `(aria-key, portrait_width, portrait_height, icon)` — pt.
-const PAGE_SIZE_PRESETS: &[(&str, f64, f64, &str)] = &[
-    ("ribbon-page-a4-aria", 595.28, 841.89, AT_PAGE_A4),
-    ("ribbon-page-letter-aria", 612.0, 792.0, AT_PAGE_LETTER),
+/// The ribbon's page-size quick presets: `(aria-key, paper, icon)`.
+///
+/// Two, deliberately — the ribbon is the two-click path for the common case,
+/// and the **whole** catalogue lives in the page-style panel's size picker
+/// (T6.2). The dimensions come from the catalogue rather than literals here,
+/// which is what this row used to hold: a second copy of A4's and Letter's
+/// measurements that could drift from the ones naming them.
+const PAGE_SIZE_PRESETS: &[(&str, &Paper, &str)] = &[
+    ("ribbon-page-a4-aria", &paper_catalog::A4, AT_PAGE_A4),
+    (
+        "ribbon-page-letter-aria",
+        &paper_catalog::US_LETTER,
+        AT_PAGE_LETTER,
+    ),
 ];
 
 /// A column preset: `(aria-key, count, icon)`.
@@ -77,15 +90,17 @@ const COLUMN_PRESETS: &[(&str, u8, &str)] = &[
     ("ribbon-columns-three-aria", 3, AT_COLUMNS_THREE),
 ];
 
-/// Whether the document's `current` page size is the `preset` paper, comparing
-/// the orientation-independent short/long edges within a point.
-fn page_size_matches(current: Option<(f64, f64)>, preset: (f64, f64)) -> bool {
+/// Whether the document's `current` page size is `paper`, via the catalogue's
+/// own orientation-independent rule — this used to be a third private copy of
+/// it, alongside the style inspector's and the page form's.
+fn page_size_matches(current: Option<(f64, f64)>, paper: &Paper) -> bool {
     let Some((w, h)) = current else {
         return false;
     };
-    let (cmin, cmax) = (w.min(h), w.max(h));
-    let (pmin, pmax) = (preset.0.min(preset.1), preset.0.max(preset.1));
-    (cmin - pmin).abs() < 1.0 && (cmax - pmax).abs() < 1.0
+    paper.matches(&PageSize {
+        width: Points::new(w),
+        height: Points::new(h),
+    })
 }
 
 /// Runs a mutation `f` against the live document, relays out, and syncs
@@ -204,17 +219,19 @@ pub(super) fn layout_tab_content(
         label: Some(fl!("ribbon-group-page-size")),
         aria_label: fl!("ribbon-group-page-size"),
         content: rsx! {
-            for (aria, pw, ph, icon) in PAGE_SIZE_PRESETS.iter().copied() {
+            for (aria, paper, icon) in PAGE_SIZE_PRESETS.iter().copied() {
                 AtRibbonIconButton {
                     key: "{aria}",
                     aria_label:  fl!(aria),
-                    is_active:   page_size_matches(page_size, (pw, ph)),
+                    is_active:   page_size_matches(page_size, paper),
                     is_disabled: false,
                     on_click: {
                         let ds = Arc::clone(doc_state);
                         move |_| apply_and_sync(
                             &ds, loro_doc, cursor_state, undo_manager,
-                            can_undo, can_redo, |lo| set_document_page_size(lo, pw, ph),
+                            can_undo, can_redo, |lo| set_document_page_size(
+                                lo, paper.width_pt, paper.height_pt,
+                            ),
                         )
                     },
                     AtIcon { path_d: icon.to_string() }

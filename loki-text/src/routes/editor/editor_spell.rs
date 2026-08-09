@@ -37,7 +37,12 @@ pub(super) struct SpellMenu {
 
 /// Editor signal handles needed to apply a spelling mutation, bundled to keep
 /// call sites short (mirrors the other panels' `*Sync` structs).
-#[derive(Clone, Copy)]
+///
+/// `PartialEq` because `SpellPopover`'s hand-written props compare it: every
+/// field is a `Signal`, whose equality is handle identity rather than content, so
+/// this compares "the same signals" and not "the same document" — which is what a
+/// props comparison wants.
+#[derive(Clone, Copy, PartialEq)]
 pub(super) struct SpellSync {
     pub loro_doc: Signal<Option<loro::LoroDoc>>,
     pub cursor_state: Signal<CursorState>,

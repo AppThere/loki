@@ -43,6 +43,10 @@ pub fn router(state: ApiState) -> Router {
         )
         .route("/v1/documents/{doc}/members", post(routes::members::add))
         .route("/v1/documents/{doc}/blobs", post(routes::blobs::upload))
+        .route(
+            "/v1/documents/{doc}/blobs/{blob_id}",
+            get(routes::blobs::download),
+        )
         .route("/v1/documents/{doc}/collab", get(routes::collab::upgrade))
         .route("/v1/documents/{doc}/export", post(routes::export::request))
         .route("/v1/gdpr/export", get(routes::gdpr::export))

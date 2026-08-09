@@ -7,7 +7,8 @@ use super::Value;
 use crate::error::RuntimeError;
 
 /// Hard cap on total element count, so a hostile `Dim a(2000000000)` cannot
-/// request a multi-gigabyte allocation (macro spec §8, memory caps). ~16M
+/// request a multi-gigabyte allocation (macro spec §8 per-allocation memory
+/// caps — the array companion of [`crate::value::MAX_STRING_BYTES`]). ~16M
 /// elements is far beyond any legitimate macro array.
 const MAX_ELEMENTS: usize = 16_000_000;
 

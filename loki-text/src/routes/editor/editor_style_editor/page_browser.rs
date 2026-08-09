@@ -8,25 +8,38 @@
 //! Selecting a page style writes its id into `editing_page_style`, which the
 //! panel reads to show that style's geometry rows read-only (§9). Page styles
 //! are non-inheriting, so this is a plain list (a flat family, like lists).
+//!
+//! The New / Duplicate / Delete verbs live in [`super::page_manager_verbs`] —
+//! they act on the list rather than on the open form, so they render here, but
+//! they are three separate controls and keeping them out of this file is what
+//! holds it under the ceiling.
+
+use std::sync::{Arc, Mutex};
 
 use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
+use super::StyleEditorSync;
+use super::page_manager_verbs::{
+    delete_page_style_button, duplicate_page_style_button, new_page_style_button,
+};
+use super::panel_data_page::PageListEntry;
 use super::posture::StylePanelPosture;
+use crate::editing::state::DocumentState;
 
-/// Renders the "Page styles" heading and one button per page style (empty when
-/// the document has none). `page_selected` highlights the active id; `posture`
-/// supplies the Compact touch minimum (§11).
+/// Renders the "Page styles" heading, the New button, and one button per page
+/// style. `page_selected` highlights the active id; `posture` supplies the
+/// Compact touch minimum (§11). A style no section uses is marked, so "created
+/// but not applied" is visible rather than indistinguishable from in-use.
 pub(super) fn page_list_section(
-    page_list: Vec<(String, String)>,
+    doc_state: &Arc<Mutex<DocumentState>>,
+    page_list: Vec<PageListEntry>,
     page_selected: Option<String>,
     mut editing_page_style: Signal<Option<String>>,
     posture: StylePanelPosture,
+    sync: StyleEditorSync,
 ) -> Element {
-    if page_list.is_empty() {
-        return rsx! {};
-    }
     rsx! {
         div {
             style: format!(
@@ -37,7 +50,14 @@ pub(super) fn page_list_section(
             ),
             { fl!("style-page-family-heading") }
         }
-        for (id, display) in page_list.into_iter() {
+        // New / Duplicate / Delete — the list-level manager verbs (T6.7).
+        div {
+            style: "display: flex; flex-direction: row; gap: 4px; flex-wrap: wrap; margin-bottom: 2px;",
+            { new_page_style_button(doc_state, editing_page_style, sync) }
+            { duplicate_page_style_button(doc_state, page_selected.clone(), editing_page_style, sync) }
+            { delete_page_style_button(doc_state, page_selected.clone(), editing_page_style, sync) }
+        }
+        for (id, display, applied) in page_list.into_iter() {
             {
                 let is_sel = page_selected.as_deref() == Some(id.as_str());
                 let id_cap = id.clone();
@@ -46,7 +66,7 @@ pub(super) fn page_list_section(
                         key: "page-{id}",
                         style: format!(
                             "text-align: left; padding: {p}px {p2}px; border-radius: 3px; {touch} \
-                             border: 1px solid {border}; cursor: pointer; font-family: {ff}; \
+                             border: 1px solid {border}; cursor: pointer; \
                              font-size: {fs}px; background: {bg}; color: {fg};",
                             p = tokens::SPACE_1,
                             p2 = tokens::SPACE_2,
@@ -56,13 +76,12 @@ pub(super) fn page_list_section(
                             } else {
                                 tokens::COLOR_BORDER_CHROME
                             },
-                            ff = tokens::FONT_FAMILY_UI,
                             fs = tokens::FONT_SIZE_LABEL,
                             bg = if is_sel { tokens::COLOR_SURFACE_3 } else { tokens::COLOR_SURFACE_2 },
                             fg = tokens::COLOR_TEXT_ON_CHROME,
                         ),
                         onclick: move |_| editing_page_style.set(Some(id_cap.clone())),
-                        "{display}"
+                        if applied { "{display}" } else { { fl!("style-page-unapplied", name = display.clone()) } }
                     }
                 }
             }

@@ -13,6 +13,7 @@
 
 pub mod app;
 pub mod components;
+pub mod device_probe;
 pub mod editing;
 pub mod error;
 pub mod new_document;
@@ -20,6 +21,7 @@ pub mod recent_documents;
 pub mod routes;
 pub mod sessions;
 pub mod tabs;
+pub mod texture_budget;
 pub mod utils;
 pub mod window_state;
 

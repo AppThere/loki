@@ -30,9 +30,15 @@ pub const PX_TO_PT: f32 = 72.0 / 96.0;
 /// width capped at [`MAX_REFLOW_TILE_PX`] (the renderer centres the tile, so
 /// the cap centres the reading column). The single source of reflow width for
 /// paint, hit-testing, and keyboard navigation (Spec 01 A-1).
+///
+/// The cap is [`crate::measure::max_tile_width_px`] — the reading measure
+/// resolved against live font metrics (T7.2), falling back to
+/// [`MAX_REFLOW_TILE_PX`] when none is installed. It is read here rather than
+/// passed in so every caller of this function and its two derivatives gets the
+/// same answer; see that module for why a parameter would be the unsafe shape.
 #[must_use]
 pub fn reflow_tile_width_px(viewport_width_px: f32) -> f32 {
-    viewport_width_px.clamp(0.0, MAX_REFLOW_TILE_PX)
+    viewport_width_px.clamp(0.0, crate::measure::max_tile_width_px())
 }
 
 /// Compact-breakpoint threshold in CSS px. Must equal
@@ -70,6 +76,29 @@ pub fn reflow_type_scale(viewport_width_px: f32) -> f32 {
 #[must_use]
 pub fn reflow_layout_tile_width_pt(viewport_width_px: f32) -> f32 {
     reflow_tile_width_px(viewport_width_px) * PX_TO_PT / reflow_type_scale(viewport_width_px)
+}
+
+/// The reflow **tile** width in points for a given content width — the tile the
+/// renderer hands the canvas.
+///
+/// # Why this takes only the content width (Spec 08 T7.4)
+///
+/// T7.4's standing clause is *never ship a version where the document scrolls
+/// sideways*, and the way that clause was broken was a tile sized to
+/// `content_max_x(&layout).max(content_width)` — the widest **content**, so that
+/// an oversized element "could be reached by horizontal scrolling". One wide
+/// table then made the whole reading view scroll, and ordinary prose sat in a
+/// tile far wider than its measure.
+///
+/// So the prohibition is expressed as a signature rather than a comment: this
+/// function has no access to the laid-out content, and therefore cannot size the
+/// tile to it. A future change that wants to would have to add a parameter,
+/// which is a visible act rather than a quiet `.max()`. That is the ledger's
+/// rule 5 — make the wrong thing unavailable, not documented — and rule 6's
+/// requirement that the marking be mechanical, because a comment decays.
+#[must_use]
+pub fn reflow_tile_width_for_content_pt(content_width_pt: f32) -> f32 {
+    content_width_pt + 2.0 * REFLOW_PADDING_PT
 }
 
 /// The reflow **content** width the layout engine fills (the reading measure,

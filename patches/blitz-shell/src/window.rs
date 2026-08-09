@@ -966,6 +966,73 @@ impl<Rend: WindowRenderer> View<Rend> {
                 // document — or starts over a non-scrolling element like the
                 // ribbon — does nothing instead of shifting the whole UI by the
                 // sub-pixel slack between the root content and the window.
+                // PATCH(loki): report the gesture to the embedder before acting
+                // on it, and let a modifier claim it.
+                //
+                // Ctrl+wheel is zoom on every desktop platform, and only the
+                // shell can decline to scroll — by the time an embedder sees a
+                // notification the scroll has already happened. So the policy
+                // lives here, in the one place that can honour it, rather than
+                // being documented somewhere an embedder is asked to remember.
+                //
+                // The test is "**any** modifier", not "Control". Which
+                // modifiers mean zoom is the embedder's choice — Ctrl on
+                // Windows and Linux, Cmd (mapped to SUPER here) on macOS, and
+                // this fork already checks all three on the keyboard path. Two
+                // modifier lists that have to agree across a crate boundary is
+                // how a wheel comes to zoom *and* scroll at once, so this one is
+                // deliberately the broader set: it cannot be narrower than
+                // whatever the embedder picks. What it costs is that Shift and
+                // Alt no longer scroll, which is no loss — neither had a
+                // meaning here.
+                //
+                // The report goes out for *every* wheel, not only the claimed
+                // ones: an embedder that wants to observe ordinary scrolling
+                // through the same hook should not have to infer it from the
+                // scroll-changes notification, which reports offsets rather than
+                // the gesture.
+                //
+                // The report carries the *platform's* delta and unit, not
+                // `scroll_x`/`scroll_y`. Those have already been through this
+                // handler's line-to-pixel factor, which is a scroll-speed
+                // tuning constant and not a measured line height — forwarding
+                // them would answer "how far did the wheel turn" with a number
+                // that only means "how far should this scroll", which is the
+                // adjacent quantity, and adjacent is the kind of wrong that
+                // reads as right.
+                let mods = winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state());
+                let wheel_target = self
+                    .doc
+                    .get_hover_node_id()
+                    .or_else(|| self.doc.get_focussed_node_id());
+                if let Some(node_id) = wheel_target {
+                    let (x, y) = self.mouse_pos;
+                    let (delta_x, delta_y, unit) = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(x, y) => {
+                            (x as f64, y as f64, blitz_dom::WheelUnit::Lines)
+                        }
+                        winit::event::MouseScrollDelta::PixelDelta(offsets) => {
+                            (offsets.x, offsets.y, blitz_dom::WheelUnit::Pixels)
+                        }
+                    };
+                    self.doc.handle_wheel(blitz_dom::WheelGesture {
+                        node_id,
+                        delta_x,
+                        delta_y,
+                        unit,
+                        x,
+                        y,
+                        mods,
+                    });
+                }
+                // Claimable: the embedder may have taken this as a zoom, so it
+                // must not also scroll. Returning here rather than skipping the
+                // loop keeps the redraw with the thing that changed — nothing
+                // did.
+                if !mods.is_empty() {
+                    return;
+                }
+
                 let mut changes = Vec::new();
                 let mut has_changed = false;
                 for node_id in [

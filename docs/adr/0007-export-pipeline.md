@@ -25,8 +25,14 @@ already in place; only the implementation is missing.
 ### LoroDoc → Document bridge completeness
 
 `loki-doc-model` contains a `loro_bridge` module that converts between
-`LoroDoc` and `Document` in both directions (ADR-0006). The bridge is **partially
-implemented**:
+`LoroDoc` and `Document` in both directions (ADR-0006). At the time of this
+decision (2026-05-10) the bridge was **partially implemented** — the snapshot
+below. **It has since been completed:** tables and container blocks
+(`BulletList`/`OrderedList`/`Figure`/`BlockQuote`/`Div`) now round-trip through
+native mappings (`loro_bridge/table.rs`, `containers.rs`, under the default
+`serde` feature), so the ⚠️ rows below are the decision-time state, not the
+current one. This does not change Decision 4 (export from the `Document`
+snapshot).
 
 | Block variant | `document_to_loro` (write) | `loro_to_document` (read) |
 |--------------|--------------------------|--------------------------|

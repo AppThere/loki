@@ -25,11 +25,19 @@ mod form;
 mod form_font;
 mod list_browser;
 mod page_browser;
+mod page_commit;
+mod page_defaults_row;
 mod page_form;
+mod page_manager_verbs;
+mod page_margin_fields;
+mod page_presets;
 mod page_rename;
+mod page_size_picker;
 mod panel_data;
+mod panel_data_page;
 mod posture;
 mod provenance;
+mod sync;
 mod table_browser;
 mod table_form;
 mod tree_nav;
@@ -37,7 +45,6 @@ mod tree_nav;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use super::editor_state::SaveStatus;
 use appthere_ui::responsive::Breakpoint;
 use appthere_ui::tokens;
 use dioxus::prelude::*;
@@ -46,34 +53,15 @@ use loki_i18n::fl;
 use super::editor_keydown_ctrl::post_mutation_sync;
 use super::editor_state::StyleDraft;
 use super::editor_style_catalog::{catalog_style_tree, get_catalog_style, reset_style_property};
-use crate::editing::cursor::CursorState;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 use posture::StylePanelPosture;
 use provenance::StyleProvenanceList;
 
 pub(super) use draft::style_to_draft;
+pub(super) use sync::StyleEditorSync;
 
 /// Height of the open style editor panel in CSS pixels.
 pub(super) const STYLE_EDITOR_HEIGHT_PX: f32 = 360.0;
-
-/// Signals the style editor needs to persist edits through Loro and refresh the
-/// undo/redo state. Grouped to keep the function signature manageable (mirrors
-/// `editor_metadata_panel::MetaPanelSync`).
-#[derive(Clone, Copy)]
-pub(super) struct StyleEditorSync {
-    /// The document's Loro CRDT handle.
-    pub loro_doc: Signal<Option<loro::LoroDoc>>,
-    /// Cursor state (mirrors the document generation for dirty tracking).
-    pub cursor_state: Signal<CursorState>,
-    /// Undo manager, refreshed after the style mutation.
-    pub undo_manager: Signal<Option<loro::UndoManager>>,
-    /// Whether undo is available.
-    pub can_undo: Signal<bool>,
-    /// Whether redo is available.
-    pub can_redo: Signal<bool>,
-    /// Status-banner sink for feedback (e.g. a rejected cyclic re-parent).
-    pub save_message: Signal<Option<SaveStatus>>,
-}
 
 /// Renders the inline style catalog editor panel.
 ///
@@ -120,10 +108,17 @@ pub(super) fn style_editor_panel(
     let list_selected = editing_list_style.read().clone();
     let (list_list, list_selected_rows) =
         panel_data::list_data(&doc_state, list_selected.as_deref());
+    // The app-scoped settings, read **once** per render — and reading them here
+    // is what subscribes this scope to `settings_generation`, so writing a
+    // setting redraws the panel (T6.3/T6.4). Every length on screen and the
+    // size field must speak the same unit, and a second load is a second chance
+    // for them to disagree.
+    let settings =
+        crate::routes::editor::editor_defaults::PanelSettings::load(sync.settings_generation);
     // Page styles (§9 page family) are derived on demand from the sections.
     let page_selected = editing_page_style.read().clone();
     let (page_list, page_selected_rows) =
-        panel_data::page_data(&doc_state, page_selected.as_deref());
+        panel_data_page::page_data(&doc_state, page_selected.as_deref(), settings.unit);
 
     let styles = catalog_style_tree(&doc_state);
     let active_id = draft.id.clone();
@@ -138,7 +133,7 @@ pub(super) fn style_editor_panel(
     let ds_page_form = Arc::clone(&doc_state);
     let page_edit = page_selected
         .as_deref()
-        .and_then(|n| panel_data::page_edit_target(&doc_state, n).map(|(l, _)| (n.to_string(), l)));
+        .and_then(|n| panel_data_page::page_edit_target(&doc_state, n).map(|l| (n.to_string(), l)));
 
     // Everything the provenance column renders (staged rows, impact preview,
     // new-style parent default, linked character-style rows) — see `panel_data`.
@@ -175,8 +170,7 @@ pub(super) fn style_editor_panel(
                 ),
                 span {
                     style: format!(
-                        "font-family: {ff}; font-size: {fs}px; font-weight: {fw}; color: {fg};",
-                        ff = tokens::FONT_FAMILY_UI,
+                        "font-size: {fs}px; font-weight: {fw}; color: {fg};",
                         fs = tokens::FONT_SIZE_LABEL,
                         fw = tokens::FONT_WEIGHT_MEDIUM,
                         fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
@@ -233,6 +227,7 @@ pub(super) fn style_editor_panel(
                         page_selected,
                         editing_page_style,
                         posture,
+                        sync,
                     ) }
 
                     // ── Middle: edit form ──────────────────────────────────────
@@ -288,7 +283,7 @@ pub(super) fn style_editor_panel(
                         { table_form::table_style_form(ds_table_form, editing_table_draft, tdraft, sync) }
                     }
                     if let Some((pname, playout)) = page_edit {
-                        { page_form::page_style_form(&ds_page_form, pname, playout, editing_page_style, sync) }
+                        { page_form::page_style_form(&ds_page_form, pname, playout, editing_page_style, sync, &settings) }
                     }
                     { family_inspector::family_inspector_columns(char_selected_rows, list_selected_rows, page_selected_rows, posture) }
                 }

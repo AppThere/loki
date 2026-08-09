@@ -1,0 +1,1140 @@
+<!--
+SPDX-FileCopyrightText: 2026 Kevin Carlson
+SPDX-License-Identifier: Apache-2.0
+-->
+
+# Loki Spec 08 — Remaining Work
+
+| Field | Value |
+| --- | --- |
+| Status | Phases 0–5 complete or feature-complete; **Phases 6–7 remain** |
+| Source | Spec 08 r72 (full history), condensed to open items only |
+| Companions | Spec 09 (layout memory, parked at boundary), Spec 10 seed (sub-page tiling) |
+
+**This file belongs in the repo** — `docs/` alongside the measurement records — and should be updated in place. The full spec lived outside the tree for the whole program, which is why sessions could not see their own backlog and had to be handed tasks one at a time. That is L08-053 at the largest scale it has appeared here: not a claim in the wrong file, but the entire plan in the wrong system.
+
+Completed phases are omitted. History, retracted claims and the ADR ledger stay in the full spec.
+
+---
+
+## Immediate
+
+Ahead of Phase 6, in this order.
+
+### CLAUDE.md ceiling backlog is stale
+
+**Done (r90).** Corrected to the real four, and `check-file-ceiling.py` now compares the table's rows against the baseline by membership and fails either way — a sentence saying "believe the baseline" is the shape that drifted in the first place.
+
+### Ribbon overflow menu — live defect (I-28)
+
+**Done (r91).** Hosted in `AtPopoverHost`; `scripts/sitting/run.sh ribbonoverflow` is the regression. The sweep also deleted `overlay`'s backdrop mechanism, whose last requester this was. API strain reported, not absorbed: `route_key(Panel, Tab)` is `FocusNextControl` and nothing performs it — the `advance_focus_past|focus_next_node` register row now has two waiting consumers.
+
+### Harness lies — done (r92)
+
+`click_at` fails loudly when a click changes nothing anywhere; every scenario's clicks go through it. It found two silently-dead steps in the colour-picker scenario on its first run. Window geometry no longer leaks between runs. A reported finding was retracted with it — see below.
+
+### Branch review — the findings in this branch's own code (r93)
+
+Seven, all fixed. Four were the same shape — **a decision with no reachable
+consumer** — which is the shape this branch kept finding in *other* people's code
+and then reproduced:
+
+| Finding | Fix |
+| --- | --- |
+| `present` grew a floored overlay **downward regardless of side**, putting an `Above` menu across the trigger that opened it. The no-overlap invariant was asserted against `place`, and every consumer reaches geometry through `present` | Grow away from the anchor, side-dependently. Forced the three constraints (floor / anchor / viewport) into a stated precedence — the viewport concedes, because a clipped overlay *looks* clipped where one over its own trigger looks correct. `!rect.is_inside(vp)` is now the detectable signal a real modal fallback needs |
+| The zoom menu cleared its typed field in a `KeyAction::Dismiss` arm of its own `on_key`. **The host answers `Dismiss` itself and never forwards it**, so one Escape left the field open with a stale value owning the keyboard for the rest of the session | Reset in `on_dismiss` — the complete hook, which also covers the outside click and the anchor leaving. `KeyAction::dismissal_cause` now states the host-owned set once, and a test asserts it from the consumer's side |
+| The calibrate dialog believed **any positive number** while `calibrated_css_ppi` refuses a ratio outside `0.5..=2.0`. The centimetre mistake its own prose warns about cleared the rejection notice and was then dropped by the caller: Apply did nothing, silently | `on_measured` returns `bool`. The dialog keeps the parse; believability stays with its one owner and the refusal is unavoidable rather than documented |
+| `scale_resolve::resolve` applied the capability cap **before** `document_view` seeded the editor's canonical layout — and the cap reads page sizes. `provide_paginated_layout` is a no-op once the cache is filled, so the renderer laid the document out itself and the editor's layout was dropped: a second full layout per generation, and the ~20 MB font scan on open. Introduced by r80; nothing failed | Seeding moved inside `resolve`, between the mode and the cap. Asserted by `Arc::ptr_eq` — the only instrument that separates *reused* from *recomputed to look the same* |
+| The capability search (up to **3040 `plan_residency` calls**) ran on every render, including every scroll frame, to re-derive a number that had not moved | Memoised on its three real inputs, key and value under one lock so they cannot desync. Counted, not timed |
+| `loki-spreadsheet` and `loki-presentation` mounted `AtPopoverHost` without `use_provide_window_size`, so every menu placed against an **unbounded** viewport — never flips, never clamps | Both now feed the context from the `AtWindowSizeSensor` they already had |
+| `anchor_scope::reposition` had a second idempotence guard comparing a pair `on_anchor_change` has already proved differs | Removed. A guard that cannot fire reads as the obligation being met there, so the next reader finds a decoy instead of the arm that enforces it |
+
+**Sat on a screen** (`scripts/sitting/run.sh ribbonclearance`, new). At
+HEIGHT=420 the menu clears its trigger (12 of 3136 px changed, against a control
+crop inside the menu at 3136 — an instrument that could not report occlusion
+would report none everywhere). At HEIGHT=150 the placement is pinned at the 88 px
+floor and still leaves the 4 px gap; the pre-fix build at the same geometry puts
+it six pixels lower, past the anchor's top edge.
+
+**And the reading has a stated limit.** Six pixels is the whole discriminating
+band this harness can produce: below HEIGHT≈145 the ribbon drops its control row
+and the More button stops existing, so the case where the menu covers the whole
+trigger is unreachable on X11. It needs `viewport.y > 0`, which only the Android
+safe-area path produces. The plain-`AE` first draft of the measurement was also
+wrong — a dismissible popover tints every pixel in the window, so it reported
+2552 of 3136 "overpainted" on a trigger that was demonstrably clear. 2% fuzz
+clears the tint and nothing else.
+
+### The popover layer was rendering in serif (r94)
+
+Reported from the app: new UI elements "showing up with the wrong font, like
+they're unstyled". They were unstyled. `font-family` was declared
+component-by-component — about twenty-five copies of one fact — and **nowhere on
+the document**, so anything not inside such a component fell through to the CSS
+initial value. `AtPopoverHost` mounts at the app root by construction, so its
+content inherits from `body` and nothing else: **all six** popover content
+producers (zoom menu, spelling menu, Recent ⋮ menu, Open tooltip, ribbon overflow
+menu, the host itself) declare no family.
+
+Fixed at the document root — `appthere_ui::ui_font_css()`, the shape
+`focus_ring_css()` already established, injected by all three apps. Declaring it
+at the twenty-sixth component would have left the twenty-seventh to find.
+
+**Measured, both polarities, in one run of `run.sh zoom`:** the Home screen and
+the editor are pixel-identical before and after (0 and 0 — everything there
+already declared a family), and the zoom menu changes by 3759 px, from a visibly
+serif face to Atkinson. `ribbonclearance` is also 0: the overflow menu's labels
+come from `AtRibbonGroup`, which declares one, which is why that menu looked
+right and hid the defect.
+
+**Two things this did not settle.** The first probe reported *nothing* changed —
+it photographed a scene whose every label already had a family, so a control
+injecting `Cousine` at the root changed nothing either; a null result from an
+instrument that cannot speak. And the `menu` scenario turned out to be broken by
+leftover `recent.json` state — the same leak class as r92's `window.json`, now
+cleared alongside it. The Recent ⋮ menu is therefore fixed by enumeration and
+inheritance, not photographed.
+
+### The cleanup pass (r95)
+
+**91 declarations removed across 55 files.** The count in r94 said "~25" — that
+was `appthere-ui` alone; tree-wide it was 86 naming the UI token plus five that
+did not. All 86 were verified to bind to `FONT_FAMILY_UI` before anything was
+touched, mechanically rather than by reading.
+
+**Two of the five were not redundant — they were wrong.** The spreadsheet and
+presentation editor roots declared `system-ui, sans-serif`, overriding the
+bundled face for their entire editor surface. An inline declaration beats a
+sheet, so those two would have kept rendering in the wrong font after r94. They
+are removed, which is a behaviour change and the point of it. Four genuine
+exceptions stay: monospace for macro source and the formula bar, and the
+spreadsheet's italic-serif row marker.
+
+**Verified as a cleanup should be: ten screen sittings, every one 0 px.** Home,
+editor with ribbon and status bar, zoom menu open, keyboard walk, zoom applied,
+Actual Size, and the overflow menu at a narrow window — all pixel-identical to
+the pre-cleanup build under the same harness state. A first attempt at this
+comparison showed 68 218 px on the Home screen and was *not* a regression: the
+baseline predated the `recent.json` reset, so the two runs had different Recent
+lists. Re-baselined by stashing the cleanup, rebuilding, and re-shooting.
+
+**Locked by `scripts/check-ui-font.py`** (gate 15, and in CI): no component may
+declare `font-family`; the exceptions (six today — r95's four plus the two document-content faces ADR-0017's DOM reflow view added) live in `ui-font-allowlist.txt` keyed
+by *family* rather than line number, and an allowlist entry whose declaration
+has gone also fails. A deleted duplicate comes back, and two of the 91 had
+already drifted without review noticing — a `font-family` line looks like
+diligence.
+
+**Not established:** the two `system-ui` removals are in apps with no sitting
+scenario. Loki Calc's Home screen was photographed and renders in Atkinson, but
+its *editor* root — the line actually changed — was not reached; the `editor`
+scenario's Tab counts are calibrated for loki-text and do not open a document
+there.
+
+Not fixed, and not this branch's: the macro trust/signature stack, `loki-layout`'s
+squiggle clamp, and the gate-script bypasses.
+
+---
+
+## Phase 6 — Page styles (I-04)
+
+**Re-scoped XL → M by S0.5.** ADR-0012 Decision 2 already shipped `Length<Emu>`, `PageStyle`, the N-column model, ODT master-page round-trip, DOCX section export and `mirror_margins`. **Read ADR-0012 and confirm against the tree before writing anything** — this phase's scope was wrong by a wide margin once already.
+
+### Scope audit against the tree (r96) — it was wrong again, in both directions
+
+The instruction above was followed, and it earned its place. **ADR-0012's own
+Consequences section is stale**: it says the page family is "decided but not yet
+built", while `PageStyle`, `derive_page_styles` and the read-only page inspector
+all exist. And the task list below over-states what remains:
+
+| Task | Spec says | Tree says |
+| --- | --- | --- |
+| T6.1 `style:page-usage` | remaining | **Was remaining — done, r96.** |
+| T6.2 page-size catalogue | remaining | **Done, r98.** 28 papers, plus user-defined. See below. |
+| T6.3 app-scoped defaults | remaining | **Done, r100.** See below. |
+| T6.4 unit resolution | remaining | **Done, r99** for the page surfaces; the rest of the panel still shows pt. See below — and the r96 wording was loose: typed `Length<U>` units existed all along, what was missing was a *runtime* one. |
+| T6.5 advisory DOCX part | remaining | **Done, r101.** See below. |
+| T6.6 odd/even + first page | remaining | **Was "already built" — it was not. Done, r103.** Every format leg really did exist; the *selection* did not work past section 1. See below. |
+| T6.7 UI panel + manager | remaining | **Manager verbs complete, r104** (duplicate/delete landed, New and Duplicate separated); unit-aware margin fields landed. Catalogue **search** and **live preview** are still not built — see below. |
+| T6.8 conformance | remaining | **Done, r102** — and it found a defect in T6.5. See below. |
+
+**T6.1's premise checked out.** `mirror_margins` really is wired end to end —
+`w:mirrorMargins` → `DocumentSettings` → `LayoutOptions` → `mirrored_margins()`
+swapping left/right on even pages, with a Loro round-trip and tests. What did
+*not* exist was any ODF spelling of it.
+
+
+
+
+
+
+
+### Decision 1 diagnostic — the overflow trigger is present, off-screen (r110)
+
+The T7.1 close recorded that the `…` trigger had never been seen and that it was
+not known whether it fails to render or renders past the right edge. **It
+renders, and it is off-screen.** Measured, in three steps, because the first two
+were each wrong in an instructive way:
+
+1. **Click sweep across the bar's right end.** Inconclusive: 300–340 px changed
+   ~67 000 px, which is the *zoom menu* opening — that region is the zoom
+   control, so the instrument was reading a different control's response.
+2. **A loud magenta background on the trigger.** No magenta anywhere, which
+   read as "does not render". That was the wrong conclusion from a real
+   observation: Blitz paints nothing beyond the window, so an element entirely
+   past the edge is *invisible*, not clipped-at-the-content-box. The test could
+   not distinguish the two cases it was run to distinguish.
+3. **Instrumenting the bar, then moving the same element to the bar's start.**
+   The bar reports `dropped=3, rows=3` — the engine is correct and the component
+   is reached — and the component's own entry log fires with 3 rows. Moved to
+   the start, the magenta trigger paints perfectly. The zoom `+` is then pushed
+   off instead, which is the same overflow one control to the left.
+
+**So the bar's painted content exceeds its window, and the last item in the
+strip absorbs all of it.** The declared widths under-count the painted ones —
+the notice chip is the biggest contributor, being a bordered pill with an icon.
+
+**This answers decision 1: declarations are not sufficient here.** The engine's
+arithmetic is right and its tests are right; the inputs are wrong, and no
+refinement of a character-advance estimate fixes a bordered chip. The remaining
+choice is between measuring item widths (`get_client_rect`, which the popover
+anchor already uses) and accepting a reserved margin — and the measuring option
+carries the feedback-loop hazard that is exactly why the ribbon declares.
+
+**Not established:** whether measuring converges. The loop is measured width →
+drop decision → different layout → different measured width, damped but not
+precluded by the hysteresis band. *What would settle it:* drive the sitting
+harness across a slow width sweep and count drop-state changes per pixel; an
+oscillating resolver shows as changes that do not settle at a fixed width.
+
+### T7.4 — the fallback, and the clause that was not conditional (closed, r109)
+
+**Not required, and that is the whole finding.** T7.4 fires only *if P1 says
+nested containers do not route*. P1 (T7.0) says they do — including the
+horizontal-inside-vertical configuration T7.3 actually ships — so the modal
+full-screen viewer is not built and **there is no deviation to record**. This
+entry is the record that there is none.
+
+**But the task's second sentence was never conditional.** "Never ship a version
+where the document scrolls sideways" stands whatever P1 said, and it had already
+been broken: `doc_page_source` sized the reflow tile to
+`content_max_x(&layout).max(content_width)`, with a comment presenting sideways
+scrolling as the feature that reached an oversized element. T7.3 removed it.
+
+What T7.4 adds is that the prohibition is no longer prose.
+`reflow_tile_width_for_content_pt` takes **only** the content width, so it has no
+access to the laid-out content and cannot size the tile to it; reintroducing the
+old behaviour would mean adding a parameter, which is a visible act rather than
+a quiet `.max()`. That is rule 5 (make the wrong thing unavailable rather than
+documented) and rule 6's requirement that a marking be mechanical, because a
+comment decays — and this particular comment did worse than decay, it argued for
+the defect.
+
+Mutation-tested two ways: dropping the insets and ignoring the column each fail
+`the_reflow_tile_is_the_measure_plus_its_insets`.
+
+**Where the modal viewer is still the nearest answer.** T7.3's per-element
+scroller is unbuilt, so a fixed-width table is clipped. T7.4's mechanism —
+open the thing full-screen, on its own terms — is one of the three candidate
+shapes recorded there, applied per element rather than per document. It is not
+being built now because which shape is right depends on the canvas-vs-DOM
+decision T7.3 records, not because P1 ruled it out.
+
+### T7.3 — the document never scrolls horizontally (**closed on the DOM path**, 2026-08-05)
+
+P1 (T7.0) cleared this to proceed, so T7.4's modal-viewer fallback stays unused.
+
+**The rule now holds.** `doc_page_source` used to size the reflow tile to the
+**widest content** — "so an oversized element can be reached by horizontal
+scrolling rather than clipped". That comment describes T7.3's defect as though
+it were a feature: one wide table made the entire reading view scroll sideways,
+and every line of ordinary prose then sat in a tile far wider than the measure.
+The tile is now the measure, always.
+
+**Oversized images shrink to the column, aspect preserved**
+(`fit_to_column`), and **only in the reflow view**
+(`LayoutMode::fits_oversized_to_column`). That gate is the load-bearing part:
+paginated and pageless are *fidelity* views of a page with a real physical
+width, where Word and LibreOffice paint an oversized image at its declared size
+and let it overhang. Shrinking it there would make our page disagree with theirs
+on screen, on export and in print — a fidelity regression dressed as a reading
+improvement. A method on the mode rather than a `matches!` at each of the two
+call sites, which are in different modules and would be the copy that stops
+agreeing.
+
+Mutation-tested three ways: scaling the width without the height (which squashes
+the image — a worse defect than the sideways scroll being removed), scaling
+*up* as well as down, and letting the paginated view fit too. Each kills a
+specific test.
+
+#### The per-element horizontal scroll container — built, on the DOM path
+
+The architecture question this task could not answer was answered by
+[ADR-0017](adr/0017-reflow-view-is-dom.md): the reflow view is DOM. With that,
+the scroller is what the ADR said it would be — `overflow-x: auto` on one
+element (`dom_reflow::oversized::AtOversized`), and P1's routing measurement is
+finally about the code that runs.
+
+**Both oversized elements are covered, differently, because they are different
+problems.**
+
+- An **image** can be fitted: `width: 100%; max-width: <declared>` is
+  `fit_to_column`'s two clauses (shrink to the column, never scale up), and
+  `aspect-ratio` from the *declared* size is its third. The declared ratio
+  rather than `height: auto`: `fit_to_column` scales the declared width and
+  height together, so a document that stretches a square image to 8 × 2 inches
+  must render oblong here too.
+- A **table** cannot: its width is its column widths, and fitting it means
+  redistributing them. It gets the scrollport and **no toggle** — offering
+  fit/expand on an element that overflows in either state is a control that
+  reports success and changes nothing.
+
+Verified in `scripts/sitting/run.sh oversized`: an 8-column table at fixed
+widths and an 8-inch figure in a 420 px column. The reading column ends at the
+same x as the prose in both states, the page is never wider than the window, and
+the toggle appears on the figure and not on the table.
+
+**The figure paints**, and the scenario checks that it does rather than showing
+a picture of it: the fixture image is a solid green that appears nowhere else in
+the run, and a count of zero is an error. Green rather than red because red is
+what this view paints its "not rendered" placeholders in — a red check would be
+satisfied by the marker that means the figure is missing.
+
+*This was recorded as an open defect for a day and was not one.* The figure did
+not paint because the fixture's PNG had a bad IDAT CRC — `image` refuses such a
+file, ImageMagick accepts it, and the validation step used the lenient one. The
+background test that followed showed a correctly-sized box, which confirmed the
+geometry and said nothing about the bytes.
+
+**Still true on the canvas path**, which is what ships today: a wide table is
+clipped at the tile. `TODO(t7.3-element-scroller)` stays in
+`loki_renderer::doc_page_source` until the DOM reflow view replaces it.
+
+**Also not done:** tables are not shrunk at all — only images are. A table's
+width comes from its column widths, and fitting one to a column means
+redistributing those, which is a different problem from scaling a rectangle.
+
+### T7.2 — the reading measure, resolved against live font metrics (partial, r107)
+
+**The mechanism is built; the last mile is not wired, deliberately.**
+
+**What was there.** The reflow view capped its column at `MAX_REFLOW_TILE_PX =
+820` CSS px. That is a width, and measure is not a width — it is a *character
+count*. Typographers set it in characters because the width that delivers it
+depends on the face and the size: 76 characters of 11 pt Georgia and 76 of 11 pt
+Arial Narrow are not the same number of points, and neither is 76 of the same
+face at 14 pt. A constant is right for one face at one size and silently wrong
+everywhere else.
+
+**`loki_layout::measure`** resolves a character count to a width by *shaping* —
+it builds a real Parley layout for a prose sample in the requested family and
+size and reads its advance, so the answer goes through the same font resolution,
+fallback and shaping the document text does. That is what D-05's "live font
+metrics" has to mean; a character-advance estimate (the kind T7.1 uses for
+chrome, where no font context is at hand) would show up here as line length in
+the reader's own face. Default 76 characters, the middle of the stated 72–80
+band, clamped to 20..=160.
+
+**`loki_renderer::measure`** publishes the resolved width as ambient state, in
+the shape `spell` and `revision` already use — and here that is the *safe* shape
+rather than merely the convenient one. `reflow_layout_content_width_pt` is the
+single source of reflow width (Spec 01 A-1): paint, hit-testing, caret placement
+and keyboard navigation each call it, across two crates, and a layout built at a
+width the paint did not use puts the caret in the wrong place. A parameter would
+give four call sites the chance to pass four values, and three of them would be
+found as a mis-placed caret rather than as a compile error.
+
+The cap can only ever *narrow* the column — `min` against the old constant — so
+a bad measurement shortens lines, which is harmless, and can never lengthen them
+past the ceiling the reflow view already promised.
+
+**Not done: nothing installs a measure.** With no cap installed the tile is the
+old constant, so behaviour is bit-identical to before this landed. Two pieces
+remain, and the second is why this stopped here rather than being finished:
+
+- **The user setting.** No UI, and no field in the app-scoped store. The measure
+  is a reading preference and belongs beside T6.3's `DocumentDefaults`.
+- **The install point, which has a real ordering hazard.** The cap must be set
+  *before* the width that consumes it is computed, and the natural home
+  (`doc_page_source`, which has both the fonts and the document) computes the
+  reflow width in the same pass. Getting that order wrong yields a first frame
+  laid out at the previous cap — one frame of wrong line length, and a caret
+  that disagrees with the paint for exactly that frame. That is the shape the
+  ledger's rule 5 says to make unavailable rather than to document, and doing it
+  properly means deciding where resolution belongs in the frame, not adding a
+  call at the end of a session. `TODO(measure-install)`.
+
+**Mutation-tested four ways:** ignoring the character count, dropping the clamp,
+letting the cap widen the tile, and storing an unusable cap each kill a specific
+test.
+
+**Known bound, recorded in-code:** the prose sample is English. Measure is a
+Latin-script concept; CJK sets lines by character count directly at roughly one
+em each, so a Latin sample under-states their width by about half.
+`TODO(measure-cjk)`.
+
+**Also unaddressed from the task line:** "decoupled from page metrics". The
+reflow width already derives from the viewport rather than the page, so nothing
+here was coupled — but the *body size* the measure resolves against still has no
+source; it will need the document's default character style, which is the same
+lookup the install point needs.
+
+### T7.1 — status-bar priority order (partial, r106)
+
+**Done: the drop itself.** `responsive::status_priority` is a pure, hysteretic
+priority engine — the status-bar analogue of `ribbon_collapse`, and deliberately
+the same shape, including Decision D3 (*collapse is width-driven, not
+tier-driven*). The bar used to drop the word count and the language label on
+`Breakpoint::is_compact`, which is wrong in both directions: a Compact window
+with three short labels dropped items that fitted, and an Expanded one with a
+long language name overflowed without dropping any.
+
+**Retention is structural rather than a rule.** Items in the retention set — the
+page indicator and the zoom control — are not in the drop order at all, so no
+loop running one step too far can reach them; `dropped` is bounded by the
+droppable count by construction. If they alone exceed the width, `scroll` says
+so and nothing hides them to make room.
+
+**Measured on screen, two widths, same document:** at 700 px the bar shows word
+count, notice, language, view mode and zoom; at 420 px word count, language and
+view mode are gone. That is the engine dropping by width, photographed
+(`scripts/sitting/run.sh statusoverflow`).
+
+#### Two width-accounting defects, both found on screen
+
+1. **The zoom control was declared by its readout text.** It is three
+   `TOUCH_MIN` controls (~140 px); declaring it as the string `"1000%"` came to
+   about 60. Under-declaring is the direction that *overflows* rather than drops
+   — and this was the worst case of it, because the zoom is retained and cannot
+   drop to absorb its own error. Photographed: at 420 px the zoom's `+` button
+   was clipped by the window edge. Fixed by `ZOOM_CONTROL_WIDTH_PX`, declared
+   next to the rsx that produces it, and pinned by
+   `the_zoom_control_declares_its_three_controls_not_its_readout`.
+
+2. **The bar's own padding was charged to nobody.** `padding: 0 SPACE_4` is
+   32 px no item can use, and the engine was resolving against the full viewport
+   width. `use_status_fit` now takes `reserved_px`.
+
+Both are the same error as the module's own docs warn about, committed anyway —
+which is the argument for the screen sitting rather than against the docs.
+
+#### Not established: the overflow trigger has never been seen
+
+The `…` trigger does not appear at 420 px, in a bar where three items
+demonstrably dropped. It is not known whether it fails to render or renders past
+the right edge; the second is likely, because the remaining declared-vs-painted
+gap is exactly the kind the chips contribute (border, warning icon, pill
+padding), and the trigger is the last item in the strip so it absorbs the whole
+accumulated error.
+
+**What would settle it:** either a `get_client_rect` on the trigger — the
+popover anchor already does this, so the measurement is available where the
+declaration is not — or a scenario that clicks where the trigger should be and
+checks whether a menu opens. The second is cheaper and is the next step.
+
+**The deeper question this raises for T7.3.** Declared widths are exact for the
+ribbon because its groups are icon buttons of known size. Status-bar items are
+variable text in bordered chips, and no character-advance estimate will be
+exact. The engine is right to be pure and testable; what it needs is measured
+item widths fed in, not better guesses. `TODO(status-measured-widths)`.
+
+**Also not done:** the compact posture's taller status bar (the honest fix for
+the 24 px bar's WCAG 2.5.5 shortfall, which `zoom_control`'s docs name as T7.1's
+job) is untouched.
+
+### T7.0 / Probe P1 — nested scroll input routing (done, r105)
+
+**Answer: yes, for the wheel.** A nested scroll container consumes a gesture
+inside its own bounds, leaves its scrolling ancestor alone while it can still
+use the gesture, and bubbles the remainder once it cannot. So T7.3 may build the
+per-element horizontal scroll container, and **T7.4's modal-viewer fallback is
+not needed on this evidence**.
+
+**The instrument.** `appthere-ui/examples/nested_scroll_probe.rs` — a scratch
+scene of three bands (a static strip, a vertically scrolling outer container,
+and a nested inner container), driven by `scripts/sitting/run.sh nestedscroll`
+under Xvfb + lavapipe. Each reading is a pixel diff of the *same* crop across two
+shots, and each is a **pair** of numbers rather than one: "the inner band
+changed" proves nothing on its own, because the inner box moves whenever the
+outer scrolls. Containment is `inner changed AND outer unchanged`.
+
+| Reading | Gesture | Result |
+| --- | --- | --- |
+| R1 control | wheel over an outer-only row | outer 131971, static 0 — the wheel reaches something |
+| R2 containment | wheel over the inner, from rest | inner 55246, **outer 0**, static 0 |
+| R3 bubbling | 20 more notches, past the inner's end | outer above 132000, below 123082, static 0 |
+| R4 **the T7.3 shape** | *vertical* wheel over a *horizontal-only* inner | outer 131971, static 0 — it bubbled |
+| R5 | *horizontal* wheel over the same inner | inner 26048, **outer 0**, static 0 |
+
+Every "0" above is a live band, not a dead one: the same crop reads 131971 in R1
+and 132000 in R3. A zero that could not have been non-zero is the null result
+this table would otherwise be full of.
+
+**R4 is the reading that actually gates T7.3**, and it is not the one the task
+line describes. R1–R3 nest two *vertical* scrollers, where the inner can use the
+gesture and the only question is who gets it first. T7.3 ships the other shape —
+a wide table in its own horizontal scroller inside the vertically scrolling
+document — where the inner container **cannot** use a vertical gesture. If it
+swallowed one anyway, the document would stop scrolling wherever the pointer
+happened to rest, which is a worse defect than the sideways scrolling T7.3
+exists to remove. It bubbles: confirmed in the shots as the outer advancing
+O0→O3 while the inner's own content stayed at W0–W3.
+
+**Not established: drag.** The task line says "wheel and drag"; only the wheel
+was measured. `xdotool` sends no touch events, and mouse drag is selection
+rather than scroll on this platform, so the touch path is unreachable from this
+harness. What *is* known is a code reading, not a measurement:
+`blitz-shell`'s `Touch` arm uses the **same** chain as the wheel —
+`get_hover_node_id()` → `scroll_node_within_collect` — differing only in that
+the hover node comes from the touch-start hit test (so it is never stale) and
+there is no focused-node fallback. That makes the routing question shared, but
+it is inference from the source, and it is the half of P1 that stays open.
+**What would settle it:** a touch-capable harness (an Android build, or an X11
+XInput2 touch device injected with `xdotool`'s unavailable touch API — neither
+exists here), driving R2 and R4 with a drag instead of a wheel.
+
+**Also not established:** one nesting level only, one platform (X11 + software
+Vulkan, no window manager), and pointer-driven only.
+
+**Two harness facts found while building this, both now in `run.sh`:**
+
+- `xdotool windowactivate` **takes the X server down** on this Xvfb. The app
+  logs `X connection to :99 broken` and every later `xdotool` call fails against
+  a dead display. Scenarios that send keys have no choice but to activate;
+  pointer-only ones now set `NO_ACTIVATE=1` and skip it.
+- **One wheel notch moves ~40 CSS px here, not the 20 the code implies.**
+  Reading `blitz-shell` gives `LineDelta * 20.0`, but three notches advanced the
+  probe's 40 px rows by three whole rows. Whatever X and winit agree a notch is,
+  it is not one line. The scenario's notch counts are calibrated against the
+  measurement and the comment says so, because the derived number is the kind of
+  wrong that reads as right.
+
+### T6.7 — duplicate, delete, and margin entry (r104)
+
+Closes three of the five items the r97 close listed as not built. What r97 left
+open was: *duplicate, delete, set-default, catalogue search, unit-aware margin
+fields and live preview*.
+
+**Set-default was built in the meantime**, by T6.3 — `new_document_defaults_row`
+in the page form writes the app-scoped geometry for new documents, which is what
+"set default" means for a family whose styles are document-scoped (D-07). The
+r97 row predates it and was accurate when written.
+
+**New and Duplicate were the same button.** `new_page_style_button` seeded the
+created style from *the selected style's* geometry when there was one. That is
+Duplicate wearing New's label — and the conflation cost the other verb: with a
+style selected there was no way to reach a fresh default-geometry page style,
+because the browser offers no way to deselect. A name asserting a property it
+lacks (rule 4), with the reachable-but-unnameable verb hiding the unreachable
+one. They are separate controls now; each does what its label says, and
+Duplicate is withheld when there is nothing to copy.
+
+**`delete_page_style` drops the name, not the pages.** The catalog entry is a
+name for a shape, not the shape — a section owns its own geometry copy. So
+delete removes the catalog entry *and* every section's reference, and touches no
+geometry: the pages after a delete look exactly as they did before. Both halves
+are load-bearing. Dropping only the catalog entry deletes nothing the user can
+see, because `panel_page_styles` lists referenced-but-uncatalogued styles too
+(it has to, or an incomplete catalog would orphan the only handle on those
+sections) — the name simply reappears, sourced from the sections. And the guard
+is "unknown *both* ways", not "absent from the catalog": a referenced-but-
+uncatalogued style is exactly what the panel lists and the user can select, so a
+catalog-only guard would leave a selectable style with a dead Delete button.
+
+No confirmation prompt: the mutation goes through the undo manager like every
+other edit here and changes no geometry, so a prompt would be guarding a
+reversible rename.
+
+**Unit-aware margin fields.** Normal / Narrow / Wide are three points in a
+continuous space; every margin they do not name was unreachable from the panel
+while the model and all four import/export paths carried arbitrary values — the
+same shape as the 1–3 column limit this task called out. Four fields, read in the
+active unit with an explicit suffix honoured, range-checked **in points after
+conversion** (0 to 20 in) and rejected rather than clamped. The presets stay as
+shortcuts, which is what the spec line asks for. `header`, `footer` and `gutter`
+are spread through from the current margins rather than rebuilt — a fresh
+`PageMargins` would silently reset all three while the user thought they set a
+margin. `TODO(page-gutter-field)` marks the gutter control the spec line names.
+
+**One inconsistency found while splitting the file.** Seven controls each
+performed the same six-step commit dance by hand, and one of them —
+`page_form`'s preset handler — called `post_mutation_sync` *without* releasing
+the Loro read guard first, while its three neighbours released it. Harmless as
+it happens (nested `Signal::read` is permitted and the sync only reads), but
+invisible until the sync one day needs to write. All seven now go through
+`page_commit::commit`, which is what brought `page_form.rs` back under the
+ceiling — the duplication was what pushed it over, so removing it was the fix
+rather than moving lines to a sibling.
+
+**Mutation-tested, seven ways.** Model: dropping the reference-clearing loop,
+guarding on catalog membership alone, and wiping the section geometry each kill a
+specific delete test. Panel: rebuilding `PageMargins` instead of spreading the
+base, transposing left/right, dropping the unit from the reseed key, and clamping
+instead of rejecting each kill one margin test and no other.
+
+**Still not built — and why each is not a small addition:**
+
+- **Catalogue with search.** The 28-paper grid wants to become a filtered
+  dropdown, which needs the panel hosted in `AtPopoverHost`. That is a
+  structural change to where the panel lives, not a control; r97 flagged it and
+  it is still the blocker.
+- **Live preview.** Undefined by the spec line and ambiguous in the panel's
+  present shape: every edit here already applies to the live document
+  immediately, so "preview" must mean either a page thumbnail beside the form or
+  a *provisional* apply the user can back out of. The second would need a
+  staging concept the mutation layer does not have. **What would settle it:**
+  decide which of the two the line means before building either.
+
+**Not established, unchanged from r97:** no screen sitting. The style panel still
+has no harness scenario, so everything here is verified by unit and model tests
+only — the new Duplicate/Delete buttons, the four margin boxes and their wrapping
+behaviour in the Compact posture have not been seen rendered. `TODO(page-panel-touch)`
+still applies and now covers more controls than when it was written.
+
+### T6.6 — odd/even and first-page variants (done, r103)
+
+**The r96 audit called this one "already built", and every part it listed was
+real**: the model fields, the DOCX reader (correctly gating `first` on
+`w:titlePg` and `even` on `w:evenAndOddHeaders`), the DOCX writer, the
+`settings.xml` assembly, the ODF `style:header-first` / `style:header-left`
+reader and writer, and the Loro bridge in both directions. What it did not check
+was the one thing that turns those fields into a feature — which variant the
+paginator actually puts on a page.
+
+**The defect.** `flow_headers::select` asked `page_number == 1`. That is the
+*document*-global page number, but `w:titlePg` and `style:header-first` are
+per-section. So only section 1 could ever show a first-page header or footer:
+every later section's `header_first` / `footer_first` was imported, carried
+through the CRDT, written back out on export — and never rendered. Produced and
+unhandled, which the ledger's rule 6 calls a live inconsistency rather than a
+deferral.
+
+The correct quantity was being computed **fourteen lines below**, as
+`section_first_pn`, and used only for the `w:pgNumType` restart. That is rule 3's
+fourth instrument failure: a reading of a quantity *adjacent* to the one asked
+for, sitting unread next to the wrong one.
+
+**Measured, not inferred.** A throwaway probe laid out a two-section document
+with distinguishable header text in each variant and printed what landed on each
+page. Section 2's first page showed section 2's *default* header. The fix was
+written after that reading, not before it.
+
+**Why the section's first page is now a parameter.** `assign_headers_footers`
+took it from `pages.first()`. That is right on the full path, where the slice is
+the whole section, and wrong on the incremental path, where the slice is only
+the re-flowed middle. It does not *currently* diverge there — per
+`the_property_tests_only_ever_resume_from_block_zero`, the fixtures yield one
+checkpoint per section at block 0, so every resume starts at the section's first
+page and the two agree. It starts diverging the moment T3.4 makes checkpoints
+per-page, silently, for both the variant choice and the numbering restart.
+`PagePosition` takes it from the caller, who knows it on either path.
+
+**The coverage gap that let it through.** `header_first` appeared in no
+`loki-layout` test at all — the selection logic had none. The format crates'
+round-trips do assert it, but on single-section documents, where `pn == 1` and
+"the section's first page" are the same page. And the incremental suite's
+`pages_eq` has always compared `header_items`, but no fixture gave a section a
+header, so it was comparing two empty vectors: an instrument that cannot speak
+where the hazard is. Both are now closed —
+`loki-layout/tests/header_variants.rs` (five cases, including one multi-page
+section that makes the `is_first` guard **false** where a first-page variant
+exists, so hardwiring it true fails) and
+`multi_section_header_variants_match_full_layout`.
+
+**Not established — odd/even parity is physical, not displayed.** `select` picks
+the even variant on `page_number.is_multiple_of(2)`, the physical page number.
+Word and LibreOffice arguably key left/right on the *displayed* number, which
+differs whenever a section restarts numbering (`w:pgNumType @w:start`). This was
+left alone: it is consistent with `paginate_blanks::mirrored_margins`, which
+makes the same choice, so changing one without the other would introduce a
+disagreement inside our own paginator — and nothing was measured either way.
+**What would settle it:** open a DOCX with `w:evenAndOddHeaders`, two sections,
+and `w:pgNumType w:start="1"` on the second, in Word and in LibreOffice, and read
+which header the second section's second physical page shows.
+
+**Also not covered:** header variants across DOCX → ODF → DOCX. T6.8's suite
+asserts its four named geometry properties along that path; headers are not among
+them, and ODF has no `titlePg` equivalent (presence of `style:header-first` *is*
+the flag), so the collapse at that boundary is untested.
+
+### T6.8 — cross-format page-geometry conformance (done, r102)
+
+`loki-convert/tests/page_geometry_conformance.rs` asserts T6.8's four properties
+— mirrored margins, a custom page size, a three-column section with a separator,
+and multiple named page styles — along its fifth, the **DOCX → ODF → DOCX**
+path. The fifth is not a sixth case: it is the route the other four travel.
+
+**It lives in `loki-convert` because neither format crate can see the other.**
+`loki-odf`'s tests do not link `loki-ooxml`, so each can only assert a
+same-format round trip — and a same-format round trip cannot catch a property
+both halves of one crate agree to drop. `loki-convert` is the crate whose job is
+the crossing.
+
+**Measured before asserted.** A throwaway probe ran the path and printed what
+survived, rather than writing assertions from what the code looked like it
+should do. Four properties crossed intact. The fifth did not.
+
+**The defect it found is in T6.5, three commits old.** `PageStyleMap::
+from_document` built its *declared styles* from the document catalog and its
+*section mapping* from the section references. When those two disagreed — a
+section naming a style the catalog has no entry for — the exporter emitted a map
+referencing ids it had not declared, which the reader correctly discarded as
+inconsistent. The names were lost, and the loss was indistinguishable from the
+feature not existing. Two sources for one fact, drifting silently: the ledger's
+rule 4, in the code I wrote to satisfy rule 4 elsewhere.
+
+Every T6.5 test used a document whose catalog and sections already agreed, so
+none of them could see it. The guard is now an invariant rather than a case:
+`every_map_the_writer_produces_is_one_the_reader_accepts` asserts that whatever
+`from_document` produces, `apply_page_style_part` accepts **on the same
+document**, across three fixtures — agreeing, catalog-empty, and catalog-with-
+extras.
+
+**And the conformance suite had the same blind spot on its first draft.**
+Reverting the fix left all seven of its tests passing, because its own `seed()`
+populates the catalog too. That is the exact shape this suite exists to catch, so
+it now carries `names_cross_even_when_the_catalog_is_empty`; with that, the
+revert kills both the unit invariant and the cross-format case. A conformance
+suite that cannot fail is decoration, and this one was, briefly, for the property
+it was written to defend.
+
+**A fixed-point test rides along**: crossing twice must change nothing the first
+crossing did not. A property that degrades a little each pass — a margin rounded,
+a name suffixed — looks stable in a single-crossing test.
+
+**Not established:** the crossing is asserted through Loki's own importers on
+both ends, so it shows that Loki's DOCX and ODF halves agree with each other, not
+that either agrees with Word or LibreOffice. XLSX/ODS and the presentation
+formats are untouched; T6.8's list is word-processing page geometry. The suite
+covers the properties T6.8 names and not the whole `PageLayout` — header/footer
+distances, gutters, borders and line numbering cross untested.
+
+### T6.5 — the advisory DOCX page-style part (done, r101)
+
+`/word/lokiPageStyles.xml` carries page-style **names** and the section → name
+mapping through a DOCX round trip. OOXML has no named page style — a section is
+its `w:sectPr` and nothing else — so a rename made in the style panel survived
+ODT export (which has `style:master-page`, wired in T6.1's neighbourhood) and was
+lost the moment the document was saved as `.docx`. That asymmetry is what D-02
+exists to close.
+
+**"Advisory" is four claims, and each is enforced rather than asserted.**
+
+1. *Ignored by Word.* A private part, private content type, private
+   relationship type; nothing in `document.xml` refers to it. A consumer that
+   does not know it exists reads the document it would have read anyway.
+2. *Never affects geometry.* The reader writes `Section::page_style` and catalog
+   display names and touches no `PageLayout` field. Asserted end-to-end by
+   exporting the same document twice — once named, once stripped — and comparing
+   every section's layout across the two round trips, which also catches the
+   case where the geometry is wrong in both.
+3. *Validated against the `sectPr` count.* The part declares how many sections it
+   described; a document whose count has changed since gets no names rather than
+   the wrong ones.
+4. *Discarded on mismatch.* The **whole** part, not the offending entry — a
+   partial mapping leaves some sections named and others not, which is harder to
+   explain than no names at all.
+
+**The declared count is written explicitly, not derived.** A count computed from
+the same `<section>` list it is meant to validate would agree with itself no
+matter what — the instrument would be reporting on its own input. Deriving it
+instead of reading it kills the stale-part test.
+
+**The stale-part test edits a real `.docx`.** It exports, opens the package,
+rewrites `sectionCount="2"` to `"3"`, re-zips, and re-imports — which is what a
+Word round trip that merged two sections would leave behind. A guard asserts the
+fixture really did declare two sections first, so the test cannot pass by editing
+nothing.
+
+**Not `customXml/`**: that is a public OPC affordance with its own item/itemProps
+pair and a datastore Word surfaces in its UI. This is not user data.
+
+**One duplication removed on the way through.** `write/custom_props.rs` and
+`write/comments.rs` each carried a private `escape` function and this part would
+have been the third; there is now one `xml_util::escape_xml`.
+
+**A bug worth recording, because the type system permitted it.**
+`local_name(e)` where `e: &BytesStart` *compiles* — `BytesStart` derefs to
+`[u8]`, so it silently matched against the element's entire raw bytes,
+attributes included, and every well-formed part was rejected. The failing tests
+were the ones asserting successful parses; had the tests only covered rejection,
+this would have looked like a working validator.
+
+Mutation-tested four ways: dropping the count check, letting the part write
+geometry, applying the valid half of an inconsistent map, and deriving the count
+from the listed sections — each kills a specific test.
+
+**Not established:** no real Word has opened one of these files. The claim that
+Word ignores the part rests on it being unreferenced from `document.xml` with a
+private content type, which is how OPC is specified to behave, not on an
+observation. Whether Word *preserves* the part through its own save is untested
+and out of our hands — the count check exists precisely because it may not.
+Nothing outside DOCX uses the map; ODT continues to carry names natively.
+
+### T6.3 — app-scoped defaults (done, r100)
+
+`loki_app_shell::document_defaults` stores page size, margins, measurement unit
+and remembered custom sizes in `AppThere/document-defaults.json`, alongside the
+display calibration and window geometry — the persistence pattern this crate
+already had, reused rather than reinvented.
+
+**Seed, never embed, is enforced by *where the call is*.** `load_document` has
+four arms — blank, bundled template, imported file, real file path — and the
+defaults are applied on the **first alone**. A template carries the geometry its
+designer chose and an opened file its author's; re-seeding those would silently
+reformat other people's documents to the reader's preferences, and would look
+fine, because the result is still a well-formed document. The seeded document
+carries ordinary geometry and no marker, so there is nothing to export and
+nothing for a second machine to reinterpret.
+
+**An unset field leaves the built-in answer alone.** `new_blank` has already
+picked A4 or US Letter from the locale; replacing that with a hardcoded value
+would make an empty settings file *worse* than no settings file.
+`an_unrecorded_field_leaves_the_built_in_answer_untouched` covers the half-set
+case too, which a single "have any settings" flag would get wrong.
+
+**Three of the four fields had no writer, so controls came with the store.** The
+seeding path *reads* `page_size`, `margins` and `measurement_unit`; only
+`custom_sizes` was written, by the size field. A setting nothing can set is
+indistinguishable from one that does not work — so the page form grew a "New
+docs → Use as default / Reset" row and a unit picker. The Reset exists because
+"Use as default" alone is a one-way door: a reader who set one by accident could
+only replace it, never get back the behaviour they had.
+
+**This is what gives T6.4's explicit rung a source.** `page_measurement_unit`
+passed a literal `None` until now; it passes the stored setting, so the D-03
+chain has all four rungs live rather than three.
+
+**A settings file is not reactive state**, so writing one changes nothing on
+screen. `StyleEditorSync` gained a `settings_generation` counter for the panel to
+re-render on. The alternative — re-setting an unrelated signal to its own value —
+works only because `Signal::set` does not compare, and reads at the call site as
+a line that does nothing.
+
+**Validation happens on load, once.** A hand-edited or future-version file is
+untrusted input; an implausible page is dropped in favour of the built-in rather
+than propagated into every new document, so no reader of the struct has to
+re-check it. Margins are checked against a *different* range than pages: a zero
+margin is legitimate (full bleed), a zero-width page is not.
+
+Mutation-tested five ways: overwriting an unset field with a built-in, letting
+margin seeding clobber header/footer/gutter, seeding only the first section,
+remembering catalogued papers as custom sizes, and skipping the plausibility
+check — each kills a specific test.
+
+**Not established:** no screen sitting — the style panel still has no harness
+scenario, so the two new rows have not been seen rendered. The store is written
+and read only by `loki-text`; Calc and Slides link the same crate and ignore it.
+Nothing reads the defaults at *file → new* time outside the editor route, and
+there is no settings dialog — these controls live in the page-style panel because
+that is where the geometry they describe already is, not because that is where a
+preference belongs. D-07's list is complete (size, margins, unit, custom sizes);
+a general preferences surface is not part of it.
+
+### T6.4 — measurement units (done for the page surfaces, r99)
+
+`loki_primitives::units::MeasurementUnit` — mm, cm, in, pt, pica — with D-03's
+chain, formatting, and parsing.
+
+**The r96 row was loosely worded.** It said "no measurement-unit type anywhere in
+the tree", and the *typed* units (`Length<Mm>`, `Length<Inch>`, the whole
+`UnitConversion` table) were there all along. What was missing is a **runtime**
+unit: the user's choice of what to read and type in. Compile-time unit safety and
+a display preference are different things, and the row conflated them.
+
+**Precedence is structural, not documented.** `effective_measurement_unit` takes
+the explicit setting as its argument and the environment-derived answer is
+private, so there is no way to ask the environment while forgetting the user —
+rule 5 applied to a four-rung chain. The chain itself is a pure function over
+already-read values, so all four rungs are tested without touching the process
+environment.
+
+**The two locale tables stay apart.** `default_page_size_for_locale` reads the
+same locale variables to pick A4 vs US Letter, and its region list is
+deliberately *not* this one: Mexico, Canada and the Philippines take US Letter
+paper and are metric. `mexico_uses_letter_paper_but_metric_units` asserts the
+measurement table has not adopted the paper one's regions — a merge that looks
+like tidying and gets one of the two answers wrong for all three countries.
+
+**Display and entry only.** Nothing stored changes. The seed-then-read-back path
+is asserted for **every paper × every unit**, because the panel seeds its custom
+fields with `format_bare` and reads them with `parse`: if those two disagreed,
+opening the panel and pressing Set without typing would resize the page, and only
+in units the developer does not run in. That test is what fixes the decimal
+places — coarsening mm/pt to 0 decimals kills it.
+
+**Two rules that had to be decided rather than inherited.** The range check on a
+custom size is applied *after* conversion, because 36 pt … 14400 pt is a property
+of the page rather than of the number typed — checking the raw number would
+reject every millimetre entry (A4 is 210 mm, under a floor of 36) and wave
+through absurd inch ones. And margin equality is decided in points *before*
+rounding, so whether the inspector shows one value or four does not depend on the
+user's unit.
+
+Mutation-tested six ways: swapping the OS and locale rungs, demoting the explicit
+setting, adopting the paper-size regions, coarsening the decimals, ignoring a
+typed suffix, and checking the range before conversion — each kills a specific
+test.
+
+**Not established, and deliberately bounded:** only the **page** surfaces follow
+the unit — the page inspector's size and margins rows, and the custom-size entry.
+The paragraph, list and character inspectors still print `pt` (`style_inspector`,
+`style_list_inspector`, `style_char_inspector`). Font size is *correct* to leave
+in points, as LibreOffice and Word both do; paragraph spacing, indents and tab
+stops are **not**, and are a follow-up. There is also still no UI to *choose* a
+unit and nowhere to persist one — `effective_measurement_unit(None)` is what
+every caller passes today, so in practice the environment decides. The settings
+store is T6.3, and the signature is already the shape that will take it.
+
+### T6.2 — the paper catalogue (done, r98)
+
+`loki_doc_model::layout::paper_catalog` holds the 28 papers T6.2 listed — ISO
+A0–A6, ISO B4–B6, JIS B4–B6, C5/C6/DL, US Letter, Legal, Tabloid, Executive,
+Statement, Folio, Quarto, #10, Monarch, and the three index cards — plus a
+user-defined width × height entry in the page-style panel.
+
+**A paper name is derived, never stored.** Neither format carries one: ODF writes
+`fo:page-width`/`fo:page-height`, OOXML writes `w:pgSz/@w:w` and `@w:h`. (OOXML's
+`@w:code` is a Windows `DEVMODE` printer paper code, which Loki neither reads nor
+writes.) So `PageSize` gains **no name field** — one fact, the dimensions, and
+one derivation from it. A size the catalogue cannot name is a user-defined size,
+which is a normal state rather than an error.
+
+**Three copies of one predicate collapsed into it.** "Is this page that paper?"
+— orientation-independent, ±1 pt — was written out three times, in the style
+inspector, the page form's active-preset check, and the Layout ribbon, each
+alongside its own dimension literals. All three now call `Paper::matches`, and
+`PageSize::a4()`/`letter()` are defined *by* the catalogue rows that name them,
+so the dimensions a page is set to and the dimensions it is recognised by cannot
+drift apart. The ribbon's `PAGE_SIZE_PRESETS` in particular held a second copy of
+595.28 × 841.89.
+
+**The two-size cap was structural, not a UI limit.** `PagePreset` had one variant
+per paper (`SizeA4`, `SizeLetter`), each carrying its own literals and its own
+comparison — so a third size meant a third variant. One `Size(&'static Paper)`
+variant makes the whole catalogue reachable through the applier that already
+existed.
+
+**The tolerance is now defended by an inversion.** `MATCH_TOLERANCE_PT` is 1 pt,
+and matching requires *both* axes within it — so what bounds the constant is each
+pair's **better**-separated axis, minimised over the catalogue, which is 12.47 pt
+(A6 vs Index card 4×6). Several pairs share one edge exactly (Folio and Legal are
+both 612 pt wide) and are still never confusable, so the closest single edge is
+the wrong number to reason from. `paper_entries_are_mutually_distinguishable`
+computes the right one and asserts the tolerance stays under it: rather than
+checking each paper matches itself — which passes for any tolerance, however
+wide — it checks that no paper matches another. Widening the tolerance to 20 pt,
+or changing `matches` from AND to OR, each kill it.
+
+**Custom sizes are rejected, not clamped**, outside 36 pt … 14400 pt, and the Set
+button is withheld while the entry is unusable rather than shown inert.
+
+**Not established:** no screen sitting, again — the style panel still has no
+harness scenario, so the 28-button grid has not been seen rendered, and its
+wrapping behaviour in the Compact posture is unverified. The catalogue's display
+names are `&'static str` constants, not Fluent keys: correct for the proper nouns
+(A4, DL, Tabloid), wrong for "US Letter", "Legal", "Executive", "Statement" and
+the index cards — `TODO(paper-i18n)`. A searchable dropdown (T6.7's "catalogue
+with search") still wants the panel hosted in `AtPopoverHost`.
+
+### T6.7 — the manager verbs (done, r97), and a correction to the r96 row
+
+**The r96 audit row above was wrong**, in the direction it warned about. It said
+"creating, renaming and applying a page style is not there". *Renaming* was
+there — `page_rename.rs`, `rename_page_style`, catalog key + every section
+reference — and so was geometry editing through preset buttons. The row was
+written from the *inspector's* module docs, which say "read-only" and are
+accurate about `style_page_inspector.rs` while `page_form.rs` sat beside it
+doing the writing. An audit that reads the doc comment of the file it happens to
+open reproduces exactly the error it was called in to catch.
+
+What was genuinely missing were the two verbs that make the family a *manager*:
+
+- **`create_page_style`** — a catalogued style seeded from the selected style's
+  geometry, named with the next free `PageStyleN`.
+- **`set_section_page_style`** — put a style on the section the caret is in, and
+  **give that section the style's geometry**, so applying changes the pages
+  rather than the label they carry.
+
+They land as one unit because either alone is inert: a created style no section
+references paints nothing and exports nothing, and there was no way to reach a
+section's page-style assignment at all.
+
+**The column cap is gone.** `ColumnCountDelta` steps to `MAX_COLUMNS` (12) and
+`ToggleSeparator` exposes `SectionColumns::separator` — modelled, written by both
+exporters, painted by the layout engine, and settable from no UI in the suite
+until now. Both route through `apply_preset`, so stepping and the 1/2/3 presets
+cannot drift over what "3 columns" means.
+
+#### Three defects this turned up, none visible before the verbs existed
+
+1. **The catalog's geometry copy was write-only.** `PageStyle.layout` was read
+   by nothing in production — `set_page_style_geometry` wrote sections only.
+   Harmless while unread; the moment `set_section_page_style` could seed a
+   section from it, a stale entry became a way to apply geometry no page had
+   shown. The mutation now writes both copies in one call.
+
+2. **`apply_preset`'s column-width logic was unreachable.** It carefully
+   preserved per-column widths when the count still matched and dropped them
+   otherwise — and `set_page_style_geometry` never wrote the widths key at all,
+   so a width list from a different count survived every preset. The layout
+   engine's `widths.len() == count` guard meant this degraded quietly instead of
+   breaking, which is why it lasted.
+
+3. **The geometry tests targeted by a mechanism production does not use.**
+   `page_style_geometry.rs` derived its section indices from
+   `section_page_style_ids` (layout-equality grouping) while the panel targets
+   the stored `section.page_style` reference. The two agree on that fixture and
+   diverge the moment two names share a geometry. The fixture now runs
+   `assign_page_styles` and targets by name, like the panel.
+
+**`derive_page_styles` / `section_page_style_ids` have no production callers at
+all** — only tests and their own re-export — despite doc comments calling them
+"the export inverse". ODT export uses `resolve_page_style_names`, which honours
+the stored reference. Left in place and **not** deleted this pass; flagged here
+rather than silently kept.
+
+**Mutation-tested, seven ways** — four in the model, three in the panel. Each
+of: dropping the catalog write, keeping stale widths, setting the reference
+without the geometry, preferring the catalog over the live section, listing only
+applied styles, reading the flat block index as a section index, and removing
+the column clamp — kills a specific test.
+
+**Two of the seven passed on the first attempt and shouldn't have**, both from
+the same failure: a control that silenced its own subject.
+
+- The live-section-outranks-catalog test couldn't discriminate because
+  `set_page_style_geometry` keeps the two copies equal, so *no* setup using it
+  can tell them apart. The discriminating case had to come from the Layout
+  ribbon's `set_document_*` mutations, which write sections and never touch the
+  catalog.
+- The panel's section-first read passed under mutation because the test moved
+  its sections to **Letter** — and `PageSize::default()` *is* Letter, so the
+  "changed" sections held exactly what the stale catalog held. Moving the
+  fixture to A4 fixed it. Both tests now carry a guard asserting the two sources
+  genuinely differ *before* reading one, so a future change that re-equalises
+  them fails loudly instead of passing quietly.
+
+**Not established:** no screen sitting — the style panel has no harness
+scenario, so this is verified by unit and model tests only, and nothing here has
+been seen on a screen. Duplicate, delete, set-default, catalogue search,
+unit-aware margin fields and live preview (the rest of T6.7's line) are **not**
+built.
+
+Two gaps are marked in-code rather than left to be rediscovered:
+`TODO(page-styles-export)` in `odt/write/page_styles.rs` — a catalogued page
+style **no section references** is not written to ODT, because that walk is over
+sections (it does survive the Loro CRDT, so it is not lost in-session, and ODF
+permits an unreferenced `style:master-page`); and `TODO(page-panel-touch)` in
+`page_form.rs` — the stepper's `−`/`+` are the panel's smallest hit targets and
+are not covered by the Compact posture's `touch_min_css()`, relying on the
+ambient font scale instead.
+
+### T6.1 — `style:page-usage` (done, r96)
+
+`PageUsage {All, Mirrored, Left, Right}` on `PageLayout`, with the ODF codec in
+`loki-doc-model/src/layout/page_usage.rs`. Read and written by the ODT
+reader/writer, carried through the Loro bridge, and — the half that makes it a
+feature rather than a field — **read by the paginator**, so an ODT that mirrors
+now alternates its margins.
+
+**The formats disagree about where the property lives, and the model takes the
+richer shape.** ODF states it per page layout; OOXML has only the document-wide
+`w:mirrorMargins`. So the DOCX importer stamps the flag onto every section, the
+DOCX writer asks `Document::mirrors_margins()` (a union of both origins, because
+an ODT-sourced document has no `settings` at all and the setting-only read
+exported it as single-sided), and the collapse happens at the one boundary where
+the format forces it.
+
+Mutation-tested both ways: reverting the paginator to the settings-only read
+kills the mirroring test; making the writer emit the attribute unconditionally
+kills the default-bytes test.
+
+| Task | Work |
+| --- | --- |
+| T6.1 | `style:page-usage` (`all`/`left`/`right`/`mirrored`) on the ODF path, wired to existing `mirror_margins` |
+| T6.2 | Page-size catalogue: ISO A0–A6, ISO B4–B6, JIS B4–B6, C5/C6/DL, US Letter, Legal, Tabloid, Executive, Statement, Folio, Quarto, #10, Monarch, index cards, plus user-defined |
+| T6.3 | App-scoped defaults per D-07: size, margins, unit, saved custom sizes seed new documents but never embed. Styles stay document-scoped |
+| T6.4 | Unit resolution per D-03: OS measurement setting → locale region → metric; explicit user setting overrides. Display and entry only, model stays EMU |
+| T6.5 | Advisory DOCX custom part per D-02: names and section mapping, ignored by Word, recovered on our reopen, never affects geometry, validated against `sectPr` count, discarded on mismatch |
+| T6.6 | Odd/even and first-page header/footer variation (`w:titlePg`, `w:evenAndOddHeaders`) — mirrored margins are near-useless without it |
+| T6.7 | UI: page style panel (catalogue with search, orientation, unit-aware margin fields with live preview, columns, gutter) and manager (create/rename/duplicate/delete/apply/set default). **Replace the three column preset buttons — that is the entire 1–3 column limit.** Preserve existing margin and size presets as shortcuts |
+| T6.8 | Conformance: mirrored margins, custom size, N-column with separator, multiple page styles per document, DOCX → ODF → DOCX round trip |
+
+**Format constraints (§3.4).** DOCX has no page-style concept: geometry lives on `w:sectPr`, mirroring is the document-wide `w:mirrorMargins` flag in `settings.xml`, not per-section. LibreOffice itself drops names on export. `w:cols` supports up to 45 columns.
+
+**Carried into T6.1 from Phase 5.** Per-section page area makes the servable-zoom limit a per-section property — scrolling Letter → A2 changes it with no user action, so neither of T5.4's gating moments applies. Two shapes sketched, neither chosen: whole-document minimum at load (never surprises, penalises one A2 insert in a hundred Letter pages) versus per-section non-retroactive (preserves don't-disrupt, but the maximum moves as you scroll, and scrolling into A2 at 300% enters `ceiling_exceeded` — the OOM branch — with nothing gating it). That asymmetry argues for whole-document minimum or a third gating moment.
+
+**Acceptance.** LibreOffice opens our ODF with names and mirroring intact; Word opens our DOCX with correct geometry; round-trip green; existing documents migrate without visual change.
+
+---
+
+## Phase 7 — Mobile and reflow (I-11, I-14, I-15)
+
+| Task | Work |
+| --- | --- |
+| **T7.0** | **Done (r105) — P1 answers yes for the wheel.** Nested containers consume within their bounds and bubble the remainder, and a horizontal-only inner does **not** swallow a vertical gesture. T7.3 proceeds; T7.4's fallback is not needed on this evidence. Drag is **not** measured — see below. |
+| T7.1 | **Partial (r106); diagnosed r110.** The engine, retention set and width-driven drop are done and on screen. The overflow trigger **renders but is off-screen** — the declared widths under-count the painted ones. See the r110 diagnostic. |
+| T7.2 | **Partial (r107); superseded in direction by ADR-0017.** The resolver stays; the ambient cap is made moot by moving the reflow view to DOM, where the measure is a CSS `max-width`. Parked, not forgotten — see ADR-0017 §4. |
+| T7.3 | **Partial (r108).** The document no longer scrolls horizontally, and oversized images shrink to the column with aspect preserved. The **per-element expand** is unblocked by ADR-0017 (reflow becomes DOM) but not built. |
+| T7.4 | **Closed, not required (r109).** P1 routed green, so the modal fallback is not built — there is no deviation to record. Its unconditional clause is now enforced by a signature and a test rather than by prose. |
+
+**Acceptance.** No horizontal document scroll at any width with a 200%-width table present; status bar legible at 320 px; readable at default zoom on a phone without pinching.
+
+---
+
+## Outstanding readings — Kevin's, none blocking each other
+
+| Item | Procedure |
+| --- | --- |
+| **Drift check** | Five minutes, no fixture. Open the spell menu **fresh at several editor scroll offsets** — not scroll with it open. Three readings are in `editor_spell_place`'s docs: constant offset = coordinate space; growing offset = origin error; correct-then-drifts-on-scroll = the absent driver, expected. With `spell_menu_anchor`'s sweep green, a drift points at Blitz's dispatch, not our arithmetic |
+| **R5b** | `LOKI_TEXTURE_CEILING_MB=300`, plain Letter, no ballast, A3 optional. Look for a `raster_permille` line with **no** full-scale follow-up |
+| **I-06** | The document that reported the squiggle. Read its `w:lineRule` and body font size against the 8×4 sweep table — 11pt/12pt default is a 0.000 cell and confirms nothing; 14pt default is the worst cell |
+| **T5.5** | Actual Size within 2% — needs a physical display and a ruler |
+| **Save on a titled document** | NOT a defect and NOT established. The reported "Save never clears the dirty dot" was wrong twice over: the run that produced it never reached Save, and the behaviour is correct — the only document the harness can open is untitled, which routes to Save As and is dirty by definition. Settling the titled case needs a document with a path, which needs a file picker (unavailable headless) or a path argument to the binary (loki-text takes none) |
+
+---
+
+## Open issues
+
+| ID | Item |
+| --- | --- |
+| I-18 | Layout-memory tail → **Spec 09**, parked at its boundary after S9-1/S9-2 took 41% off residency |
+| I-22 | Sub-page tiling → **Spec 10 seed**. Three independent evidence lines; would delete most of Phase 2's budget machinery |
+| I-25 | Cross-platform available-memory divisor comparability. Probes ship; `available_permille_of_total` collects the data |
+| I-26 | `reduced_motion` unwired at both ends while presenting as a capability. Consumers: T1.1's driver, Phase 5's zoom animation |
+| I-27 | ADR-0013: seven `if cond { plain_function(..) }` panels; `AtPanelHost` has **zero mount sites**. First adoption changes the cost of the other six |
+| I-28 | Ribbon overflow menu (above) |
+
+---
+
+## Register — 8 `awaiting` rows
+
+One live defect (I-28). One degraded but marked: Tab out of a popover lands on the trigger rather than past it — `set_focus` is a bool, so `AdvanceFocusPastAnchor` cannot be expressed; costs one extra Tab, logged not silent.
+
+Six gated on things that do not exist yet: frame-completion timer (current counter is a submission lower bound), platform accessibility text scale, a modal fallback to produce `DismissCause::PresentationChanged`, `:focus-visible` engine support, a `ThemeColor` producer, `AtPanelHost`.
+
+The modal-fallback row acquired a **trigger condition** in r93: `present` now leaves the viewport rather than crossing the anchor when the floor cannot be honoured on either side, so `!placement.rect.is_inside(viewport)` marks exactly the geometry where the anchored form has genuinely failed. Under the previous rule that case was indistinguishable from a good placement, so nothing could have escalated out of it.
+
+**Phase 5 blocked tail:** theme swatches (no importer reads a theme part), alpha (no consumer carries it), eyedropper (screen-capture permission), `TODO(t5.6-effective-anchor)` — unreachable because the page-fit rule flips to reflow before the capability cap engages.
+
+---
+
+## Cross-cutting debt
+
+Four files over the 300-line ceiling. Three vulnerable transitive `quick-xml` copies (0.30/0.38/0.39 alongside our patched 0.41), all upstream-gated as documented. ~40 distinct TODO topics tree-wide; Phase 5's six audited, ~34 older and unaudited.
+
+---
+
+## Standing disciplines
+
+Full ledger in the spec; the digest lives in `CLAUDE.md` and loads by default. The ones this phase will need:
+
+- **Verify spec claims against the tree** (L08-015). This spec has been wrong about its own code repeatedly — three r1 capability claims, most of Phase 6 already built, T1.5 and T3.2 needing no code, `set_zoom` not the single clamp site.
+- **Correctness is necessary; placement decides whether it takes effect** (L08-053). When a rule is not taking effect, first hypothesis is placement, not phrasing.
+- **Predict before implementing** (L9-013), naming the governing metric first.
+- **Prefer counters to clocks** (L08-038). Four timing attributions retracted; no counter has been wrong.
+- **Make the wrong thing unavailable, not discouraged** (L08-043).
+- **Verify the fixture produces the precondition** (L08-044) — and that the precondition is false where the bug cannot manifest.
+- **Mutation-test extracted arithmetic** (L08-041). A surviving mutation means either no test detected it or the code does nothing.
+- House standards: 300-line ceiling (split, don't baseline), `#![forbid(unsafe_code)]`, `thiserror`, no `unwrap`/`expect` in library code, SPDX headers, Rust 2024, `fl!()` for every user-visible string.

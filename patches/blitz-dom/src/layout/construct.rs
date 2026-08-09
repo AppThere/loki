@@ -876,6 +876,39 @@ pub(crate) fn build_inline_layout_into(
 
                             // dbg!(&style);
 
+                            // PATCH (loki): per-run OpenType features via a
+                            // `data-font-features` attribute.
+                            //
+                            // Stylo 0.8 gates `font-feature-settings` and
+                            // `font-kerning` to the Gecko engine, so in this
+                            // build there is no CSS route to either and this
+                            // function's `font_features` is unconditionally
+                            // empty — which leaves the shaper's default (kerning
+                            // ON). A document renderer needs it OFF unless the
+                            // document asks: Word's `w:kern` and ODF's
+                            // `style:letter-kerning` both default to off, and a
+                            // paragraph kerned against the document's wishes
+                            // wraps differently from the same paragraph laid out
+                            // by the engine that honours it (measured at 0.13 %
+                            // of a line in serif prose and 7.7 % on kern-heavy
+                            // text — see ADR-0017 §5.6).
+                            //
+                            // Remove when Stylo exposes `font-feature-settings`
+                            // to servo, and emit the CSS property instead.
+                            // Compared as a string rather than via `local_name!`,
+                            // which only accepts html5ever's static atom set and
+                            // has no entry for a `data-` attribute.
+                            if let Some(features) = element_data
+                                .attrs
+                                .iter()
+                                .find(|a| &*a.name.local == "data-font-features")
+                                .map(|a| a.value.as_str())
+                            {
+                                style.font_features = parley::FontSettings::Source(
+                                    std::borrow::Cow::Owned(features.to_string()),
+                                );
+                            }
+
                             let font_size = style.font_size;
 
                             // Floor the line-height of the span by the line-height of the inline context

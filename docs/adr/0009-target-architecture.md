@@ -4,7 +4,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # ADR-0009: Target layering & crate-dependency invariants
 
-**Status:** Proposed
+**Status:** Accepted — the M-1 dependency-direction gate is implemented and CI-enforced (see body).
 **Date:** 2026-06-28
 **Deciders:** AppThere engineering
 **Companion to:** [`spec-01-codebase-audit-and-architecture.md`](spec-01-codebase-audit-and-architecture.md) (§5)
@@ -44,7 +44,7 @@ leaf foundation.
  L5  ui /       appthere-ui · loki-app-shell
      app-shell  (design system, shared runtime services: SpellService, i18n)
                 ───────────────────────────────────────────────────────────
- L4  render     loki-renderer · loki-vello · appthere-canvas · loki-render-cache · loki-render-cpu
+ L4  render     loki-renderer · loki-vello · appthere-canvas · loki-render-cpu
                 ───────────────────────────────────────────────────────────
  L3b export+    loki-pdf            (exporters that REUSE layout for positioning)
  L3  layout     loki-layout         (pagination · Parley text layout)
@@ -156,10 +156,16 @@ pragmatically rather than forced:
 
 3. **`appthere-canvas` naming vs. layer.** The `appthere-*` prefix elsewhere
    denotes the L5 UI design system, but `appthere-canvas` is a **render-layer**
-   crate (`loki-vello → appthere-canvas`; `appthere-canvas → loki-render-cache`).
-   Pure naming smell (audit-adjacent); no dependency violation. Left as-is, noted
-   so the dependency gate's layer-assignment table is explicit rather than
-   inferred from the prefix.
+   crate (`loki-vello → appthere-canvas`). Pure naming smell (audit-adjacent);
+   no dependency violation. Left as-is, noted so the dependency gate's
+   layer-assignment table is explicit rather than inferred from the prefix.
+
+   *(Amended 2026-07-26, ADR-0016.)* It had a second internal edge,
+   `appthere-canvas → loki-render-cache`. `loki-render-cache` was deleted by
+   Spec 08 T2.4 — it was 115 lines of trait and type definitions named for a
+   tiered cache it did not contain — and its types moved into
+   `appthere-canvas`, which already re-exported all of them. `appthere-canvas`
+   is now an L4 leaf.
 
 ---
 
@@ -227,8 +233,7 @@ mechanical. None require a rewrite — consistent with D3: the target is reached
 | loki-epub | L2 | loki-doc-model, loki-primitives |
 | loki-layout | L3 | loki-doc-model, loki-fonts, loki-primitives, loki-spell |
 | loki-pdf | L3b | loki-doc-model, loki-layout, loki-primitives |
-| loki-render-cache | L4 | — |
-| appthere-canvas | L4 | loki-render-cache |
+| appthere-canvas | L4 | — (ADR-0016: absorbed `loki-render-cache`, now deleted) |
 | loki-vello | L4 | appthere-canvas, loki-layout |
 | loki-renderer | L4 | appthere-canvas, loki-doc-model, loki-layout, loki-vello (A-8 `appthere-ui` edge removed) |
 | loki-render-cpu | L4 | loki-layout (deterministic CPU rasterizer; conformance candidate render path) |

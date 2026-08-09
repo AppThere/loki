@@ -38,7 +38,7 @@ use crate::responsive::{use_breakpoint, Breakpoint};
 use crate::tokens::colors::{COLOR_BORDER_CHROME, COLOR_SURFACE_1, COLOR_TEXT_ON_CHROME};
 use crate::tokens::layout::PANEL_SIDE_WIDTH_PX;
 use crate::tokens::spacing::{RADIUS_MD, SPACE_2, SPACE_3, SPACE_4, TOUCH_MIN};
-use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_MD, FONT_WEIGHT_SEMIBOLD};
+use crate::tokens::typography::{FONT_SIZE_MD, FONT_WEIGHT_SEMIBOLD};
 
 /// Responsive posture for a hosted panel, derived **purely** from the size class
 /// so it is testable without a real window (Spec 03 D1).
@@ -107,12 +107,11 @@ pub fn AtPanelHost(props: AtPanelHostProps) -> Element {
             style: format!(
                 "display: flex; flex-direction: column; box-sizing: border-box; \
                  width: {width}; background: {bg}; border: 1px solid {border}; \
-                 border-radius: {radius}px; font-family: {font};",
+                 border-radius: {radius}px; ",
                 width  = posture.css_width(),
                 bg     = COLOR_SURFACE_1,
                 border = COLOR_BORDER_CHROME,
                 radius = RADIUS_MD,
-                font   = FONT_FAMILY_UI,
             ),
 
             // ── Header: title + close (TOUCH_MIN target) ──────────────────────

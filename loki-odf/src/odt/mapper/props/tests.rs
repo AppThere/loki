@@ -167,6 +167,47 @@ fn bold_true_false_none() {
 }
 
 #[test]
+fn numeric_font_weight_populates_the_weight_field() {
+    // A numeric fo:font-weight lands on the richer `font_weight` (which
+    // supersedes `bold` in layout/export); it was previously dropped entirely,
+    // matching neither `bold` nor `normal`.
+    let heavy = OdfTextProps {
+        font_weight: Some("600".into()),
+        ..Default::default()
+    };
+    let cp = map_text_props(&heavy);
+    assert_eq!(cp.font_weight, Some(600));
+    assert_eq!(cp.bold, None); // the keyword arm did not fire
+
+    // Keyword weights still map to the boolean and leave `font_weight` unset.
+    let bold = OdfTextProps {
+        font_weight: Some("bold".into()),
+        ..Default::default()
+    };
+    let cp = map_text_props(&bold);
+    assert_eq!(cp.bold, Some(true));
+    assert_eq!(cp.font_weight, None);
+}
+
+#[test]
+fn text_scale_percent_imports_as_a_fraction() {
+    // style:text-scale is a percentage string, but the model stores a FRACTION
+    // (the layout + OOXML `w:w` contract): "150%" → 1.5, not 150. Storing the
+    // raw percent made a scaled run render ~100× too wide.
+    let scaled = OdfTextProps {
+        text_scale: Some("150%".into()),
+        ..Default::default()
+    };
+    assert_eq!(map_text_props(&scaled).scale, Some(1.5));
+
+    let ninety = OdfTextProps {
+        text_scale: Some("90%".into()),
+        ..Default::default()
+    };
+    assert_eq!(map_text_props(&ninety).scale, Some(0.9));
+}
+
+#[test]
 fn italic_mapping() {
     let italic = OdfTextProps {
         font_style: Some("italic".into()),

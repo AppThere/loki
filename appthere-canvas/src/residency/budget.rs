@@ -1,0 +1,293 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
+
+//! The resident-texture byte budget (Spec 08 T2.1, ADR L08-002, ADR-0016).
+//!
+//! # Derived per device, never per compile target
+//!
+//! D-08 and L08-011: an Android laptop with 16 GB gets the same budget a
+//! desktop with 16 GB gets, from a different binary. So the inputs here are
+//! *measured quantities* — RAM, whether a GPU is painting — and never
+//! `cfg!(target_os)`. The values arrive from `appthere_ui::DeviceProfile`, but
+//! this module takes plain numbers rather than that type: `appthere-ui` is L5
+//! and this crate is L4, so the application supplies the adaptation and the
+//! arithmetic stays testable without a UI.
+
+#[path = "budget_survival.rs"]
+pub(super) mod survival;
+
+use survival::survival_ceiling;
+pub use survival::{
+    SURVIVAL_AVAILABLE_RAM_DIVISOR, SURVIVAL_CAP_BYTES, SURVIVAL_TOTAL_RAM_DIVISOR,
+};
+
+/// Smallest budget the derivation will produce, in bytes (24 MiB).
+///
+/// Below this a single visible page at moderate zoom cannot be held even at the
+/// reduced-scale floor, so the budget would stop being a resolution dial and
+/// start being a blank screen.
+pub const BUDGET_FLOOR_BYTES: u64 = 24 * 1024 * 1024;
+
+/// Budget used when nothing is known about the device (64 MiB).
+///
+/// Chosen so it is what the derivation *also* produces on Spec 06's 8 GB design
+/// floor: an unknown machine is treated as the machine we designed for, rather
+/// than as the best or worst case.
+pub const BUDGET_BASELINE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Largest budget the derivation will produce, in bytes (256 MiB).
+///
+/// This caps the *automatic* derivation on a large machine; it does not
+/// overrule a person — see [`BudgetInputs::user_override_bytes`]. 256 MiB
+/// clears the measured 200%-on-HiDPI worst case (157.8 MiB) with headroom.
+pub const BUDGET_CEILING_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Share of *available* RAM the budget may take: one 64th.
+///
+/// Calibrated rather than picked: Spec 06's design floor is an 8 GB machine
+/// also running a browser and an OS, which typically reports ~4 GiB available,
+/// and 4 GiB / 64 is exactly [`BUDGET_BASELINE_BYTES`]. The whole scale is
+/// anchored on that one point.
+///
+/// # NOT ESTABLISHED: that "available" means the same thing on every platform
+///
+/// The anchor point is a **Linux** observation, and `MemAvailable` is a kernel
+/// estimate of reclaimable memory that *includes page cache*. The figures this
+/// divisor will be applied to elsewhere are not the same construction: Windows'
+/// `ullAvailPhys` is free plus standby, and macOS's equivalent is assembled from
+/// free, inactive and purgeable pages. Similar in intent; **not measured** to
+/// report the same fraction of total under the same load.
+///
+/// So one divisor across three platforms carries an unstated comparability
+/// assumption. This is the same shape as
+/// `the_total_and_available_divisors_stay_calibrated_against_each_other`, one
+/// level out: that test pins *total versus available on one machine*, and the
+/// open question is *available versus available across platforms*.
+///
+/// **It is collectable rather than arguable**, and the instrument is already in:
+/// `appthere_ui::device_probe::note_system_memory` logs
+/// `available_permille_of_total` whenever a platform reports both figures — which
+/// since I-25 is all three. Recorded here rather than discovered later as "one
+/// platform behaves differently under identical load".
+///
+/// # Where the answer would land, if the platforms turn out to differ
+///
+/// **The fix would be per-platform divisors, and the thing that makes that a
+/// wide change is not this constant — it is that [`BudgetInputs`] has no
+/// provenance.** `available_ram_bytes: Option<u64>` says how many bytes; it does
+/// not say which platform's notion of "available" produced them, so there is
+/// nothing here to key a divisor on. The first step of that change is a field on
+/// the input, not a second constant.
+///
+/// That field is deliberately **not** added now. Nothing consumes it, and adding
+/// a parameter for a consumer nobody has named is the `Before`/`After` mistake
+/// this program already recorded once. What is added is the sign: the coupling
+/// is named at the constant it couples, so I-25's eventual answer has an obvious
+/// place to arrive and does not have to be rediscovered from the permille data
+/// alone.
+pub const AVAILABLE_RAM_DIVISOR: u64 = 64;
+
+/// Share of *total* RAM used when the available figure is missing: one 128th.
+///
+/// Half the available-RAM share, because total overstates what this process may
+/// take. The two paths agree at the design floor by construction — 8 GiB / 128
+/// and 4 GiB / 64 are the same number — which is what makes the fallback a
+/// degradation rather than a different policy.
+pub const TOTAL_RAM_DIVISOR: u64 = 128;
+
+/// What the derivation reads.
+///
+/// Every field is optional or defaults to the permissive answer, so a
+/// `Default` value derives [`BUDGET_BASELINE_BYTES`] rather than the floor.
+/// That direction matters: an input nobody filled in must not silently
+/// throttle the renderer.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct BudgetInputs {
+    /// RAM the OS reports as available, from
+    /// `appthere_ui::DeviceProfile::available_ram_bytes`.
+    pub available_ram_bytes: Option<u64>,
+    /// Total physical RAM, used only when the available figure is missing.
+    pub total_ram_bytes: Option<u64>,
+    /// Whether a GPU paint path is in use. `None` means not yet probed.
+    ///
+    /// This is the *only* way the GPU class enters the derivation, and it is
+    /// worth being plain about why: wgpu exposes no portable VRAM figure, so
+    /// there is nothing to derive a discrete GPU's budget from. A discrete card
+    /// therefore gets the same system-RAM-derived budget an integrated one
+    /// gets, which under-uses it. That is the safe direction and it is an
+    /// **inference, not a measurement** — see
+    /// `DeviceProfile::gpu_class`'s `TODO(device-profile-gpu-memory)`.
+    pub gpu_paint_path: Option<bool>,
+    /// An explicit user setting, in bytes.
+    pub user_override_bytes: Option<u64>,
+    /// A **diagnostic** survival-ceiling override, in bytes.
+    ///
+    /// # Separate from the budget override on purpose (r71)
+    ///
+    /// A user may raise the byte *target* — it is a preference about memory —
+    /// but may not move the survival ceiling, because that line stands in for
+    /// the OOM killer and a user asking for less memory must not be able to
+    /// raise their own risk. r67 enforced exactly that.
+    ///
+    /// Which removed the only lever R5b's screen procedure had. That procedure
+    /// needs the machine to *behave as if* it had less headroom, which is a
+    /// different request from a preference and deserves a different control: it
+    /// is a deliberate instruction to enter the survival regime, not a claim
+    /// about what the user wants.
+    ///
+    /// **Ceiling only, deliberately.** It cannot set the target, cannot pick a
+    /// `BudgetSource`, and cannot become a second route into the derivation
+    /// (L08-043). One lever, one quantity — which also retires step 2a's sharp
+    /// edge, where the *same* variable proved the instrument could speak when
+    /// set low and destroyed reachability when set high, distinguished only by
+    /// magnitude and a paragraph of prose.
+    pub diagnostic_ceiling_bytes: Option<u64>,
+}
+
+/// How a budget figure was arrived at. Reported so a surprising budget can be
+/// explained without re-deriving it by hand.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BudgetSource {
+    /// An explicit user setting.
+    UserOverride,
+    /// A share of the OS-reported available RAM.
+    AvailableRam,
+    /// A share of total RAM, because available was not reported.
+    TotalRam,
+    /// Nothing was known about the device.
+    Baseline,
+    /// No GPU paint path, so no page textures are allocated at all.
+    NoGpuPaintPath,
+}
+
+/// A resident-texture byte budget.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct TextureBudget {
+    bytes: u64,
+    hard_ceiling_bytes: u64,
+    source: BudgetSource,
+}
+
+impl TextureBudget {
+    /// The budget for a device nothing is known about.
+    #[must_use]
+    pub fn baseline() -> Self {
+        Self {
+            bytes: BUDGET_BASELINE_BYTES,
+            // The baseline stands for the 8 GB design floor's ~4 GiB available,
+            // so its ceiling is that machine's ceiling, by the same
+            // construction that anchors the budget itself.
+            hard_ceiling_bytes: survival_ceiling(
+                (4 * 1024 * 1024 * 1024_u64) / SURVIVAL_AVAILABLE_RAM_DIVISOR,
+                BUDGET_BASELINE_BYTES,
+            ),
+            source: BudgetSource::Baseline,
+        }
+    }
+
+    /// An explicit **target**, with the survival ceiling taken from
+    /// [`Self::baseline`] — for the user-override path and for tests that only
+    /// care about the target.
+    ///
+    /// # The name says what it substitutes, deliberately
+    ///
+    /// This was `exact` until r18, and the name was a load-bearing part of a real
+    /// defect: it is exact about one of the two numbers and silently substitutive
+    /// about the other, so `TextureBudget::exact(budget_bytes)` read as
+    /// "reconstruct the budget" at the call site while quietly handing every
+    /// device the baseline machine's ceiling (L08-031). If you want both numbers
+    /// to be yours, use [`Self::with_ceiling`].
+    ///
+    /// Clamped up to [`BUDGET_FLOOR_BYTES`] but **not** down to
+    /// [`BUDGET_CEILING_BYTES`]: that ceiling bounds an automatic derivation, not
+    /// a person who knows their machine.
+    #[must_use]
+    pub fn with_baseline_ceiling(bytes: u64) -> Self {
+        let bytes = bytes.max(BUDGET_FLOOR_BYTES);
+        Self {
+            bytes,
+            // A person may raise the *target* as high as they like; the survival
+            // ceiling is not theirs to lower, because it is about the OOM killer
+            // rather than about preference. It is only ever raised to keep the
+            // invariant ceiling >= target.
+            hard_ceiling_bytes: bytes.max(Self::baseline().hard_ceiling_bytes),
+            source: BudgetSource::UserOverride,
+        }
+    }
+
+    /// Builds a budget with **both** thresholds explicit.
+    ///
+    /// Prefer this in any test whose subject is not the pressure policy itself:
+    /// [`Self::with_baseline_ceiling`] silently supplies a 512 MiB ceiling, which
+    /// is enough to make a geometry test start exercising the survival regime
+    /// without saying so.
+    #[must_use]
+    pub fn with_ceiling(bytes: u64, hard_ceiling_bytes: u64) -> Self {
+        let bytes = bytes.max(BUDGET_FLOOR_BYTES);
+        Self {
+            bytes,
+            hard_ceiling_bytes: hard_ceiling_bytes.max(bytes),
+            source: BudgetSource::UserOverride,
+        }
+    }
+
+    /// The budget in bytes.
+    #[must_use]
+    pub fn bytes(self) -> u64 {
+        self.bytes
+    }
+
+    /// The line past which the renderer will reduce the scale of pages the user
+    /// is **looking at**, because the alternative is the process being killed.
+    ///
+    /// Two thresholds rather than one, and the distinction is the whole of
+    /// ADR L08-026:
+    ///
+    /// - [`Self::bytes`] is a **target**. Exceeding it is a reported outcome, not
+    ///   a failure to correct. It buys memory back from work the user cannot
+    ///   see — the pre-render margin — and it never spends legibility to do it.
+    /// - This is a **survival ceiling**. Between the two, visible pages stay at
+    ///   full resolution and the plan simply reports that it is over target.
+    ///   Above it, there is no benign move left: refusing to degrade means an
+    ///   allocation the device cannot satisfy.
+    ///
+    /// The byte budget is our invention and the reader's perception is not, so
+    /// the target may never cash in the second for the first. Survival is the
+    /// one case where it may, because there the alternative is not "slightly
+    /// more memory" but a dead application.
+    #[must_use]
+    pub fn hard_ceiling_bytes(self) -> u64 {
+        self.hard_ceiling_bytes
+    }
+
+    /// How the figure was arrived at.
+    #[must_use]
+    pub fn source(self) -> BudgetSource {
+        self.source
+    }
+}
+
+/// Builds a budget from already-decided parts, enforcing `ceiling >= target`.
+///
+/// The one way [`budget_derive`](super::budget_derive) constructs a
+/// `TextureBudget`, so the fields stay private to this module and the invariant
+/// is applied in one place rather than at each of the derivation's four arms.
+pub(super) fn from_parts(
+    bytes: u64,
+    hard_ceiling_bytes: u64,
+    source: BudgetSource,
+) -> TextureBudget {
+    TextureBudget {
+        bytes,
+        hard_ceiling_bytes: hard_ceiling_bytes.max(bytes),
+        source,
+    }
+}
+
+pub(super) fn clamp(bytes: u64) -> u64 {
+    bytes.clamp(BUDGET_FLOOR_BYTES, BUDGET_CEILING_BYTES)
+}
+
+#[cfg(test)]
+#[path = "budget_tests.rs"]
+mod tests;

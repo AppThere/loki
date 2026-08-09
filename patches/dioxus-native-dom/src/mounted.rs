@@ -44,6 +44,11 @@ pub trait MountedBackend: Send + Sync {
     /// Scroll node `node_id` to an absolute `(x, y)` offset (CSS px).
     fn scroll_node_to(&self, node_id: NodeId, x: f64, y: f64);
 
+    /// Focus node `node_id`, or blur it when `focus` is false.  A node that is
+    /// gone by the time this reaches the document is a no-op, not an error:
+    /// focus restoration races the unmount that triggered it by construction.
+    fn focus_node(&self, node_id: NodeId, focus: bool);
+
     /// Asynchronously read `node_id`'s scroll / client geometry.  Resolves to
     /// `None` if the node is gone or the query could not be answered.
     fn query_geometry(
@@ -64,6 +69,7 @@ impl MountedElement {
     pub fn new(backend: Arc<dyn MountedBackend>, node_id: NodeId) -> Self {
         Self { backend, node_id }
     }
+
 }
 
 impl RenderedElementBacking for MountedElement {
@@ -115,6 +121,21 @@ impl RenderedElementBacking for MountedElement {
     ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
         self.backend
             .scroll_node_to(self.node_id, coordinates.x, coordinates.y);
+        Box::pin(async { Ok(()) })
+    }
+
+    /// PATCH(loki): upstream leaves this at the trait's `NotSupported` default,
+    /// so no component in a dioxus-native app can move focus programmatically —
+    /// which is disqualifying for any overlay, since returning focus to the
+    /// control that opened a menu is the single most-relied-on behaviour of the
+    /// class.  `BaseDocument::set_focus_to` / `clear_focus` already exist and are
+    /// already driven by the mouse path; this routes them the same way `scroll`
+    /// routes `scroll_node_to`.
+    ///
+    /// Fire-and-forget, like `scroll`: the document lives on the event-loop side,
+    /// and a round trip would make focus restoration await a frame it is racing.
+    fn set_focus(&self, focus: bool) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
+        self.backend.focus_node(self.node_id, focus);
         Box::pin(async { Ok(()) })
     }
 

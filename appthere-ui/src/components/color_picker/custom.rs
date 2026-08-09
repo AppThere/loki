@@ -10,73 +10,23 @@
 
 use dioxus::prelude::*;
 
-use super::convert::{cmyk_to_rgb, hsl_to_rgb, hsv_to_rgb, parse_hex, rgb_to_hex};
+use super::area::AtColorArea;
+use super::convert::{hsv_to_rgb, rgb_to_hex};
+use super::custom_mode::{field_mode, fields_for, resolve, Mode, MODES};
+use super::custom_source::{displayed_hsv, fields_from_rgb, Source};
 use crate::tokens;
-
-/// The supported colour-entry models. Labels are technical abbreviations.
-#[derive(Clone, Copy, PartialEq)]
-enum Mode {
-    Hex,
-    Rgb,
-    Hsl,
-    Hsv,
-    Cmyk,
-}
-
-const MODES: &[(Mode, &str)] = &[
-    (Mode::Hex, "Hex"),
-    (Mode::Rgb, "RGB"),
-    (Mode::Hsl, "HSL"),
-    (Mode::Hsv, "HSV"),
-    (Mode::Cmyk, "CMYK"),
-];
-
-/// `(field labels, default values)` for a mode. At most four fields are used;
-/// unused entries are empty.
-fn fields_for(mode: Mode) -> &'static [&'static str] {
-    match mode {
-        Mode::Hex => &["#"],
-        Mode::Rgb => &["R", "G", "B"],
-        Mode::Hsl => &["H", "S", "L"],
-        Mode::Hsv => &["H", "S", "V"],
-        Mode::Cmyk => &["C", "M", "Y", "K"],
-    }
-}
-
-/// Parses the current field values under `mode` into RGB bytes.
-fn resolve(mode: Mode, f: &[String; 4]) -> Option<(u8, u8, u8)> {
-    let num = |s: &String| s.trim().parse::<f32>().ok().filter(|v| v.is_finite());
-    match mode {
-        Mode::Hex => parse_hex(&f[0]),
-        Mode::Rgb => {
-            let (r, g, b) = (num(&f[0])?, num(&f[1])?, num(&f[2])?);
-            let in_range = |v: f32| (0.0..=255.0).contains(&v);
-            (in_range(r) && in_range(g) && in_range(b))
-                .then(|| (r.round() as u8, g.round() as u8, b.round() as u8))
-        }
-        Mode::Hsl => Some(hsl_to_rgb(num(&f[0])?, num(&f[1])?, num(&f[2])?)),
-        Mode::Hsv => Some(hsv_to_rgb(num(&f[0])?, num(&f[1])?, num(&f[2])?)),
-        Mode::Cmyk => Some(cmyk_to_rgb(
-            num(&f[0])?,
-            num(&f[1])?,
-            num(&f[2])?,
-            num(&f[3])?,
-        )),
-    }
-}
 
 fn input_style(width_px: f32) -> String {
     format!(
         "width: {width_px}px; padding: {pv}px {ph}px; background: {bg}; \
          color: {fg}; border: 1px solid {border}; border-radius: {r}px; \
-         font-family: {ff}; font-size: {fs}px;",
+         font-size: {fs}px;",
         pv = tokens::SPACE_1,
         ph = tokens::SPACE_1,
         bg = tokens::COLOR_SURFACE_3,
         fg = tokens::COLOR_TEXT_ON_CHROME,
         border = tokens::COLOR_BORDER_CHROME,
         r = tokens::RADIUS_SM,
-        ff = tokens::FONT_FAMILY_UI,
         fs = tokens::FONT_SIZE_LABEL,
     )
 }
@@ -96,12 +46,35 @@ pub(super) fn CustomColorSection(
     apply_label: String,
     /// Called with the resolved `#RRGGBB` when Apply is pressed.
     on_apply: EventHandler<String>,
+    /// Accessible name of the saturation/value square.
+    area_label: String,
+    /// Accessible name of the hue strip.
+    hue_label: String,
 ) -> Element {
     let mut mode = use_signal(|| Mode::Hex);
     let mut fields = use_signal(|| [const { String::new() }; 4]);
+    // The square's own colour, and which control last spoke — see
+    // `custom_source` for why "last edited wins" rather than writing back.
+    let mut area_hsv = use_signal(|| (0.0_f32, 100.0_f32, 100.0_f32));
+    let mut source = use_signal(Source::default);
 
-    let resolved = resolve(mode(), &fields.read());
+    let field_rgb = resolve(mode(), &fields.read());
+    let shown_hsv = displayed_hsv(source(), area_hsv(), field_rgb);
+    // One displayed colour, whichever control produced it. The area is always
+    // resolvable, so dragging never leaves the section without a preview — the
+    // fields can be mid-edit and the square cannot.
+    let resolved = match source() {
+        Source::Area => Some(hsv_to_rgb(shown_hsv.0, shown_hsv.1, shown_hsv.2)),
+        Source::Fields => field_rgb,
+    };
     let preview = resolved.map(|(r, g, b)| rgb_to_hex(r, g, b));
+    // What the fields *show*. Derived from the square while the square is the
+    // source, so a dragged colour has a readable hex to copy; the reader's own
+    // text the moment they type. See `custom_source::fields_from_rgb`.
+    let shown_fields = match (source(), resolved) {
+        (Source::Area, Some(rgb)) => fields_from_rgb(field_mode(mode()), rgb),
+        _ => fields.read().clone(),
+    };
 
     let heading_style = format!(
         "font-size: {fs}px; color: {fg};",
@@ -112,7 +85,7 @@ pub(super) fn CustomColorSection(
         format!(
             "padding: {pv}px {ph}px; background: {bg}; color: {fg}; cursor: pointer; \
              border: 1px solid {border}; border-radius: {r}px; \
-             font-family: {ff}; font-size: {fs}px;",
+             font-size: {fs}px;",
             pv = tokens::SPACE_1,
             ph = tokens::SPACE_1,
             bg = if active {
@@ -131,7 +104,6 @@ pub(super) fn CustomColorSection(
                 tokens::COLOR_BORDER_CHROME
             },
             r = tokens::RADIUS_SM,
-            ff = tokens::FONT_FAMILY_UI,
             fs = tokens::FONT_SIZE_XS,
         )
     };
@@ -140,6 +112,21 @@ pub(super) fn CustomColorSection(
         div {
             style: format!("display: flex; flex-direction: column; gap: {}px;", tokens::SPACE_2),
             span { style: "{heading_style}", "{heading}" }
+
+            // The saturation/value square and hue strip (T5.2). Above the
+            // fields, because it is how most people pick a colour and the
+            // fields are how they refine or paste one.
+            AtColorArea {
+                hue: shown_hsv.0,
+                saturation: shown_hsv.1,
+                value: shown_hsv.2,
+                area_label: area_label.clone(),
+                hue_label: hue_label.clone(),
+                on_change: move |(h, s, v): (f32, f32, f32)| {
+                    area_hsv.set((h, s, v));
+                    source.set(Source::Area);
+                },
+            }
 
             // Colour-model selector.
             div {
@@ -150,6 +137,7 @@ pub(super) fn CustomColorSection(
                         style: mode_btn(mode() == m),
                         aria_pressed: if mode() == m { "true" } else { "false" },
                         onclick: move |_| {
+                            source.set(Source::Fields);
                             if *mode.peek() != m {
                                 mode.set(m);
                                 fields.set([const { String::new() }; 4]);
@@ -176,8 +164,13 @@ pub(super) fn CustomColorSection(
                         span { style: "{heading_style}", "{label}" }
                         input {
                             r#type: "text",
-                            value: "{fields.read()[i]}",
-                            oninput: move |evt| { fields.write()[i] = evt.value(); },
+                            value: "{shown_fields[i]}",
+                            oninput: move |evt| {
+                                // Typing hands the colour back to the fields —
+                                // "last edited wins" (see `custom_source`).
+                                source.set(Source::Fields);
+                                fields.write()[i] = evt.value();
+                            },
                             style: input_style(if mode() == Mode::Hex { 96.0 } else { 40.0 }),
                         }
                     }
@@ -203,7 +196,7 @@ pub(super) fn CustomColorSection(
                     style: format!(
                         "padding: {pv}px {ph}px; background: {bg}; color: {fg}; \
                          border: 1px solid {border}; border-radius: {r}px; cursor: pointer; \
-                         font-family: {ff}; font-size: {fs}px;",
+                         font-size: {fs}px;",
                         pv = tokens::SPACE_1,
                         ph = tokens::SPACE_3,
                         bg = tokens::COLOR_SURFACE_3,
@@ -214,54 +207,28 @@ pub(super) fn CustomColorSection(
                         },
                         border = tokens::COLOR_BORDER_CHROME,
                         r = tokens::RADIUS_SM,
-                        ff = tokens::FONT_FAMILY_UI,
                         fs = tokens::FONT_SIZE_LABEL,
                     ),
                     disabled: preview.is_none(),
-                    onclick: move |_| {
-                        if let Some((r, g, b)) = resolve(*mode.peek(), &fields.peek()) {
-                            on_apply.call(rgb_to_hex(r, g, b));
+                    // **The colour applied is the one on the swatch beside it** —
+                    // the same `preview` the line above gates on. It read
+                    // `resolve(mode, fields)` until T5.3, which is the *typed*
+                    // colour and empty while the square is the source, so the
+                    // button was enabled by one question and acted on another:
+                    // dragging and pressing Apply did nothing at all. Found by a
+                    // screen sitting; see `the_typed_fields_do_not_speak_for_a_
+                    // dragged_colour`.
+                    onclick: {
+                        let hex = preview.clone();
+                        move |_| {
+                            if let Some(hex) = hex.clone() {
+                                on_apply.call(hex);
+                            }
                         }
                     },
                     "{apply_label}"
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn f(vals: [&str; 4]) -> [String; 4] {
-        vals.map(str::to_string)
-    }
-
-    #[test]
-    fn resolve_per_mode() {
-        assert_eq!(
-            resolve(Mode::Hex, &f(["#00FF00", "", "", ""])),
-            Some((0, 255, 0))
-        );
-        assert_eq!(
-            resolve(Mode::Rgb, &f(["255", "0", "0", ""])),
-            Some((255, 0, 0))
-        );
-        assert_eq!(resolve(Mode::Rgb, &f(["300", "0", "0", ""])), None);
-        assert_eq!(
-            resolve(Mode::Hsl, &f(["240", "100", "50", ""])),
-            Some((0, 0, 255))
-        );
-        assert_eq!(
-            resolve(Mode::Hsv, &f(["0", "0", "100", ""])),
-            Some((255, 255, 255))
-        );
-        assert_eq!(
-            resolve(Mode::Cmyk, &f(["0", "100", "100", "0"])),
-            Some((255, 0, 0))
-        );
-        assert_eq!(resolve(Mode::Rgb, &f(["", "0", "0", ""])), None);
-        assert_eq!(resolve(Mode::Hex, &f(["not-a-color", "", "", ""])), None);
     }
 }

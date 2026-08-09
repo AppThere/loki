@@ -35,6 +35,7 @@ pub mod items;
 mod layout_entry;
 mod list_marker;
 mod math;
+pub mod measure;
 pub mod mode;
 mod options;
 mod paginate_blanks;
@@ -54,8 +55,9 @@ pub use error::{LayoutError, LayoutResult};
 pub use flow::{FlowOutput, LayoutWarning, flow_section};
 pub use font::FontResources;
 pub use font_handle::SharedFontResources;
-pub use geometry::{LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
+pub use geometry::{LAYOUT_EPSILON_PT, LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
 pub use hatch::{HatchPattern, HatchSegment, PositionedHatch};
+pub use incremental::diff::{block_comparisons, reset_block_comparisons};
 pub use incremental::{
     FlowCheckpoint, PageStart, PaginatedReuse, document_has_notes, relayout_paginated_incremental,
 };
@@ -87,3 +89,11 @@ pub const MIN_ROW_HEIGHT: f32 = 0.0;
 /// this much when a paginated layout contains comment items, so the panel is
 /// reachable. See [`result::LayoutPage::comment_items`].
 pub const COMMENT_GUTTER_WIDTH: f32 = 192.0;
+
+#[cfg(test)]
+#[path = "flow_spell_break_tests.rs"]
+mod flow_spell_break_tests;
+
+#[cfg(test)]
+#[path = "flow_spell_condition_tests.rs"]
+mod flow_spell_condition_tests;

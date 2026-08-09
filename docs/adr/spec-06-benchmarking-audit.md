@@ -44,14 +44,14 @@ precedent, not a wiring-up of existing infrastructure.
 | Cache | Location | Bounded? | Notes |
 |---|---|---|---|
 | Paragraph shaping cache | `loki-layout` `ParaCache` (`para_cache.rs`) | ✅ **Yes** | Two-generation approximate-LRU, `CACHE_CAP = 2048` × 2 gens; rotates on fill; `clear()` on document load (`clear_paragraph_cache`). Memory audit Finding 4 (**Fixed**). |
-| GPU page-texture tiers | `loki-renderer` (`CacheTier` Hot/Warm/Cold, `assign_tier`) | ✅ **Yes (post-fix)** | Bounded to the viewport neighbourhood after Finding 1's initial-retier fix (~240 MB → ~45 MB for a 20-page doc). Device-bound (GPU); a portable bench cannot see it. |
-| Page-tile virtualization | `loki-renderer/virtualize.rs` (`visible_window`) + `document_view.rs` | ✅ **Yes (now wired)** | `visible_window` restricts mounted tiles to the viewport neighbourhood with page-sized placeholders elsewhere — memory audit Finding 2 (was *Recommended*) is now **implemented**. |
+| GPU page textures | `loki-renderer` `LokiPageSource` + `appthere_canvas::residency` | ✅ **Yes** | **Corrected 2026-07-26 (Spec 08 T2.4, ADR-0016).** This row previously read "`CacheTier` Hot/Warm/Cold, `assign_tier`" — neither identifier exists in the tree, and the tiering was removed before this audit was written. What bounds the set is **viewport virtualization** (the row below), plus the Phase 2 byte budget across zoom × DPI. And it is **not** device-bound: the accounting is `w × h × 4` over the mounted set, all CPU-side, measured headlessly by `loki-bench/benches/texture_residency.rs` (Spec 08 R16, revised). |
+| Page-tile virtualization | `appthere-canvas/src/residency/geometry.rs` (`visible_window`), via `loki-renderer/document_view.rs` → `tile_plan::plan_tiles` → `residency::plan_residency` | ✅ **Yes (now wired)** | `visible_window` restricts mounted tiles to the viewport neighbourhood with page-sized placeholders elsewhere — memory audit Finding 2 (was *Recommended*) is now **implemented**. |
 | Inactive-tab preserved layout | `DocSession.paginated_layout: Arc<PaginatedLayout>` | ⚠️ **Retained** | Every inactive tab stashes its full layout (~9 MB/20pp). Finding 3 — *Recommended, not yet fixed*. A candidate memory-bench target (BM-8). |
 | Per-tile font-byte cache | `LokiPageSource`'s own `FontDataCache` | ⚠️ **Duplicated** | Interned font bytes duplicated across tiles; `DocPageSource` holds a shared `font_cache` but tiles don't all route through it. Finding 5 — *Recommended, not yet fixed* (BM-9). |
-| Render primitives | `loki-render-cache` | n/a | `PageSource`/`GpuTexture` primitives (gpu-feature), not an unbounded collection. |
+| Render primitives | `appthere-canvas` (`page_source`, `texture`) | n/a | `PageSource`/`GpuTexture` primitives (gpu-feature), not an unbounded collection. Were in `loki-render-cache` until ADR-0016 deleted that crate. |
 
 **Verdict:** the two caches most likely to grow — the shaping cache and the GPU
-texture tiers — are **bounded and proven**, and virtualization is now wired. Two
+page-texture set — are **bounded and proven**, and virtualization is now wired. Two
 *recommended-but-unfixed* wastes remain (inactive-tab layouts, per-tile font bytes);
 the pathological-tier leak benches (§7) should assert the bounded caches stay bounded
 and quantify the two unfixed ones so the fix work (separate) has a number.

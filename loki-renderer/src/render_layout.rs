@@ -28,7 +28,8 @@ mod reflow_metrics;
 pub use reflow_metrics::{
     MAX_REFLOW_TILE_PX, MIN_REFLOW_CONTENT_PT, PX_TO_PT, REFLOW_COMPACT_MAX_PX,
     REFLOW_COMPACT_TYPE_SCALE, REFLOW_PADDING_PT, reflow_layout_content_width_pt,
-    reflow_layout_tile_width_pt, reflow_tile_width_px, reflow_type_scale,
+    reflow_layout_tile_width_pt, reflow_tile_width_for_content_pt, reflow_tile_width_px,
+    reflow_type_scale,
 };
 
 // ── RenderMode ────────────────────────────────────────────────────────────────

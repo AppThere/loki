@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 AppThere Loki contributors
+#
+# See scripts/pre-push-gates.sh for what this runs and why it exists.
+exec "$(git rev-parse --show-toplevel)/scripts/pre-push-gates.sh"

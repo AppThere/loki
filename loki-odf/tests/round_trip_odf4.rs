@@ -122,7 +122,7 @@ fn odf15_letter_kerning_maps_to_char_props() {
 
 // ── odf16 — style:text-scale → scale ─────────────────────────────────────────
 
-/// `style:text-scale="150%"` must set `CharProps.scale = Some(150.0)`.
+/// `style:text-scale="150%"` must set `CharProps.scale = Some(1.5)` (a fraction).
 /// [ODF 1.3 §20.369]
 #[test]
 fn odf16_text_scale_maps_to_char_props() {
@@ -168,8 +168,8 @@ fn odf16_text_scale_maps_to_char_props() {
         .scale
         .expect("scale must be Some after style:text-scale");
     assert!(
-        (scale - 150.0).abs() < 0.01,
-        "style:text-scale=\"150%\" must map to scale = 150.0, got {scale}"
+        (scale - 1.5).abs() < 0.01,
+        "style:text-scale=\"150%\" must map to scale = 1.5 (a fraction — the layout + OOXML `w:w` convention, not the raw percent), got {scale}"
     );
 }
 

@@ -169,8 +169,14 @@ a tier-specific **KEK**:
 | **2** | Zero-knowledge E2EE | No (ciphertext only) | No | Client only |
 
 - **Tier 0.** TLS 1.3 in transit. At rest: encrypted Postgres volume (LUKS/pgcrypto) and
-  **SSE-C or app-layer AEAD** for object storage — mandatory because Hetzner Object Storage
-  has **no default at-rest encryption**. Baseline; all features available.
+  **SSE-C or app-layer AEAD** for object storage — needed because Hetzner Object Storage
+  has **no default at-rest encryption**. Baseline; all features available. *(Implementation
+  status: app-layer AEAD is wired for **attachments** — the API layer
+  (`loki-server-api` `routes::blobs`) seals each Tier 0/1 attachment with the
+  per-document DEK (AAD = object key) before `put_attachment` and unseals it on
+  download. **Snapshots** are still written in the clear (`TODO(server-blob-at-rest)`,
+  the compactor path); until that is sealed operators must rely on
+  volume/bucket-level encryption for snapshot objects.)*
 - **Tier 1 (CMK).** Per-document DEK wrapped by a customer-controlled KEK in their KMS/HSM.
   The server decrypts *inside the customer's trust boundary* to run server-side features. Keys
   never leave the customer's jurisdiction. This is the sovereignty sweet spot: confidentiality
@@ -320,15 +326,27 @@ residency, and portability — not on marketing.
 
 **Decision.**
 
-- **Append-only, hash-chained audit log** (`loki-server-audit`): auth events, ACL changes, tier
-  changes, exports, deletions. Each entry carries the prior entry's hash → tamper-evident.
+- **Append-only, hash-chained audit log** (`loki-server-audit`): each entry carries the prior
+  entry's hash → tamper-evident. **Currently emitted:** workspace/document creation, ACL
+  changes, GDPR export/erase, and a first-login `AuthLogin` (once per account, at JIT
+  provisioning in the auth middleware — keyed by the provisioning boundary so it does not append
+  on every authenticated request). Tier changes and deletions remain modelled (`AuditAction`
+  variants) but unemitted — their routes are not yet exposed. Per-session login/logout auditing
+  beyond first provisioning needs a session model (`TODO`).
 - **Retention & legal hold** via object-storage **Object Lock** (retention + legal hold),
   available on Hetzner and MinIO.
-- **GDPR operations** as first-class endpoints: data export (portability), right-to-erasure
-  (crypto-shredding the document DEK renders Tier 1/2 ciphertext unrecoverable — clean erasure),
-  and records of processing. DPA-ready.
+- **GDPR operations** as first-class endpoints: data export (portability), right-to-erasure,
+  and records of processing. DPA-ready. **Erasure model, by tier:** at **Tier 2** the server
+  holds only client-encrypted ciphertext, so crypto-shredding the wrapped per-user DEKs renders
+  it unrecoverable — clean, provable erasure by destroying keys. At **Tier 0/1** the server sees
+  plaintext *by design* (ADR-C014), so oplog/snapshot content is **not** sealed with the DEK and
+  key-destruction alone does not shred it; erasure there is deletion-based (`delete_document` +
+  FK `ON DELETE CASCADE` over `doc_member`/`doc_oplog`, plus object-storage snapshot deletion).
+  `shred_dek` nulls the wrapped DEKs (the meaningful act at Tier 2) but is not, on its own,
+  Tier-0/1 erasure.
 
-**Consequences.** Erasure is provable under Tier 1/2 by destroying keys; audit is defensible.
+**Consequences.** Erasure is provable at **Tier 2** by destroying keys; at Tier 0/1 it is by
+deletion. Audit is defensible.
 
 ---
 

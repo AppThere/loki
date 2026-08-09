@@ -271,6 +271,11 @@ fn read_char_props_from_marks(
         MARK_HIGHLIGHT_COLOR,
         decode_highlight_color
     );
+    read_str!(
+        background_color,
+        MARK_BACKGROUND_COLOR,
+        decode_document_color
+    );
     if let Some(LoroValue::String(s)) = attrs.get(MARK_LANGUAGE) {
         props.language = Some(crate::meta::language::LanguageTag::new(s.to_string()));
         any = true;

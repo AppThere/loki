@@ -19,7 +19,8 @@
 
 use appthere_ui::tokens;
 use appthere_ui::{
-    AtBackdropHost, AtThemeContext, use_provide_backdrop, use_provide_responsive, use_safe_area,
+    AtPopoverHost, AtThemeContext, focus_ring_css, ui_font_css, use_provide_device_profile,
+    use_provide_popover, use_provide_responsive, use_safe_area,
 };
 use dioxus::prelude::*;
 
@@ -96,16 +97,21 @@ pub fn App() -> Element {
     // Inject the theme context before any shell component renders.
     provide_context(AtThemeContext::default());
 
+    // Runtime device capabilities (Spec 08 T1.6 / T2.0). Provided before any
+    // consumer renders; `DeviceProbeSensor` below fills it in from the
+    // platform. Without this the profile has no context and every reader falls
+    // back to `Unknown`, which is where L08-011 sat for three phases (R24).
+    use_provide_device_profile();
+
     // Provide the shared responsive context (Spec 03 M1). Seeded unmeasured
     // (→ Breakpoint::Compact); the editor funnels the one measured scroll-
     // container width into it (no second width source). Descendants read the
     // derived breakpoint via `appthere_ui::use_breakpoint`.
     use_provide_responsive();
 
-    // Window-level dismiss-backdrop context (outside-click-to-close for the
-    // ribbon overflow menu and future anchored popups); AtBackdropHost below
-    // renders the active backdrop inside this positioned root.
-    use_provide_backdrop();
+    // Anchored-overlay state, read by `AtPopoverHost` below (Spec 08 T4.1).
+    let _popover = use_provide_popover();
+    let mut window_size = appthere_ui::use_provide_window_size();
 
     // Start the document font warm-up (system-font scan + family-index build)
     // on a background thread now, so it overlaps the Home screen instead of
@@ -180,6 +186,21 @@ pub fn App() -> Element {
             "
         }
 
+        // The keyboard focus indicator (WCAG 2.4.7). Injected as its own sheet
+        // because it belongs to the design system rather than to this app's
+        // reset — see `appthere_ui::focus_ring`. Before r79 nothing styled
+        // `:focus` anywhere in the suite, so Tab moved focus and the screen never
+        // changed.
+        document::Style { "{focus_ring_css()}" }
+
+        // **Registering the face is not selecting it.** The blobs above make
+        // "Atkinson Hyperlegible Next" *resolvable*; nothing in the tree asked
+        // for it except component-by-component, so an element outside every such
+        // component — anything the popover host renders — fell through to the CSS
+        // initial value and drew in serif. This sheet is the declaration, at the
+        // one place inheritance reaches everything (r94).
+        document::Style { "{ui_font_css()}" }
+
         // The UI typeface (Atkinson Hyperlegible Next) and the bundled
         // metric-compatible fallback families (Carlito/Caladea/Arimo/Cousine/
         // Tinos) are registered synchronously into the renderer's font collection
@@ -223,18 +244,40 @@ pub fn App() -> Element {
             // Re-query safe-area insets on resize (Android orientation change).
             SafeAreaResizeSensor {}
 
+            // Fill in the device profile: memory now, GPU class once the paint
+            // path has resumed and there is an adapter to describe (T2.0).
+            crate::device_probe::DeviceProbeSensor {}
+
             // Persist the window size across sessions (debounced; desktop only
             // in effect — Android windows are fullscreen and the geometry file
             // simply never resolves there).
+            // Two consumers of one measurement (Spec 08 r60): the geometry
+            // file, and — since T4.1 — the popover host, which places against
+            // the window and had no other way to know its height. The sensor
+            // already reported it; only persistence was listening.
             appthere_ui::AtWindowSizeSensor {
-                on_size: |size: (f64, f64)| crate::window_state::persist_geometry_debounced(size),
+                on_size: move |size: (f64, f64)| {
+                    window_size.set(size);
+                    crate::window_state::persist_geometry_debounced(size);
+                },
             }
 
             Router::<Route> {}
 
-            // Window-level dismiss backdrop (e.g. the ribbon overflow menu's
-            // outside-click-to-close). Renders nothing while no popup is open.
-            AtBackdropHost {}
+            // Anchored overlays (Spec 08 T4.1).
+            //
+            // `position: fixed` collapses to `absolute` and there is no top
+            // layer, so `z-index` cannot arbitrate between two children of the
+            // positioned root — DOM order does. A backdrop painting over the
+            // popup would leave it visible and unclickable, which reads as a
+            // dead menu rather than as a stacking bug. `popover::RootLayer`
+            // states the order; this is the site that has to honour it.
+            //
+            // Hosting here rather than beside each anchor is what puts overlays
+            // outside every `overflow` ancestor — no `z-index` escapes a clip —
+            // and, because this container's padding box starts at the window
+            // origin, it also makes window coordinates directly usable.
+            AtPopoverHost {}
         }
     }
 }

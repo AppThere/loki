@@ -9,14 +9,21 @@
 //!
 //! All editing logic lives in [`editor_inner::EditorInner`].
 
+pub mod dom_reflow;
+mod editor_calibrate;
 mod editor_canvas;
+mod editor_canvas_click;
+mod editor_canvas_document;
 mod editor_canvas_loading;
+mod editor_canvas_metrics;
 mod editor_canvas_spell;
 mod editor_caret_follow;
 mod editor_caret_follow_geom;
 mod editor_color_panel;
 mod editor_compact;
+mod editor_defaults;
 mod editor_dirty;
+mod editor_doc_colors;
 mod editor_docked_panels;
 mod editor_error_view;
 mod editor_font_warning;
@@ -75,13 +82,20 @@ mod editor_save;
 mod editor_save_banner;
 mod editor_save_callbacks;
 mod editor_scrollbar;
+mod editor_seed_publish;
 mod editor_spell;
 mod editor_spell_panel;
+mod editor_spell_place;
+mod editor_spell_popover;
+mod editor_spell_rows;
 mod editor_state;
+mod editor_status_bar;
 mod editor_style;
 mod editor_style_catalog;
 mod editor_style_editor;
 mod editor_text_color;
+mod editor_wheel_zoom;
+mod editor_zoom;
 mod style_char_inspector;
 mod style_impact;
 mod style_inspector;

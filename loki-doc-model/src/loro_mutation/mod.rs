@@ -34,6 +34,7 @@ mod nested;
 mod objects;
 mod page;
 mod page_style;
+mod page_style_assign;
 mod para_mark;
 mod revision;
 mod selection;
@@ -63,6 +64,7 @@ pub use self::page::{
     set_document_columns, set_document_margins, set_document_orientation, set_document_page_size,
 };
 pub use self::page_style::{rename_page_style, set_page_style_geometry};
+pub use self::page_style_assign::{create_page_style, delete_page_style, set_section_page_style};
 pub use self::para_mark::{
     accept_reject_para_mark_at, para_mark_at, set_para_mark_deletion, set_para_mark_deletion_at,
 };

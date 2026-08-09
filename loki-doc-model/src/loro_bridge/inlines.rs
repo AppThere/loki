@@ -273,6 +273,9 @@ pub(super) fn apply_char_props_marks(
     if let Some(v) = &props.highlight_color {
         text.mark(start..end, MARK_HIGHLIGHT_COLOR, format!("{v:?}"))?;
     }
+    if let Some(v) = &props.background_color {
+        text.mark(start..end, MARK_BACKGROUND_COLOR, encode_document_color(v))?;
+    }
     if let Some(v) = &props.language {
         text.mark(start..end, MARK_LANGUAGE, v.as_str())?;
     }

@@ -7,14 +7,19 @@
 
 use dioxus::prelude::*;
 
-use crate::responsive::use_breakpoint;
+use crate::components::zoom_control::AtZoomControl;
+use crate::responsive::use_status_fit;
 use crate::theme::use_theme;
 use crate::tokens::layout::STATUS_BAR_HEIGHT;
 use crate::tokens::spacing::{RADIUS_SM, SPACE_1, SPACE_2, SPACE_4, TOUCH_MIN};
-use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_XS, FONT_WEIGHT_MEDIUM};
+use crate::tokens::typography::{FONT_SIZE_XS, FONT_WEIGHT_MEDIUM};
 
 #[path = "status_bar_chips.rs"]
 mod chips;
+#[path = "status_bar_items.rs"]
+mod items;
+#[path = "status_bar_overflow.rs"]
+mod overflow;
 
 // ── AtStatusBar ───────────────────────────────────────────────────────────────
 
@@ -34,12 +39,6 @@ mod chips;
 #[component]
 pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
     let palette = use_theme().palette();
-    let mut zoom_hovered = use_signal(|| false);
-    let zoom_bg = if zoom_hovered() {
-        "#444444"
-    } else {
-        palette.surface_3
-    };
     let mut view_hovered = use_signal(|| false);
     let view_bg = if view_hovered() {
         "#444444"
@@ -52,11 +51,22 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
     } else {
         palette.surface_3
     };
-    let show_view_toggle = !props.view_mode_label.is_empty();
-    let show_notice = !props.notice_label.is_empty();
-    // Compact (phone-width): drop the secondary stats (word count, language)
-    // so the essential page / notice / view-mode / zoom items don't crowd.
-    let compact = use_breakpoint().is_compact();
+    // T7.1: which items fit is a **width** decision, resolved from the measured
+    // viewport against each item's declared width — not the breakpoint tier this
+    // used to consult, which was wrong in both directions (a Compact window with
+    // three short labels dropped items that fitted; an Expanded one with a long
+    // language name overflowed without dropping any). The page indicator and the
+    // zoom control are the retention set and never drop.
+    let specs = items::specs(&props);
+    let (fit_items, slots) = items::build_items(&specs);
+    // The bar's own horizontal padding is width no item can use; see
+    // `use_status_fit`. `2.0 * SPACE_4` is the same value the container's
+    // `padding: 0 {pad}px` applies below — the same statement about the same box.
+    let fit = use_status_fit(fit_items, 2.0 * SPACE_4);
+    let shown = |slot: items::StatusSlot| items::is_shown(&slots, &fit.shown, slot);
+    let rows = items::overflow_rows(&props, &items::dropped_slots(&slots, &fit.shown));
+    let show_view_toggle = shown(items::StatusSlot::ViewMode);
+    let show_notice = shown(items::StatusSlot::Notice);
 
     rsx! {
         div {
@@ -66,21 +76,19 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                 "height: {h}px; min-height: {h}px; background: {bg}; \
                  border-top: 1px solid {border}; \
                  display: flex; align-items: center; \
-                 padding: 0 {pad}px; flex-shrink: 0; gap: {gap}px; \
-                 font-family: {font};",
+                 padding: 0 {pad}px; flex-shrink: 0; gap: {gap}px;",
                 h      = STATUS_BAR_HEIGHT,
                 bg     = palette.surface_chrome,
                 border = palette.border_chrome,
                 pad    = SPACE_4,
                 gap    = SPACE_4,
-                font   = FONT_FAMILY_UI,
             ),
 
             // ── Left: document statistics ─────────────────────────────────────
 
             // Page label (e.g. "Page 1 of 4"). Hidden when empty (e.g. the
             // reflow view, which has no fixed pages).
-            if !props.page_label.is_empty() {
+            if shown(items::StatusSlot::Page) {
                 span {
                     style: format!(
                         "font-size: {size}px; color: {fg};",
@@ -93,7 +101,7 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
 
             // Word count label (e.g. "1,847 words"). Hidden when empty or at
             // Compact width (secondary stat).
-            if !props.word_count_label.is_empty() && !compact {
+            if shown(items::StatusSlot::WordCount) {
                 span {
                     style: format!(
                         "font-size: {size}px; color: {fg};",
@@ -118,7 +126,7 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                     props.on_notice_click,
                 )}
             }
-            if !props.status_note_label.is_empty() {
+            if shown(items::StatusSlot::StatusNote) {
                 {chips::status_note_chip(
                     props.status_note_label.clone(),
                     &palette,
@@ -132,8 +140,8 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
 
             // ── Right: language, zoom, collaborators ──────────────────────────
 
-            // Language label (e.g. "English (US)"). Hidden at Compact width.
-            if !compact {
+            // Language label (e.g. "English (US)"). Dropped by measured width.
+            if shown(items::StatusSlot::Language) {
                 span {
                     style: format!(
                         "font-size: {size}px; color: {fg};",
@@ -164,25 +172,23 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                 }
             }
 
-            // Zoom badge (clickable button).
-            // Hit area: full bar height × ≥ TOUCH_MIN wide (see component doc).
-            button {
-                "aria-label": props.zoom_aria_label,
-                style: format!(
-                    "{hit} background: transparent; border: none; cursor: pointer;",
-                    hit = hit_area_style(),
-                ),
-                onmouseenter: move |_| { zoom_hovered.set(true); },
-                onmouseleave: move |_| { zoom_hovered.set(false); },
-                onclick: move |_| { props.on_zoom_click.call(()); },
-                span {
-                    style: chip_style(zoom_bg, palette.text_on_chrome_secondary),
-                    "{props.zoom_percent}%"
-                }
+            // The zoom control (Spec 08 T5.4): out / readout / in, with the
+            // preset menu on the readout. It replaced a single badge that cycled
+            // through six values, which stopped being viable when the increment
+            // sequence had to stop wrapping — see `components::zoom`.
+            AtZoomControl {
+                percent: props.zoom_percent,
+                capability_limit_permille: props.zoom_capability_limit_permille,
+                commands: props.zoom_commands,
+                labels: props.zoom_labels.clone(),
+                on_change: props.on_zoom_change,
+                on_fit_width: props.on_zoom_fit_width,
+                on_fit_page: props.on_zoom_fit_page,
+                on_actual_size: props.on_zoom_actual_size,
             }
 
-            // Collaborator badge (hidden when count is 0)
-            if props.collaborator_count > 0 {
+            // Collaborator badge (hidden when the count is 0 or it was dropped)
+            if shown(items::StatusSlot::Collaborators) {
                 span {
                     style: format!(
                         "font-size: {size}px; color: {fg};",
@@ -190,6 +196,16 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                         fg   = palette.text_accent,
                     ),
                     "{props.collaborator_label}"
+                }
+            }
+
+            // The dropped items, behind a "More" popover (T7.1). Rendered only
+            // when something was dropped — a trigger opening an empty menu is a
+            // control that does nothing.
+            if !rows.is_empty() {
+                overflow::AtStatusOverflow {
+                    rows,
+                    aria_label: props.overflow_aria_label.clone(),
                 }
             }
         }
@@ -223,75 +239,6 @@ fn chip_style(bg: &str, fg: &str) -> String {
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 /// Props for [`AtStatusBar`].
-#[derive(Props, Clone, PartialEq)]
-pub struct AtStatusBarProps {
-    /// Pre-formatted page label, e.g. `"Page 1 of 4"`.
-    pub page_label: String,
-
-    /// Pre-formatted word count label, e.g. `"1,847 words"`.
-    pub word_count_label: String,
-
-    /// Active language label, e.g. `"English (US)"`.
-    pub language_label: String,
-
-    /// Zoom percentage value, e.g. `100` (rendered as `"100%"`).
-    pub zoom_percent: u32,
-
-    /// Number of active remote collaborators. `0` = hide the collaborator badge.
-    pub collaborator_count: u32,
-
-    /// Pre-formatted collaborator label, e.g. `"2 connected"`.
-    /// Only rendered when `collaborator_count > 0`.
-    pub collaborator_label: String,
-
-    /// Callback invoked when the zoom badge is clicked.
-    pub on_zoom_click: EventHandler<()>,
-
-    /// Aria label for the zoom button.
-    pub zoom_aria_label: String,
-
-    /// Label for the optional view-mode toggle (e.g. `"Paginated"`/`"Reflowed"`).
-    /// Empty (the default) hides the toggle, so apps that do not offer it are
-    /// unaffected.
-    #[props(default)]
-    pub view_mode_label: String,
-
-    /// Aria label for the view-mode toggle button.
-    #[props(default)]
-    pub view_mode_aria_label: String,
-
-    /// Callback invoked when the view-mode toggle is clicked. Defaults to a
-    /// no-op when not provided.
-    #[props(default)]
-    pub on_view_mode_click: Callback<()>,
-
-    /// Optional status-notice chip rendered on the left (e.g. the recovery
-    /// affordance for a dismissed font-substitution warning). Empty (the
-    /// default) hides it, so apps that do not use it are unaffected. Generic by
-    /// design — not font-specific.
-    ///
-    /// Touch target: ≥ `TOUCH_MIN` wide × full bar height (see the component
-    /// doc for the shared status-bar-height constraint).
-    #[props(default)]
-    pub notice_label: String,
-
-    /// Aria label for the notice chip.
-    #[props(default)]
-    pub notice_aria_label: String,
-
-    /// Callback invoked when the notice chip is clicked.
-    #[props(default)]
-    pub on_notice_click: Callback<()>,
-
-    /// Optional transient status chip (e.g. "Document saved"). Empty (the
-    /// default) hides it. The app owns the message's lifetime — auto-clearing
-    /// and clear-on-edit live in the caller; clicking the chip dismisses it.
-    ///
-    /// Touch target: ≥ `TOUCH_MIN` wide × full bar height.
-    #[props(default)]
-    pub status_note_label: String,
-
-    /// Callback invoked when the status chip is clicked (dismiss).
-    #[props(default)]
-    pub on_status_note_click: Callback<()>,
-}
+#[path = "status_bar_props.rs"]
+mod props;
+pub use props::AtStatusBarProps;

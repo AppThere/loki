@@ -1,0 +1,43 @@
+# Retracted claims, and the phrasings that carry them.
+#
+# Why this file exists
+# --------------------
+# Spec 08 retracted the "tight leading" account of I-06 and filed it as L08-032.
+# One turn later the same account was restated, in a review of a different
+# subject, by the author of the retraction. The reason was structural: the
+# retraction lived in `flow_spell_condition_tests.rs`, while the wrong account
+# lived in the module docs of the file *named for the bug* and in the status
+# registry — the two places anyone looking up I-06 lands first. A ledger entry
+# was competing against a mechanism the reader can picture, at the point of use,
+# and losing.
+#
+# The remedy is not a discipline ("remember to search when you retract"), which
+# is the class of control this program has already watched fail twice. It is a
+# grep. The wording of a wrong claim is its handle, so retracting a claim means
+# retracting every copy, and a copy is findable by the phrase that carries it.
+#
+# Format
+# ------
+#   <regex><TAB><what is wrong with it, and where the correction lives>
+#
+# A line matches only if the phrase appears WITHOUT a nearby marker showing the
+# site knows it is retracted — see `scripts/check-retracted-claims.py`. So the
+# retraction itself, and any doc that quotes the wrong version in order to
+# correct it, pass. Add a row when you retract something; do not remove rows,
+# because a retracted claim does not become true by being cleaned up.
+
+tight leading	I-06's condition is fractional phase between accumulated fragment height and the whole-point clip grid, not leading slack. Default leading loses 0.473pt at 9pt and the entire band at 14pt. Correction and sweep: loki-layout/src/flow_spell_condition_tests.rs (Spec 08 L08-032).
+leading to spare	Same as "tight leading" — implies the fix is inert wherever leading is generous, which the 8x4 sweep refutes. See loki-layout/src/flow_spell_condition_tests.rs.
+leading slack	Same as "tight leading". The governing quantity is fractional phase, not slack.
+cost falls with edit position	A measurement artifact: three sequential timed calls sharing one FontResources, where the first paid process- and document-level first touch. The sign reversed when the order reversed. Fixed by `sweep` in loki-bench/benches/support/timing.rs, which warms every subject before timing any.
+150 ?ms settle target	No such target exists. The pipeline it referred to was deleted rather than fixed; do not cite it as a criterion.
+over_budget	Renamed to `over_target` in Spec 08 r15, because being over the byte target is an ordinary reported outcome and "over budget" reads as a failure. (The unrelated loki-odf/loki-opc zip limits keep the name legitimately and are excluded by path.)
+false for any degenerate rect	An open (strict) intersection does NOT reject every zero-width or zero-height rect: one strictly inside another still intersects. What it rejects is FLUSH CONTACT, and a degenerate rect is entirely boundary, so alignment is what puts it on an edge. Correction and both halves asserted: loki-primitives/src/geometry/rect.rs, `a_degenerate_rect_intersects_unless_it_lies_flush_with_an_edge` (Spec 08 r47).
+rejects any degenerate rect	Same as "false for any degenerate rect" — the mechanism is flush contact, not degeneracy.
+competed directly, 1000 against	The r64 account of the leftover spell backdrop. Blitz has NO stacking contexts: `paint_children` is each parent's own layout children (blitz-dom document.rs), sorted by `z_index()` among SIBLINGS ONLY (layout/damage.rs), painted by walking that list (blitz-paint render.rs) and hit-tested by walking it `.rev()` (node.rs `hit`). A descendant's 1000 never meets a root sibling's 41 — the whole `Router` subtree loses to any root sibling with a higher z, at any value. The real r66 defect was a lifetime one: the consumer unmounted and took its own `dismiss` with it. Correction: appthere-ui/src/components/popover/anchor_scope.rs (Spec 08 r66).
+creates no stacking context	Same as "competed directly, 1000 against" — true but irrelevant, because this engine creates none anywhere. Phrasing it as the cause implies that adding a z-index to the ancestor would have changed the outcome; it would not.
+so its own controls stay clickable	The ribbon overflow menu's rationale. Its 41 is deep inside `Router`; `AtBackdropHost`'s backdrop is a ROOT SIBLING at 40, so the backdrop is hit first and the menu's controls are NOT clickable while it is raised. Confirmed on screen in r66 by the same mechanism killing the tab bar. See appthere-ui/src/components/popover/anchor_scope.rs.
+never binds anything in practice	The `NoGpuPaintPath` arm's comment. `gpu_paint_path: Some(false)` came from `GpuClass::Software` via a predicate named `supports_gpu_paint`, so it bound on every machine where wgpu picked llvmpipe or SwiftShader — a VM, a headless or remote Linux desktop — collapsing target AND survival ceiling to the 24 MiB floor while page textures were being allocated normally. The comment was true of the question the predicate's name asked and false of the question the call site asked. Correction: `GpuClass::allocates_page_textures` (Spec 08 r68).
+falls back to a modal	The popover's `Presentation::Modal`. It was never implemented by any consumer, and the two sites receiving it disagreed — the host rendered nothing, `on_anchor_change` dismissed. Withdrawn r68; `present` clamps to the usable floor and returns a `Placement`. A real modal fallback must land with a consumer that implements it. See appthere-ui/src/components/popover/presentation.rs.
+under the 512 MiB floor	§3.6c's reachability mechanism. r67 stopped a user override moving the survival ceiling, so no 512 MiB floor exists on that path. US Letter at 2x still cannot reach step 5 on a large machine, but the bound is SURVIVAL_CAP_BYTES (1 GiB) against a 420 MiB peak — right conclusion, wrong reason. The A3-plus-high-override procedure that rested on the old mechanism is now inert (Spec 08 r70).
+frame source already exists	The popover driver's. `scroll::animate` spawns one thread per animation, runs 13 ticks and exits — an animation clock live only during Find / Go To Page / outline-click, not a frame source. Wired to it the anchor comparison would never run for a wheel scroll, a drag, a resize or a reflow, and `idle_frames_perform_no_repositions` would pass because no frames run. The driver is event-driven off `ScrollMetrics` + `AtWindowSizeSensor`; see `popover/interaction_anchor.rs` (Spec 08 r72).

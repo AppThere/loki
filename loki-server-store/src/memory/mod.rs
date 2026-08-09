@@ -99,10 +99,10 @@ impl UserStore for MemoryStores {
         &self,
         oidc_sub: &str,
         display_name: &str,
-    ) -> Result<UserRecord, StoreError> {
+    ) -> Result<(UserRecord, bool), StoreError> {
         let mut inner = self.lock();
         if let Some(user) = inner.users.values().find(|u| u.oidc_sub == oidc_sub) {
-            return Ok(user.clone());
+            return Ok((user.clone(), false));
         }
         let user = UserRecord {
             id: UserId::new(),
@@ -111,7 +111,7 @@ impl UserStore for MemoryStores {
             public_key: None,
         };
         inner.users.insert(user.id, user.clone());
-        Ok(user)
+        Ok((user, true))
     }
 
     async fn get_user(&self, id: UserId) -> Result<Option<UserRecord>, StoreError> {
@@ -132,5 +132,32 @@ impl UserStore for MemoryStores {
         user.oidc_sub = format!("erased:{id}");
         user.public_key = None;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ports::UserStore;
+
+    #[tokio::test]
+    async fn upsert_flags_only_the_first_provisioning() {
+        // The `bool` drives the ADR-C020 AuthLogin audit: true exactly once per
+        // account, so a later login is not re-audited on every request.
+        let stores = MemoryStores::new();
+        let (u1, first) = stores
+            .upsert_user_by_oidc("oidc-sub-1", "Ada")
+            .await
+            .expect("upsert");
+        assert!(first, "the first login provisions the account");
+        let (u2, second) = stores
+            .upsert_user_by_oidc("oidc-sub-1", "Ada L.")
+            .await
+            .expect("upsert");
+        assert!(
+            !second,
+            "a later login must not re-provision (nor re-audit)"
+        );
+        assert_eq!(u1.id, u2.id, "same account across logins");
     }
 }

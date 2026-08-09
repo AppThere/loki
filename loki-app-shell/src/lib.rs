@@ -23,12 +23,18 @@
 mod android;
 
 pub mod app_data;
+pub mod display_calibration;
+pub mod display_density;
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
+pub mod display_probe_x11;
+pub mod document_defaults;
 pub mod new_document;
 pub mod recent_documents;
 pub mod spell;
 pub mod tabs;
 pub mod untitled;
 pub mod window_geometry;
+pub mod zoom_labels;
 
 pub use untitled::{
     NewDocSource, UNTITLED_SCHEME, import_path, is_untitled, parse_new_doc_source, template_path,

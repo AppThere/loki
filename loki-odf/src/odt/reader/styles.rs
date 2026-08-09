@@ -144,8 +144,9 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                     }
                     b"page-layout" => {
                         let name = local_attr_val(e, b"name").unwrap_or_default();
+                        let page_usage = local_attr_val(e, b"page-usage");
                         drop(e);
-                        let layout = page::parse_page_layout(&mut reader, name)?;
+                        let layout = page::parse_page_layout(&mut reader, name, page_usage)?;
                         sheet.page_layouts.push(layout);
                     }
                     b"master-page" => {

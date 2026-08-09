@@ -16,6 +16,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 use loki_basic::{BasicError, Dialect, Interp, Value, parser::Parser};
 
@@ -25,6 +26,11 @@ use crate::exec::{DenyBackend, EditBatch, ExecutionHost, MacroBackend};
 /// Fuel budget for a single UDF call (spec §6.3, §8) — tight, with no continue
 /// option: recalc is unattended, so a UDF must be fast or fail.
 const UDF_FUEL: u64 = 200_000;
+
+/// Per-run wall-clock backstops (spec §8 watchdog): a generous interactive
+/// runaway bound (the user also has Stop) and a tight one for unattended UDFs.
+const DEFAULT_WALL_CLOCK: Duration = Duration::from_secs(120);
+const UDF_WALL_CLOCK: Duration = Duration::from_secs(5);
 
 /// Inputs for a single macro run.
 pub struct RunRequest {
@@ -41,6 +47,8 @@ pub struct RunRequest {
     /// The origin-scoped network policy (ADR-0015 §4.2). Disabled unless the app
     /// enables it (build feature + runtime setting) and folds in session origins.
     pub network: crate::net::NetworkPolicy,
+    /// Per-run wall-clock budget (spec §8 watchdog); defaults to `DEFAULT_WALL_CLOCK`.
+    pub wall_clock: Duration,
 }
 
 impl RunRequest {
@@ -54,6 +62,7 @@ impl RunRequest {
             fuel,
             cancel: Arc::new(AtomicBool::new(false)),
             network: crate::net::NetworkPolicy::disabled(),
+            wall_clock: DEFAULT_WALL_CLOCK,
         }
     }
 
@@ -180,8 +189,9 @@ impl MacroRuntime {
                 };
             }
         };
-        let broker =
-            CapabilityBroker::new(req.grants, req.fuel, req.cancel).with_network(req.network);
+        let broker = CapabilityBroker::new(req.grants, req.fuel, req.cancel)
+            .with_network(req.network)
+            .with_wall_clock_budget(req.wall_clock);
         let host = ExecutionHost::new(broker, backend, req.title, req.text);
         let mut interp = match Interp::new(&module, host) {
             Ok(i) => i,
@@ -262,7 +272,7 @@ impl MacroRuntime {
             return UdfOutcome::Macro;
         };
         // A UDF broker denies every effect and cannot prompt (compute-only).
-        let broker = CapabilityBroker::for_udf(UDF_FUEL);
+        let broker = CapabilityBroker::for_udf(UDF_FUEL).with_wall_clock_budget(UDF_WALL_CLOCK);
         let host = ExecutionHost::new(broker, DenyBackend, String::new(), String::new());
         let Ok(mut interp) = Interp::new(&module, host) else {
             return UdfOutcome::Macro;

@@ -26,12 +26,15 @@ pub trait WorkspaceStore: Send + Sync {
 /// User accounts (OIDC-delegated identity, ADR-C017).
 #[async_trait]
 pub trait UserStore: Send + Sync {
-    /// Finds a user by OIDC subject or provisions one just-in-time.
+    /// Finds a user by OIDC subject or provisions one just-in-time. The `bool`
+    /// is `true` when the user was **newly provisioned** (first login), so the
+    /// caller can emit an `AuthLogin` audit entry once per account (ADR-C020)
+    /// rather than on every authenticated request.
     async fn upsert_user_by_oidc(
         &self,
         oidc_sub: &str,
         display_name: &str,
-    ) -> Result<UserRecord, StoreError>;
+    ) -> Result<(UserRecord, bool), StoreError>;
     /// Loads a user by id.
     async fn get_user(&self, id: UserId) -> Result<Option<UserRecord>, StoreError>;
     /// Registers the member's X25519 public key (Tier 2 sharing).
@@ -58,6 +61,11 @@ pub trait DocumentStore: Send + Sync {
     async fn set_snapshot(&self, id: DocumentId, ptr: &str, up_to: i64)
     -> Result<bool, StoreError>;
     /// Changes the confidentiality tier and replaces the wrapped DEK.
+    ///
+    /// `TODO(server-tier-delete)`: RBAC-gated (`Action::ChangeTier`, Owner-only)
+    /// and implemented here, but no `loki-server-api` route calls it yet, so the
+    /// capability is modelled but not exposed. When the route lands it must also
+    /// emit an `AuditAction::TierChange` entry (ADR-C020).
     async fn set_tier(
         &self,
         id: DocumentId,
@@ -65,6 +73,10 @@ pub trait DocumentStore: Send + Sync {
         dek_wrapped: Option<&WrappedDek>,
     ) -> Result<(), StoreError>;
     /// Deletes the document row (cascades members and oplog).
+    ///
+    /// `TODO(server-tier-delete)`: as with `set_tier`, RBAC-gated
+    /// (`Action::Delete`) but not yet reachable from any route; the route must
+    /// emit `AuditAction::Delete` when it lands.
     async fn delete_document(&self, id: DocumentId) -> Result<(), StoreError>;
     /// Crypto-shreds the document: destroys every wrapped DEK copy
     /// (`doc_meta.dek_wrapped` and all `doc_member.dek_wrapped_for_user`),

@@ -188,6 +188,12 @@ pub(crate) fn parse_and_map_package(
     // core subset + dc:identifier).
     crate::docx::reader::custom_props::apply_extended_dc(package, &mut document.meta.dublin_core);
 
+    // Advisory page-style names (T6.5 / D-02). Applied *after* the document is
+    // built, so it can be validated against the sections `w:sectPr` actually
+    // produced; a map that does not fit is discarded and the import keeps
+    // whatever naming it already had.
+    crate::docx::reader::page_style_part::apply_advisory_page_styles(package, &mut document);
+
     // Comment bodies parsed from word/comments.xml (anchors are already in the
     // content flow as Inline::Comment).
     document.comments = comments;

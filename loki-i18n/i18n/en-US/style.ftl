@@ -41,9 +41,33 @@ style-page-family-heading = Page styles
 style-page-name-label = Name
 style-page-rename = Rename
 style-page-size = Size
+# Custom (user-defined) page size entry — width x height. The unit suffix is
+# not a string: it comes from MeasurementUnit::abbreviation (T6.4).
+style-page-size-custom = Custom
+style-page-size-apply = Set
 style-page-orientation = Orientation
 style-page-margins = Margins
 style-page-columns = Columns
+style-page-columns-fewer = −
+style-page-columns-more = +
+style-page-column-separator = Separator
+style-page-new = New
+style-page-unapplied = { $name } (unused)
+style-page-apply-label = Apply
+style-page-apply-here = Apply to this section
+# App-scoped defaults for new documents (T6.3) and the measurement unit (T6.4)
+style-page-defaults-label = New docs
+style-page-set-default = Use as default
+style-page-clear-default = Reset
+style-page-unit-label = Unit
+style-page-duplicate = Duplicate
+style-page-delete = Delete
+style-page-margins-custom = Exact
+style-page-margin-top = Top
+style-page-margin-bottom = Bottom
+style-page-margin-left = Left
+style-page-margin-right = Right
+style-page-margins-apply = Set
 # One indent level of a list style
 style-list-level-label = Level { $n }
 # A list level's label kind and geometry (non-inheriting; shown read-only)

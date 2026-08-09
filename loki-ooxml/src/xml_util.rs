@@ -71,6 +71,25 @@ pub fn event_text(event: &Event<'_>) -> quick_xml::Result<String> {
         _ => Ok(String::new()),
     }
 }
+/// Escapes a string for use as XML text or an attribute value.
+///
+/// One definition: `write/custom_props.rs` and `write/comments.rs` each carried
+/// a private copy, and the advisory page-style part would have been a third.
+#[must_use]
+pub fn escape_xml(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
 
 /// Extracts the local name (without namespace prefix) from an element.
 ///

@@ -449,3 +449,67 @@ fn bridge_para_fields_roundtrip() {
         "padding_right must survive"
     );
 }
+
+/// **`style:page-usage` survives the CRDT** (Spec 08 T6.1).
+///
+/// The bridge is the third leg: import and export can both carry a property and
+/// an *edited* document still lose it, because the editor's document is
+/// reconstructed from Loro rather than from the imported model. That is the
+/// documented shape of this crate's known round-trip gaps, so a new page
+/// property gets its bridge test at the same time as its codec.
+#[test]
+fn bridge_page_usage_roundtrip() {
+    use loki_doc_model::layout::Section;
+    use loki_doc_model::layout::page::{PageLayout, PageUsage};
+
+    for usage in [
+        PageUsage::All,
+        PageUsage::Mirrored,
+        PageUsage::Left,
+        PageUsage::Right,
+    ] {
+        let mut doc = Document::new();
+        let mut section = Section::new();
+        section.layout = PageLayout {
+            page_usage: usage,
+            ..PageLayout::default()
+        };
+        section
+            .blocks
+            .push(Block::Para(vec![Inline::Str("x".into())]));
+        doc.sections = vec![section];
+
+        let back = round_trip(&doc);
+        assert_eq!(
+            back.sections[0].layout.page_usage, usage,
+            "{usage:?} did not survive the CRDT",
+        );
+    }
+}
+
+/// **And the value that arrives is one the paginator acts on**, not merely one
+/// that compares equal. `mirrors_margins` is the question layout asks; asserting
+/// the enum alone would pass for a bridge that decoded every value to `All`
+/// while the `PartialEq` above happened to hold for the `All` case.
+#[test]
+fn bridge_page_usage_survives_as_a_mirroring_decision() {
+    use loki_doc_model::layout::Section;
+    use loki_doc_model::layout::page::{PageLayout, PageUsage};
+
+    let mut doc = Document::new();
+    let mut section = Section::new();
+    section.layout = PageLayout {
+        page_usage: PageUsage::Mirrored,
+        ..PageLayout::default()
+    };
+    section
+        .blocks
+        .push(Block::Para(vec![Inline::Str("x".into())]));
+    doc.sections = vec![section];
+
+    assert!(doc.mirrors_margins(), "precondition");
+    assert!(
+        round_trip(&doc).mirrors_margins(),
+        "the document stopped mirroring after a CRDT cycle",
+    );
+}

@@ -5,6 +5,35 @@
 //! The scale uses a 4 px base unit. Token names follow the pattern
 //! `SPACE_<multiplier>` where the multiplier is the number of 4 px steps
 //! (e.g. `SPACE_2` = 2 × 4 px = 8 px).
+//!
+//! # Before I-24: two classes of dimension, and the rule where they meet
+//!
+//! Spec 08 I-24 will make chrome respond to the platform's accessibility
+//! text-size setting. **Not every dimension here should scale with it**, and the
+//! split is by *what the dimension is for* rather than by which file it lives in:
+//!
+//! | class | examples | unit after I-24 |
+//! | --- | --- | --- |
+//! | contains or spaces text | line boxes, padding around labels, min-height of a text-bearing control, gaps between text runs | **text-relative** |
+//! | device-fixed | hairline borders, icon-only touch targets, scrollbar widths, page-fit gutters | **device px** |
+//!
+//! Converting the second class makes chrome balloon at 2.0× with no legibility
+//! gain — and pushes more surfaces past the popover's blank-box and usable
+//! thresholds (`components::popover::presentation`), so it is not merely an
+//! aesthetic cost.
+//!
+//! **Where a dimension is in both classes, take the larger: `max(text-relative,
+//! device-fixed)`.** A text-bearing control with a touch-target minimum is the
+//! common case — a text-relative height *and* a device-fixed floor — and at 2.0×
+//! the first exceeds the second, which is correct. The conflict recurs at
+//! essentially every interactive control, so it is decided here once: an author
+//! reaching for whichever rule comes to mind first is precisely how the pass
+//! lands as the mixed state its acceptance criterion forbids.
+//!
+//! [`TOUCH_MIN`] is device-fixed and stays put. Note that a *menu row*, which
+//! equals it today, is text-bearing and will not — see
+//! `components::popover::presentation::MENU_ROW_HEIGHT_PX`, which names that
+//! term now so the popover's two-row threshold keeps meaning two rows.
 
 // Token constants may not all be referenced in every build stage.
 #![allow(dead_code)]

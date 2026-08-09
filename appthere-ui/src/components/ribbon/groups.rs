@@ -16,10 +16,11 @@ use dioxus::prelude::*;
 
 use super::button::AtRibbonIconButton;
 use super::group::AtRibbonGroup;
+use super::overflow_menu::{overflow_menu_request, OVERFLOW_POPOVER_ID};
 use crate::components::icons::{AtIcon, LUCIDE_MORE_HORIZONTAL};
-use crate::components::overlay::use_backdrop;
+use crate::components::popover::{use_popover_anchor, Rect};
 use crate::responsive::{use_ribbon_cascade, GroupCollapse, GroupMetrics};
-use crate::tokens;
+use crate::{use_safe_area, use_window_size};
 
 /// One group's declaration: its collapse metrics, label, aria label, and the
 /// button/control content (the group body, *without* the surrounding
@@ -55,44 +56,69 @@ pub fn AtRibbonGroups(
     let cascade = use_ribbon_cascade(metrics);
     let mut menu_open = use_signal(|| false);
 
-    // Outside-click dismissal: while the menu is open, the app's window-level
-    // backdrop host (when wired — `use_provide_backdrop` + `AtBackdropHost`)
-    // shows a viewport-spanning click-catcher that closes it. Degrades to
-    // toggle-only dismissal in an app without the host.
-    let backdrop = use_backdrop();
-    let mut set_menu_open = move |open: bool| {
-        menu_open.set(open);
-        if let Some(b) = backdrop {
-            if open {
-                b.show(Callback::new(move |()| menu_open.set(false)));
-            } else {
-                b.hide();
-            }
-        }
-    };
-    // Never leave a stale backdrop if this strip unmounts with the menu open
-    // (e.g. a ribbon tab switch).
-    use_drop(move || {
-        if let Some(b) = backdrop {
-            if *menu_open.peek() {
-                b.hide();
-            }
-        }
-    });
+    // Both the menu and its dismiss backdrop are the popover host's (I-28). The
+    // manual `use_backdrop` this replaced raised a root-sibling click-catcher
+    // over a menu rendered inside `Router`, and Blitz builds no stacking
+    // contexts — so the backdrop was hit first and the menu's own controls were
+    // dead while it was open. One owner, one lifetime.
+    let popover = use_popover_anchor(OVERFLOW_POPOVER_ID);
+    let window = use_window_size();
+    let insets = use_safe_area();
+    let mut anchor = use_signal(|| Option::<MountedEvent>::None);
+    let mut anchor_rect = use_signal(|| Option::<Rect>::None);
 
     // Partition into in-strip groups (with their state) and overflowed groups.
-    let overflowed: Vec<&RibbonGroupSpec> = groups
+    let overflowed: Vec<RibbonGroupSpec> = groups
         .iter()
         .zip(&cascade.states)
         .filter(|(_, s)| **s == GroupCollapse::Overflow)
-        .map(|(g, _)| g)
+        .map(|(g, _)| g.clone())
         .collect();
 
     // A widen (or content change) that removes the overflow must not leave a
     // stale-open menu — its "More" button is gone, so it could never be toggled
     // shut. Reconcile in-render; it converges in one frame.
+    //
+    // `set`, not the old `set_menu_open`: the backdrop it also had to hide is
+    // the host's now, and the effect below dismisses on the same signal.
     if !cascade.overflow && *menu_open.peek() {
-        set_menu_open(false);
+        menu_open.set(false);
+    }
+
+    // The open/dismiss write, in an effect rather than in the render — the shape
+    // every popover consumer uses, so opening is a state change and the host
+    // owns the mounting.
+    //
+    // **The dismiss branch is the ordinary path here**, unlike the spelling
+    // menu's. That component is mounted behind `if menu.is_some()`, so closing
+    // unmounts it and `use_popover_anchor`'s drop does the work. This strip
+    // stays mounted with the menu shut, so nothing would dismiss it but this.
+    {
+        let overflowed = overflowed.clone();
+        use_effect(move || {
+            let Some(popover) = popover else { return };
+            if !menu_open() {
+                popover.dismiss();
+                return;
+            }
+            let Some(rect) = *anchor_rect.read() else {
+                // No measured trigger yet: `onmounted` and `get_client_rect`
+                // both land after the first render. Opening without a rect
+                // would place the menu at the origin, so wait — the effect
+                // re-runs when the rect arrives.
+                return;
+            };
+            popover.open(
+                overflow_menu_request(
+                    overflowed.clone(),
+                    rect,
+                    anchor.peek().as_ref().map(|e: &MountedEvent| e.data()),
+                    menu_open,
+                ),
+                window,
+                insets,
+            );
+        });
     }
 
     // The last in-strip group suppresses its trailing divider when nothing
@@ -117,60 +143,35 @@ pub fn AtRibbonGroups(
             }
         }
 
-        // Overflow ("More") button + upward dropdown when any group overflowed.
+        // Overflow ("More") button. The menu itself is the host's — see the
+        // effect above and `overflow_menu`.
         if cascade.overflow {
-            div {
-                // Positioned wrapper so the dropdown anchors to the button.
-                style: "position: relative; display: flex; align-items: center; \
-                        height: 100%;",
-
-                AtRibbonIconButton {
-                    aria_label: overflow_aria_label,
-                    is_active: menu_open(),
-                    is_disabled: false,
-                    on_click: move |_| {
-                        let open = menu_open();
-                        set_menu_open(!open);
-                    },
-                    AtIcon { path_d: LUCIDE_MORE_HORIZONTAL.to_string() }
-                }
-
-                if menu_open() {
-                    // The menu opens upward (the ribbon sits at the window bottom),
-                    // anchored to the More button. `position: absolute` (block-level)
-                    // is confirmed working in the current Blitz stack (see CLAUDE.md).
-                    //
-                    // Dismissal: outside-click via the window-level backdrop host
-                    // (raised in `set_menu_open`; the menu's z-index 41 sits above
-                    // `BACKDROP_Z_INDEX` 40 so its own controls stay clickable),
-                    // plus the More-button toggle and the auto-close on a widen
-                    // that removes the overflow.
-                    div {
-                        style: format!(
-                            "position: absolute; bottom: 100%; right: 0; z-index: 41; \
-                             display: flex; flex-direction: column; gap: {gap}px; \
-                             padding: {pad}px; background: {bg}; \
-                             border: 1px solid {border}; border-radius: {radius}px;",
-                            gap    = tokens::SPACE_2,
-                            pad    = tokens::SPACE_2,
-                            bg     = tokens::COLOR_SURFACE_2,
-                            border = tokens::COLOR_BORDER_CHROME,
-                            radius = tokens::RADIUS_MD,
-                        ),
-                        // Overflowed groups render in Full form inside the
-                        // menu — stacked vertically, so no right divider.
-                        for spec in overflowed.iter() {
-                            AtRibbonGroup {
-                                key: "{spec.aria_label}",
-                                label: spec.label.clone(),
-                                aria_label: spec.aria_label.clone(),
-                                collapse: GroupCollapse::Full,
-                                show_divider: false,
-                                {spec.content.clone()}
-                            }
+            AtRibbonIconButton {
+                aria_label: overflow_aria_label,
+                is_active: menu_open(),
+                is_disabled: false,
+                on_mounted: move |e: MountedEvent| {
+                    let el = e.clone();
+                    anchor.set(Some(e));
+                    // The rect is read once, asynchronously: the placement needs
+                    // where the trigger *is*, and `MountedData` only answers
+                    // that through a future.
+                    spawn(async move {
+                        if let Ok(r) = el.get_client_rect().await {
+                            anchor_rect.set(Some(Rect {
+                                x: r.origin.x as f32,
+                                y: r.origin.y as f32,
+                                width: r.size.width as f32,
+                                height: r.size.height as f32,
+                            }));
                         }
-                    }
-                }
+                    });
+                },
+                on_click: move |_| {
+                    let open = menu_open();
+                    menu_open.set(!open);
+                },
+                AtIcon { path_d: LUCIDE_MORE_HORIZONTAL.to_string() }
             }
         }
     }

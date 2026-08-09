@@ -119,6 +119,58 @@ fn round_trip(doc: &Document) -> Document {
 }
 
 #[test]
+fn numeric_font_weight_round_trips_through_odt() {
+    // A numeric fo:font-weight (semibold = 600) must survive ODT export. The
+    // writer previously emitted fo:font-weight only from `bold`, dropping the
+    // numeric weight — import, layout and DOCX export all honour it, so this
+    // closes the ODF-export half.
+    let mut doc = sample_doc();
+    doc.styles.paragraph_styles.insert(
+        StyleId::new("Semibold"),
+        para_style(
+            "Semibold",
+            "Semibold",
+            CharProps {
+                font_weight: Some(600),
+                ..Default::default()
+            },
+            ParaProps::default(),
+        ),
+    );
+    let out = round_trip(&doc);
+    let cp = &out
+        .styles
+        .paragraph_styles
+        .get(&StyleId::new("Semibold"))
+        .expect("Semibold style must survive")
+        .char_props;
+    assert_eq!(
+        cp.font_weight,
+        Some(600),
+        "numeric fo:font-weight must survive ODT export"
+    );
+}
+
+#[test]
+fn odf_version_is_preserved_on_export() {
+    use loki_doc_model::io::source::DocumentSource;
+    // ADR-0002: an ODF 1.1/1.2 file must not be silently upgraded to 1.3 on
+    // export. Every ODT part previously hardcoded office:version="1.3", so a
+    // 1.1 document came back 1.3 — the round-trip breakage the ADR exists to
+    // prevent. (An unknown/non-ODF source still defaults to 1.3.)
+    for ver in ["1.1", "1.2"] {
+        let mut doc = sample_doc();
+        doc.source = Some(DocumentSource::new("odf").with_version(ver));
+        let re = round_trip(&doc);
+        assert_eq!(
+            re.source.and_then(|s| s.version).as_deref(),
+            Some(ver),
+            "office:version {ver} must survive ODT export"
+        );
+    }
+}
+
+#[test]
 fn styles_round_trip() {
     let doc = round_trip(&sample_doc());
 
@@ -187,7 +239,8 @@ fn full_character_and_paragraph_props_round_trip() {
         letter_spacing: Some(Points::new(1.0)),
         word_spacing: Some(Points::new(2.0)),
         kerning: Some(true),
-        scale: Some(90.0),
+        // scale is a FRACTION (0.9 = 90%), the layout + OOXML `w:w` convention.
+        scale: Some(0.9),
         language: Some(LanguageTag::new("en-GB")),
         language_complex: Some(LanguageTag::new("ar-SA")),
         language_east_asian: Some(LanguageTag::new("ja-JP")),
@@ -246,7 +299,7 @@ fn full_character_and_paragraph_props_round_trip() {
     assert_eq!(c.letter_spacing.map(|p| p.value().round()), Some(1.0));
     assert_eq!(c.word_spacing.map(|p| p.value().round()), Some(2.0));
     assert_eq!(c.kerning, Some(true));
-    assert_eq!(c.scale, Some(90.0));
+    assert_eq!(c.scale, Some(0.9));
     assert_eq!(c.language.as_ref().map(|l| l.as_str()), Some("en-GB"));
     assert_eq!(
         c.language_complex.as_ref().map(|l| l.as_str()),
@@ -1317,4 +1370,103 @@ fn cell_borders_and_padding_round_trip_via_cell_style() {
         plain_back.props.border_top.is_none(),
         "plain cell stays clean"
     );
+}
+
+// ── Page usage (Spec 08 T6.1) ────────────────────────────────────────────────
+
+/// Exports `doc` and returns the raw `styles.xml`, so a test can assert what a
+/// *conforming third-party reader* would see rather than only what ours does.
+fn exported_styles_xml(doc: &Document) -> String {
+    let mut buf = Cursor::new(Vec::<u8>::new());
+    OdtExport::export(doc, &mut buf, OdtExportOptions::default()).expect("ODT export");
+    let bytes = buf.into_inner();
+    let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).expect("odt is a zip");
+    let mut f = zip.by_name("styles.xml").expect("styles.xml");
+    let mut out = String::new();
+    std::io::Read::read_to_string(&mut f, &mut out).expect("read styles.xml");
+    out
+}
+
+fn one_section(usage: loki_doc_model::layout::page::PageUsage) -> Document {
+    let mut doc = Document::new();
+    doc.sections = vec![Section::with_layout_and_blocks(
+        PageLayout {
+            page_usage: usage,
+            ..PageLayout::default()
+        },
+        vec![Block::Para(vec![Inline::Str("x".into())])],
+    )];
+    doc
+}
+
+/// **Mirrored margins survive the ODT round-trip**, which they could not before:
+/// the writer emitted no `style:page-usage` and the reader looked for none, so a
+/// mirrored document exported as single-sided and re-imported that way. Nothing
+/// failed — the geometry was all still there, only the property that alternates
+/// it was gone.
+///
+/// Asserted on the **bytes** as well as on the re-import. A reader and writer
+/// that agreed on some other spelling would round-trip perfectly through each
+/// other and be wrong for every other application, which is the failure a
+/// round-trip test alone cannot see.
+#[test]
+fn mirrored_page_usage_survives_an_odt_round_trip() {
+    use loki_doc_model::layout::page::PageUsage;
+
+    let doc = one_section(PageUsage::Mirrored);
+    let xml = exported_styles_xml(&doc);
+    assert!(
+        xml.contains(r#"style:page-usage="mirrored""#),
+        "the ODF attribute is missing from styles.xml:\n{xml}",
+    );
+
+    let back = round_trip(&doc);
+    assert_eq!(
+        back.sections[0].layout.page_usage,
+        PageUsage::Mirrored,
+        "style:page-usage was dropped between the writer and the reader",
+    );
+    assert!(
+        back.mirrors_margins(),
+        "the document-level question must answer yes from the layouts alone — \
+         an ODT carries no `settings.mirror_margins`",
+    );
+}
+
+/// **The polarity, and it is the half that catches a writer emitting the
+/// attribute unconditionally.** An ordinary document must not carry it at all —
+/// `all` is ODF's default, and writing it would change the bytes of every
+/// document this suite has ever produced.
+#[test]
+fn an_ordinary_document_carries_no_page_usage_at_all() {
+    use loki_doc_model::layout::page::PageUsage;
+
+    let doc = one_section(PageUsage::All);
+    let xml = exported_styles_xml(&doc);
+    assert!(
+        !xml.contains("style:page-usage"),
+        "the default must not be written:\n{xml}",
+    );
+
+    let back = round_trip(&doc);
+    assert_eq!(back.sections[0].layout.page_usage, PageUsage::All);
+    assert!(!back.mirrors_margins());
+}
+
+/// **`left` and `right` are not `mirrored`**, carried through the real writer
+/// and reader rather than only through the codec's unit test. A reader that
+/// mapped every non-`all` value to mirrored would pass both tests above.
+#[test]
+fn the_selecting_usages_round_trip_without_becoming_mirrored() {
+    use loki_doc_model::layout::page::PageUsage;
+
+    for usage in [PageUsage::Left, PageUsage::Right] {
+        let back = round_trip(&one_section(usage));
+        assert_eq!(back.sections[0].layout.page_usage, usage, "{usage:?}");
+        assert!(
+            !back.mirrors_margins(),
+            "{usage:?} selects which pages a layout is used for; it does not \
+             alternate margins",
+        );
+    }
 }

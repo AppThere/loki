@@ -3,7 +3,7 @@
 //! Root application component for loki-presentation.
 
 use appthere_ui::{
-    AtBackdropHost, AtThemeContext, AtViewportWidthSensor, use_provide_backdrop,
+    AtPopoverHost, AtThemeContext, AtViewportWidthSensor, ui_font_css, use_provide_popover,
     use_provide_responsive, use_safe_area,
 };
 use dioxus::prelude::*;
@@ -84,7 +84,20 @@ pub fn App() -> Element {
 
     // Window-level dismiss-backdrop context (kept identical to loki-text for
     // suite consistency; used by ribbon overflow menus and anchored popups).
-    use_provide_backdrop();
+    // Anchored overlays. Provided here as well as in `loki-text` because the
+    // shared Home tab's Recent Documents menu is a popover consumer (T4.2), and
+    // `use_popover_anchor` degrades to `None` where no root provided the
+    // context — which would present as a ⋮ button that does nothing, in two of
+    // the three apps, with nothing in the log to say why.
+    let _popover = use_provide_popover();
+    // **And the window it places against.** `use_provide_popover` alone gives the
+    // ⋮ menu a host; without this the host has no measured window, so
+    // `usable_viewport` falls back to the consumer's own placeholder — which for
+    // every menu in the suite is an *unbounded* rect. An unbounded viewport never
+    // flips and never clamps, so a menu near the window bottom opens downward off
+    // the screen and reads as a button that does nothing. `loki-text` has provided
+    // this since T4.1; these two mounted the host without it (r93).
+    let mut window_size = appthere_ui::use_provide_window_size();
 
     // Spell-check service (bundled English; dictionary cache shared across the
     // suite). Provided into context so this app's editor can query spelling and
@@ -125,6 +138,14 @@ pub fn App() -> Element {
             "
         }
 
+        // **Registering the face is not selecting it.** The blobs above make
+        // "Atkinson Hyperlegible Next" *resolvable*; nothing in the tree asked
+        // for it except component-by-component, so an element outside every such
+        // component — anything the popover host renders — fell through to the CSS
+        // initial value and drew in serif. This sheet is the declaration, at the
+        // one place inheritance reaches everything (r94).
+        document::Style { "{ui_font_css()}" }
+
         // The UI typeface and bundled fallback families are registered
         // synchronously into the renderer's font collection at launch via
         // `dioxus::native::Config::with_fonts(loki_fonts::ui_font_blobs())` (see
@@ -161,8 +182,12 @@ pub fn App() -> Element {
             AtViewportWidthSensor {}
             // Persist the window size across sessions (debounced; desktop only
             // in effect — Android windows are fullscreen).
+            // Two consumers of one measurement: the geometry file, and the
+            // popover host, which places against the window and has no other way
+            // to know its height.
             appthere_ui::AtWindowSizeSensor {
-                on_size: |size: (f64, f64)| {
+                on_size: move |size: (f64, f64)| {
+                    window_size.set(size);
                     loki_app_shell::window_geometry::save_debounced(GEOMETRY_FILE, size)
                 },
             }
@@ -170,7 +195,11 @@ pub fn App() -> Element {
             Router::<Route> {}
 
             // Window-level dismiss backdrop; renders nothing while unused.
-            AtBackdropHost {}
+
+            // **Must follow `AtBackdropHost`** — `z-index` cannot arbitrate
+            // between two children of one positioned root, so DOM order does.
+            // See `popover::RootLayer`.
+            AtPopoverHost {}
         }
     }
 }

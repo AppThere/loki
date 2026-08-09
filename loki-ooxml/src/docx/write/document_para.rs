@@ -109,6 +109,11 @@ pub(super) fn write_para_props_inline<W: std::io::Write>(
         None => {}
     }
 
+    // keep/widow/break toggles, the paragraph border box, and shading — parsed by
+    // the importer but previously dropped on DOCX export. Shared with the styles
+    // writer; the canonicalisation pass places them in CT_PPr order.
+    crate::docx::write::style_props::write_para_flags_borders_shading(w, pp);
+
     if let Some(align) = pp.alignment {
         let jc = match align {
             ParagraphAlignment::Right => "right",

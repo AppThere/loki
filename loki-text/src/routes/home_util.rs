@@ -7,7 +7,6 @@
 
 use dioxus::prelude::*;
 use loki_file_access::FileAccessToken;
-use loki_i18n::fl;
 
 use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
@@ -57,7 +56,7 @@ pub(super) fn close_tab_for_path(
 
 /// True if `name` has a template extension (Word `.dotx`/`.dotm` or
 /// LibreOffice `.ott`/`.ots`). Templates open as fresh, detached documents.
-pub(super) fn is_template_name(name: &str) -> bool {
+pub(crate) fn is_template_name(name: &str) -> bool {
     name.rsplit('.')
         .next()
         .map(|e| e.to_ascii_lowercase())
@@ -83,45 +82,5 @@ pub(super) fn suggested_copy_name(token: &FileAccessToken) -> String {
     match name.rsplit_once('.') {
         Some((stem, ext)) if !stem.is_empty() => format!("{stem} Copy.{ext}"),
         _ => format!("{name} Copy"),
-    }
-}
-
-// ── Template browser (4c.3) ───────────────────────────────────────────────────
-
-/// The template names shown by the browse dialog, in the exact order
-/// `on_template_select` dispatches (0 = Blank, 1..=5 = bundled templates).
-pub(super) fn template_names() -> Vec<String> {
-    vec![
-        fl!("home-template-blank"),
-        fl!("home-template-markdown"),
-        fl!("home-template-apa"),
-        fl!("home-template-mla"),
-        fl!("home-template-screenplay"),
-        fl!("home-template-resume"),
-    ]
-}
-
-/// Boundary mount for the template-browser overlay (ADR-0013): owns nothing
-/// but the conditional mount, so `home.rs` stays a single line at the call
-/// site. Selecting an entry closes the dialog and forwards the index to the
-/// same handler the gallery cards use.
-#[component]
-pub(super) fn TemplateBrowserHost(
-    browsing: Signal<bool>,
-    on_select: EventHandler<usize>,
-) -> Element {
-    rsx! {
-        {browsing().then(|| rsx! {
-            appthere_ui::AtTemplateBrowser {
-                title: fl!("home-browse-dialog-title"),
-                cancel_label: fl!("home-browse-dialog-cancel"),
-                entries: template_names(),
-                on_select: move |idx: usize| {
-                    browsing.set(false);
-                    on_select.call(idx);
-                },
-                on_cancel: move |_| browsing.set(false),
-            }
-        })}
     }
 }

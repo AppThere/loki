@@ -17,7 +17,6 @@ use dioxus::prelude::*;
 
 use crate::responsive::{group_layout, GroupCollapse};
 use crate::tokens;
-use crate::tokens::FONT_FAMILY_UI;
 
 /// A labelled cluster of related ribbon buttons with a vertical divider.
 ///
@@ -108,11 +107,8 @@ pub fn AtRibbonGroup(
             if lay.show_label {
                 div {
                     style: format!(
-                        // Atkinson registration is locked by loki-layout's
-                        // ui_font_registration test (launch-time blob set).
-                        "font-family: {font}; font-size: {size}px; color: {fg}; \
+                        "font-size: {size}px; color: {fg}; \
                          text-align: center; padding-bottom: 2px; flex-shrink: 0;",
-                        font = FONT_FAMILY_UI,
                         size = tokens::FONT_SIZE_XS,
                         fg   = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                     ),

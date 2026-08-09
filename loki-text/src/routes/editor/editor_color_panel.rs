@@ -20,8 +20,7 @@ use loro::LoroDoc;
 
 use super::editor_highlight_color::{apply_highlight, current_highlight};
 use super::editor_ribbon_color::{
-    FONT_COLOR_PALETTE, HIGHLIGHT_PALETTE, highlight_fill, preset_swatches, push_recent,
-    recent_swatches,
+    FONT_COLOR_PALETTE, highlight_swatches, preset_swatches, push_recent, recent_swatches,
 };
 use super::editor_ribbon_format::RibbonEditCtx;
 use super::editor_state::ColorPickerTarget;
@@ -45,7 +44,6 @@ pub(super) fn color_picker_panel(
         current: Option<String>,
         swatches: Vec<appthere_ui::AtColorSwatch>,
         recent: Signal<Vec<String>>,
-        recent_fill: fn(&str) -> String,
         show_custom: bool,
         title: String,
         clear: String,
@@ -60,7 +58,6 @@ pub(super) fn color_picker_panel(
                 .and_then(|ldoc| current_text_color(ldoc, &cursor.read())),
             swatches: preset_swatches(FONT_COLOR_PALETTE),
             recent: recent_text_colors,
-            recent_fill: str::to_string,
             show_custom: true,
             title: fl!("ribbon-group-font-color"),
             clear: fl!("ribbon-color-clear"),
@@ -71,10 +68,11 @@ pub(super) fn color_picker_panel(
                 .read()
                 .as_ref()
                 .and_then(|ldoc| current_highlight(ldoc, &cursor.read())),
-            swatches: preset_swatches(HIGHLIGHT_PALETTE),
+            swatches: highlight_swatches(),
             recent: recent_highlights,
-            recent_fill: |name| highlight_fill(name).unwrap_or("transparent").to_string(),
-            show_custom: false,
+            // T5.3: a highlight may now be any colour, so the custom tab is
+            // offered here as it always was for text.
+            show_custom: true,
             title: fl!("ribbon-group-highlight"),
             clear: fl!("ribbon-highlight-clear"),
             apply: apply_highlight,
@@ -82,14 +80,38 @@ pub(super) fn color_picker_panel(
     };
 
     let labels = AtColorPickerLabels {
+        area: fl!("editor-color-area"),
+        hue: fl!("editor-color-hue"),
         title: t.title,
         close: fl!("ribbon-color-close-aria"),
         clear: t.clear,
         recent_heading: fl!("ribbon-color-recent"),
+        document_heading: fl!("ribbon-color-document"),
         custom_heading: fl!("ribbon-color-custom"),
         apply: fl!("ribbon-color-apply"),
     };
-    let recent_list = recent_swatches(&t.recent.read(), t.recent_fill);
+    // Every stored colour on every route is a `#RRGGBB`, so a swatch's fill is
+    // its value. It was not before T5.3 — highlight recents held *variant names*
+    // and needed a lookup, which the document group (added in T5.2's tail) then
+    // fed hexes: `highlight_fill("#C0392B")` is `None`, so every document swatch
+    // in the Highlight picker painted "transparent" and picking one wrote a hex
+    // where a variant name was expected, applying nothing. One value shape
+    // removes the lookup and the mismatch with it.
+    let recent_list = recent_swatches(&t.recent.read());
+    // Colours this document's styles define (T5.2). Read from the live document
+    // rather than remembered, so it follows an edit that adds or removes one.
+    let document_list = {
+        let colors: Vec<String> = doc_state
+            .lock()
+            .ok()
+            .and_then(|st| {
+                st.document
+                    .as_ref()
+                    .map(|d| super::editor_doc_colors::document_colors(d))
+            })
+            .unwrap_or_default();
+        recent_swatches(&colors)
+    };
     let ds = Arc::clone(doc_state);
     let recent_sig = t.recent;
     let apply = t.apply;
@@ -99,6 +121,7 @@ pub(super) fn color_picker_panel(
             current_value: t.current,
             swatches: t.swatches,
             recent: recent_list,
+            document: document_list,
             show_custom: t.show_custom,
             labels: labels,
             on_pick: move |value: Option<String>| {

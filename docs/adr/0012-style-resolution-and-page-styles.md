@@ -114,10 +114,14 @@ family is just a chain of length one.
 
 - **M1 is unblocked and implemented** for resolution: the inspector (M2) reads
   `Resolved<T>` per property; re-parenting (M4) uses `para_reparent_cycles`.
-- The page family is **decided but not yet built**: the `page_styles` catalog
-  field, the import mapping from `PageLayout`/`sectPr`, and the DOCX export
-  inverse land with the **M6 page panel** — not in M1. Until then the page panel
-  is absent (no dead UI, per the Spec 04 capability-gate discipline).
+- The page family (**M6**) is now **built and wired end-to-end**: the
+  `page_styles` catalog field (`StyleCatalog::page_styles`), the import mapping
+  from `PageLayout`/`sectPr` (`derive_page_styles`/`assign_page_styles`, run on
+  load), DOCX export (per-section `w:sectPr` + the advisory `lokiPageStyles.xml`
+  names part), ODT native `style:page-layout`/`master-page`, and the page
+  inspector/manager panel all exist. (This bullet previously read "decided but
+  not yet built"; that was stale — see Spec 08 Phase 6 / §1 of the fidelity
+  registry.)
 - Page styles are documented as a **non-inheriting family**; the inspector and
   tree-view code must treat "no parent chain" as a first-class case (already true
   for lists).

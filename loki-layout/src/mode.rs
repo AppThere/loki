@@ -42,6 +42,25 @@ impl LayoutMode {
     pub fn is_continuous(&self) -> bool {
         !self.is_paginated()
     }
+
+    /// Whether an element wider than the content column is scaled down to fit
+    /// it (Spec 08 T7.3), rather than being allowed to overhang.
+    ///
+    /// True only for [`Self::Reflow`]. Reflow is a *reading* view with no
+    /// physical width, and T7.3's rule is that the document never scrolls
+    /// horizontally, so anything oversized must come down to the column.
+    ///
+    /// [`Self::Paginated`] and [`Self::Pageless`] are **fidelity** views of a
+    /// page with a real width: Word and LibreOffice paint an oversized image at
+    /// its declared size and let it overhang, and matching them is the point.
+    ///
+    /// A method on the mode rather than a flag each caller derives — the two
+    /// call sites that need it are in different modules, and a second
+    /// `matches!(mode, Reflow)` written by hand is the copy that stops agreeing.
+    #[must_use]
+    pub fn fits_oversized_to_column(&self) -> bool {
+        matches!(self, Self::Reflow { .. })
+    }
 }
 
 #[cfg(test)]

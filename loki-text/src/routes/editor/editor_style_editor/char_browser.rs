@@ -55,7 +55,7 @@ pub(super) fn char_list_section(
                         key: "char-{id}",
                         style: format!(
                             "text-align: left; padding: {p}px {p2}px; border-radius: 3px; {touch} \
-                             border: 1px solid {border}; cursor: pointer; font-family: {ff}; \
+                             border: 1px solid {border}; cursor: pointer; \
                              font-size: {fs}px; background: {bg}; color: {fg};",
                             p = tokens::SPACE_1,
                             p2 = tokens::SPACE_2,
@@ -65,7 +65,6 @@ pub(super) fn char_list_section(
                             } else {
                                 tokens::COLOR_BORDER_CHROME
                             },
-                            ff = tokens::FONT_FAMILY_UI,
                             fs = tokens::FONT_SIZE_LABEL,
                             bg = if is_sel { tokens::COLOR_SURFACE_3 } else { tokens::COLOR_SURFACE_2 },
                             fg = tokens::COLOR_TEXT_ON_CHROME,

@@ -36,9 +36,7 @@ use crate::tokens::colors::{
     COLOR_TEXT_ON_CHROME, COLOR_TEXT_ON_CHROME_SECONDARY,
 };
 use crate::tokens::spacing::{RADIUS_MD, SPACE_2, SPACE_3, SPACE_4, TOUCH_MIN};
-use crate::tokens::typography::{
-    FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_SIZE_MD, FONT_WEIGHT_SEMIBOLD,
-};
+use crate::tokens::typography::{FONT_SIZE_BODY, FONT_SIZE_MD, FONT_WEIGHT_SEMIBOLD};
 
 /// Width of the dialog card in logical pixels — narrow enough for Compact
 /// portrait phones (the backdrop centring keeps it on-screen either way).
@@ -80,13 +78,12 @@ pub fn AtConfirmDialog(props: AtConfirmDialogProps) -> Element {
     let button_base = format!(
         "min-height: {th}px; box-sizing: border-box; \
          padding: {py}px {px}px; border-radius: {r}px; \
-         font-family: {font}; font-size: {fs}px; font-weight: {fw}; \
+         font-size: {fs}px; font-weight: {fw}; \
          display: flex; align-items: center; justify-content: center;",
         th = TOUCH_MIN,
         py = SPACE_2,
         px = SPACE_4,
         r = RADIUS_MD,
-        font = FONT_FAMILY_UI,
         fs = FONT_SIZE_BODY,
         fw = FONT_WEIGHT_SEMIBOLD,
     );
@@ -109,14 +106,13 @@ pub fn AtConfirmDialog(props: AtConfirmDialogProps) -> Element {
                      display: flex; flex-direction: column; gap: {gap}px; \
                      background: {bg}; border: 1px solid {border}; \
                      border-radius: {r}px; padding: {pad}px; \
-                     font-family: {font}; color: {fg};",
+                     color: {fg};",
                     w = DIALOG_WIDTH_PX,
                     gap = SPACE_3,
                     bg = COLOR_SURFACE_1,
                     border = COLOR_BORDER_CHROME,
                     r = RADIUS_MD,
                     pad = SPACE_4,
-                    font = FONT_FAMILY_UI,
                     fg = COLOR_TEXT_ON_CHROME,
                 ),
                 role: "dialog",

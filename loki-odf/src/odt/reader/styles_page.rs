@@ -22,9 +22,13 @@ use crate::xml_util::local_attr_val;
 use super::skip_element;
 
 /// Parse a `style:page-layout` element (Start event already consumed).
+/// `page_usage` is read by the caller, because `style:page-usage` is an
+/// attribute of `style:page-layout` itself rather than of its properties child —
+/// and the Start event carrying it is consumed before this is called.
 pub(super) fn parse_page_layout(
     reader: &mut Reader<&[u8]>,
     name: String,
+    page_usage: Option<String>,
 ) -> OdfResult<OdfPageLayout> {
     let mut buf = Vec::new();
     let mut layout = OdfPageLayout {
@@ -36,6 +40,7 @@ pub(super) fn parse_page_layout(
         margin_left: None,
         margin_right: None,
         print_orientation: None,
+        page_usage,
         num_format: None,
         columns: None,
         header_props: None,

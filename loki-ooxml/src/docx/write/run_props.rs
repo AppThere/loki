@@ -19,22 +19,22 @@ use crate::docx::write::xml::{
     write_start, wval,
 };
 
-/// Writes a `<w:rPr>` element from [`CharProps`] (nothing if no field is set).
+/// Writes a `<w:rPr>` element from [`CharProps`] (nothing if it would be empty).
+///
+/// Used by the styles writer (character and paragraph styles). Rather than keep
+/// a `has_content` predicate listing every field [`emit_char_props`] can write —
+/// the two-copies-of-one-fact drift CLAUDE.md rule 4 warns about, which had
+/// silently dropped a style whose only property was e.g. `all_caps`, a
+/// highlight, a language tag, or a horizontal scale (the gate omitted all of
+/// those) — this asks `emit_char_props` itself whether it would emit anything,
+/// by running it once into a throwaway buffer, and wraps the real call only when
+/// it would. `emit_char_props` is then the single source of truth for what a
+/// non-empty `<w:rPr>` contains. (The probe write is cheap: run once per style,
+/// over a handful of tiny elements.)
 pub(crate) fn write_char_props_elem<W: std::io::Write>(w: &mut Writer<W>, cp: &CharProps) {
-    let has_content = cp.bold.is_some()
-        || cp.italic.is_some()
-        || cp.underline.is_some()
-        || cp.strikethrough.is_some()
-        || cp.font_size.is_some()
-        || cp.font_name.is_some()
-        || cp.color.is_some()
-        || cp.background_color.is_some()
-        || cp.small_caps.is_some()
-        || cp.vertical_align.is_some()
-        || cp.emboss.is_some()
-        || cp.imprint.is_some()
-        || cp.character_border.is_some();
-    if !has_content {
+    let mut probe = Writer::new(Vec::new());
+    emit_char_props(&mut probe, cp);
+    if probe.into_inner().is_empty() {
         return;
     }
     let _ = write_start(w, "w:rPr", &[]);
@@ -63,7 +63,12 @@ pub(crate) fn emit_char_props<W: std::io::Write>(w: &mut Writer<W>, cp: &CharPro
         }
         let _ = write_empty(w, "w:rFonts", &attrs);
     }
-    if cp.bold == Some(true) {
+    // Bold when the boolean is set, or when a numeric `font_weight` >= 600 has no
+    // explicit boolean. DOCX has no numeric weight, so a heavy weight collapses
+    // to `w:b` (the reader's inverse maps any `w:b` back to `bold`); `font_weight`
+    // supersedes `bold` in the model, so this is the export half of that rule.
+    if cp.bold == Some(true) || (cp.bold.is_none() && cp.font_weight.is_some_and(|wgt| wgt >= 600))
+    {
         let _ = write_empty(w, "w:b", &[]);
     }
     if cp.italic == Some(true) {

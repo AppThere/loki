@@ -3,14 +3,14 @@
 
 //! [`ViewportController`] — the one handle on a scroll container (Spec 08 T1.2).
 
-use std::time::{Duration, Instant};
-
 use dioxus::html::geometry::PixelsVector2D;
 use dioxus::prelude::*;
 
-use super::animate::{animation_step, MotionPreference, SMOOTH_DURATION_MS, TICK_MS};
+use super::animate::MotionPreference;
+use super::controller_offset::{effective_offset, Commanded};
 use super::metrics::ScrollMetrics;
 use super::reveal::{reveal_offset, RevealMargin};
+use super::zoom_anchor::{anchored_scroll, ZoomAnchor};
 
 /// A target rect in **content** coordinates: `(x, y, width, height)`.
 pub type ContentRect = (f32, f32, f32, f32);
@@ -30,8 +30,8 @@ pub type ContentRect = (f32, f32, f32, f32);
 /// effect, which recomputed the caret's position *relative to the new scroll
 /// offset*, found it outside the reveal margin — because the user had just
 /// scrolled it there — and scrolled back. The wheel was capped at the margin
-/// band around the caret, and the cap was asymmetric (one line up, three down)
-/// because the margin is.
+/// band around the caret, and the cap was asymmetric (one line up, three down
+/// at the margin values then in force) because the margin is.
 ///
 /// Nothing in the type system stops that recurring, so the discipline is:
 /// **observation methods read, command methods peek.** `metrics` and
@@ -54,6 +54,12 @@ pub struct ViewportController {
     /// second reveal replaces the first instead of fighting it (T1.1).
     generation: Signal<u64>,
     motion: Signal<MotionPreference>,
+    /// The last offset commanded, with the metrics it was commanded against.
+    ///
+    /// See [`super::controller_offset`] — this exists because the metrics signal
+    /// is a *report* from the DOM and necessarily lags the command that caused
+    /// it.
+    commanded: Signal<Option<Commanded>>,
 }
 
 /// Creates a [`ViewportController`] over an existing metrics signal and the
@@ -66,11 +72,13 @@ pub fn use_viewport_controller(
 ) -> ViewportController {
     let generation = use_signal(|| 0_u64);
     let motion = use_signal(MotionPreference::default);
+    let commanded = use_signal(|| None);
     ViewportController {
         metrics,
         mounted,
         generation,
         motion,
+        commanded,
     }
 }
 
@@ -91,6 +99,17 @@ impl ViewportController {
     #[must_use]
     pub fn visible_rect(&self) -> ContentRect {
         self.metrics.read().visible_rect()
+    }
+
+    /// The scroll offset a command should compose against, which is **not**
+    /// always the one the metrics report — see [`effective_offset`].
+    fn offset_now(&self) -> (f32, f32) {
+        effective_offset(self.metrics_now(), *self.commanded.peek())
+    }
+
+    /// The animation epoch, for the tick loop in [`super::controller_animate`].
+    pub(super) fn generation_now(&self) -> u64 {
+        *self.generation.peek()
     }
 
     /// The current scroll geometry **without subscribing** — the only accessor
@@ -152,6 +171,52 @@ impl ViewportController {
         }
     }
 
+    /// Scrolls so that `anchor` keeps showing the same content across a zoom
+    /// change from `from_zoom` to `to_zoom` (Spec 08 T5.6).
+    ///
+    /// `content_origin` is the unscaled offset from the scrollport to the scaled
+    /// content — see [`anchored_scroll`].
+    ///
+    /// # Here rather than at the caller, so the non-subscribing read stays here
+    ///
+    /// The arithmetic is `zoom_anchor`'s and is tested there. What this adds is
+    /// the *reading* of the live geometry, which must go through
+    /// [`Self::metrics_now`] — the accessor that does not subscribe (L08-019).
+    /// Exposing `metrics_now` so a caller could do this itself would hand out
+    /// the one thing the type exists to keep private, and the failure it guards
+    /// against is a command path that re-runs on every scroll event.
+    ///
+    /// Instant, not eased: the content is re-laid-out at the new zoom in the same
+    /// frame, so an animated scroll would glide across geometry that has already
+    /// changed underneath it.
+    ///
+    /// Returns `false` when the container is not measured yet, in which case
+    /// nothing moved — there is no anchor to hold without a viewport.
+    pub fn zoom_to(
+        &mut self,
+        anchor: ZoomAnchor,
+        content_origin: (f32, f32),
+        from_zoom: f32,
+        to_zoom: f32,
+    ) -> bool {
+        let m = self.metrics_now();
+        if !m.is_measured() {
+            return false;
+        }
+        // `offset_now`, not `m.scroll_*`: a wheel gesture issues several of these
+        // per notch and the metrics signal lags each one. See its docs.
+        let (x, y) = anchored_scroll(
+            self.offset_now(),
+            (m.client_width, m.client_height),
+            content_origin,
+            anchor,
+            from_zoom,
+            to_zoom,
+        );
+        self.scroll_to(x, y, ScrollBehavior::Instant);
+        true
+    }
+
     /// Scrolls to an absolute offset.
     ///
     /// `Instant` applies immediately. `Smooth` animates unless the motion
@@ -172,11 +237,17 @@ impl ViewportController {
     }
 
     /// Issues one instant scroll through the mounted container.
-    fn apply(&self, x: f32, y: f32) {
+    pub(super) fn apply(&self, x: f32, y: f32) {
         let guard = self.mounted.peek();
         let Some(mounted) = guard.as_ref() else {
             return; // container not mounted yet
         };
+        // Record what was asked for, here rather than at the callers, so a
+        // command path added later cannot forget to (evidence rule 5). Every
+        // scroll this type issues — instant, animated tick, reveal — passes
+        // through this one function.
+        let mut commanded = self.commanded;
+        commanded.set(Some((x, y, *self.metrics.peek())));
         // The patched backing performs the scroll eagerly (it posts the event
         // before returning a ready future), so dropping the future here is
         // correct — the same call shape the scrollbar thumb drag uses.
@@ -184,50 +255,5 @@ impl ViewportController {
             PixelsVector2D::new(f64::from(x), f64::from(y)),
             ScrollBehavior::Instant,
         ));
-    }
-
-    /// Drives a smooth scroll from `(fx, fy)` to `(tx, ty)`.
-    ///
-    /// Ticks arrive from a worker thread through a channel — there is no async
-    /// timer under `dioxus-native` (see the [`super::animate`] module docs).
-    /// The loop exits early the moment `generation` moves, so a superseding
-    /// command takes effect on the next tick rather than after this animation
-    /// finishes.
-    fn animate(&mut self, fx: f32, fy: f32, tx: f32, ty: f32) {
-        let me = *self;
-        let epoch = *self.generation.peek();
-        let (tick_tx, mut tick_rx) = futures_channel::mpsc::unbounded::<()>();
-        let spawned = std::thread::Builder::new()
-            .name("at-scroll-anim".into())
-            .spawn(move || {
-                // Bounded by construction: duration / interval + slack.
-                let ticks = (SMOOTH_DURATION_MS as u64 / TICK_MS) + 2;
-                for _ in 0..ticks {
-                    std::thread::sleep(Duration::from_millis(TICK_MS));
-                    if tick_tx.unbounded_send(()).is_err() {
-                        break; // receiver dropped — animation superseded
-                    }
-                }
-            });
-        if spawned.is_err() {
-            me.apply(tx, ty); // no thread available: land on the target anyway
-            return;
-        }
-        let start = Instant::now();
-        spawn(async move {
-            use futures_util::StreamExt;
-            while tick_rx.next().await.is_some() {
-                if *me.generation.peek() != epoch {
-                    return; // superseded or cancelled
-                }
-                let elapsed = start.elapsed().as_secs_f32() * 1000.0;
-                let (x, done) = animation_step(fx, tx, elapsed, SMOOTH_DURATION_MS);
-                let (y, _) = animation_step(fy, ty, elapsed, SMOOTH_DURATION_MS);
-                me.apply(x, y);
-                if done {
-                    return;
-                }
-            }
-        });
     }
 }

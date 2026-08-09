@@ -53,6 +53,16 @@ pub enum Metric {
     OpCount,
     /// `vello_cpu` render cost — the hardware-independent render proxy. Portable.
     RenderCost,
+    /// Resident GPU page-texture bytes, counted at the allocation call sites
+    /// (`appthere_canvas::residency::TextureResidency`). **Portable**, which is
+    /// the correction Spec 08 R16 records: the quantity is `width × height × 4`
+    /// summed over the mounted tile set, and every term is CPU-side arithmetic
+    /// decided before wgpu is called. What genuinely needs a device is
+    /// *driver-side overhead* on top of it — row-pitch alignment, heap
+    /// granularity — which is [`Metric::PeakRss`]/[`Metric::FrameTime`]'s axis,
+    /// not this one. Spec 09's E0 made the same correction for layout: a
+    /// constraint belongs to the subsystem that owns it (L08-021).
+    TextureBytes,
     /// Wall-clock latency of an operation. Device-bound (CPU/scheduler variance).
     WallTime,
     /// Real resident-set-size peak. Device-bound (allocator/OS overhead).
@@ -66,9 +76,11 @@ impl Metric {
     #[must_use]
     pub fn axis(self) -> Axis {
         match self {
-            Metric::AllocBytes | Metric::AllocBlocks | Metric::OpCount | Metric::RenderCost => {
-                Axis::Portable
-            }
+            Metric::AllocBytes
+            | Metric::AllocBlocks
+            | Metric::OpCount
+            | Metric::RenderCost
+            | Metric::TextureBytes => Axis::Portable,
             Metric::WallTime | Metric::PeakRss | Metric::FrameTime => Axis::DeviceBound,
         }
     }

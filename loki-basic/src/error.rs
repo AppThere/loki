@@ -164,6 +164,14 @@ impl RuntimeError {
         Self::new(1006, "Macro cancelled").untrappable()
     }
 
+    /// The macro exceeded its dialog rate limit (spec §5.5) — a "misbehaving
+    /// macro" that showed dialogs faster than the bucket refills. Untrappable so
+    /// it cannot loop past the suspend inside an error handler.
+    #[must_use]
+    pub fn dialog_rate_limited() -> Self {
+        Self::new(1007, "Macro suspended: too many dialogs").untrappable()
+    }
+
     /// The internal `End`/`Stop` halt sentinel — unwinds all execution. Not a
     /// real error; the public entry point maps it to a clean stop.
     #[must_use]

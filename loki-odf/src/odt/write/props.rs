@@ -42,10 +42,18 @@ fn text_properties_attrs(cp: &CharProps) -> String {
     if let Some(sz) = cp.font_size_complex {
         attr(&mut s, "style:font-size-complex", &pt(sz));
     }
-    match cp.bold {
-        Some(true) => attr(&mut s, "fo:font-weight", "bold"),
-        Some(false) => attr(&mut s, "fo:font-weight", "normal"),
-        None => {}
+    // A numeric font_weight supersedes the bold keyword (matching the importer
+    // and the layout/DOCX precedence). ODF fo:font-weight takes a numeric value
+    // (100..900, ODF 1.3 §20.194) or the bold/normal keywords; emitting only
+    // from `bold` dropped a semibold/numeric weight on ODT export.
+    if let Some(weight) = cp.font_weight {
+        attr(&mut s, "fo:font-weight", &weight.to_string());
+    } else {
+        match cp.bold {
+            Some(true) => attr(&mut s, "fo:font-weight", "bold"),
+            Some(false) => attr(&mut s, "fo:font-weight", "normal"),
+            None => {}
+        }
     }
     match cp.italic {
         Some(true) => attr(&mut s, "fo:font-style", "italic"),
@@ -102,7 +110,24 @@ fn text_properties_attrs(cp: &CharProps) -> String {
     if let Some(hex) = cp.color.as_ref().and_then(DocumentColor::to_hex) {
         attr(&mut s, "fo:color", &hex);
     }
-    if let Some(hex) = cp.background_color.as_ref().and_then(DocumentColor::to_hex) {
+    // ODF has **one** text background attribute; OOXML has two (`w:highlight`'s
+    // fixed enumeration and `w:shd @fill`). Both of ours land here, shading
+    // first because that is what the layout paints when both are set.
+    //
+    // Writing only `background_color` — as this did until Spec 08 T5.3 — dropped
+    // every named highlight from ODT export silently: `highlight_color` appeared
+    // nowhere in this crate. The existing round-trip test did not catch it
+    // because it compares first-import against re-import, and a property lost on
+    // the first export is equally absent from both.
+    let background = cp
+        .background_color
+        .as_ref()
+        .and_then(DocumentColor::to_hex)
+        .or_else(|| {
+            cp.highlight_color
+                .and_then(|h| h.to_hex().map(str::to_string))
+        });
+    if let Some(hex) = background {
         attr(&mut s, "fo:background-color", &hex);
     }
     if let Some(ls) = cp.letter_spacing {
@@ -119,7 +144,13 @@ fn text_properties_attrs(cp: &CharProps) -> String {
         );
     }
     if let Some(scale) = cp.scale {
-        attr(&mut s, "style:text-scale", &format!("{scale:.0}%"));
+        // Model fraction (1.0 = 100%) → ODF percentage string. Writing the raw
+        // fraction produced "2%" for a 150% run (`{:.0}` of 1.5).
+        attr(
+            &mut s,
+            "style:text-scale",
+            &format!("{:.0}%", scale * 100.0),
+        );
     }
     lang_attrs(&mut s, cp.language.as_ref(), "fo:language", "fo:country");
     lang_attrs(

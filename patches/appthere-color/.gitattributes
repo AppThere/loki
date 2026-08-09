@@ -1,0 +1,12 @@
+# Store this vendored tree verbatim.
+#
+# Git's line-ending normalisation rewrote LICENSE and README.md on the way in,
+# so the committed blobs differed from the crates.io tarball while the working
+# tree matched it. That is harmless in itself and corrosive to the thing this
+# fork's removal condition rests on: "still present with no local modifications"
+# has to be a question you can *answer*, and it stops being one as soon as some
+# files differ for reasons that are not modifications.
+#
+# `-text` keeps every byte, so `cmp` against a fresh tarball is a straight
+# yes/no. See VENDORED.md.
+* -text

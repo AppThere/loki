@@ -120,7 +120,7 @@ pub(super) fn reconstruct_blocks_from_list(list: &loro::LoroMovableList) -> Vec<
 
 // ── PageLayout deserialization ────────────────────────────────────────────────
 
-pub(super) fn reconstruct_page_layout(section_map: &LoroMap) -> PageLayout {
+pub(crate) fn reconstruct_page_layout(section_map: &LoroMap) -> PageLayout {
     let Some(layout_map) = section_map
         .get(KEY_LAYOUT)
         .and_then(|v| v.into_container().ok())
@@ -185,6 +185,12 @@ pub(super) fn reconstruct_page_layout(section_map: &LoroMap) -> PageLayout {
         } else {
             PageOrientation::Portrait
         };
+    }
+
+    // Page usage. Absent (a snapshot written before T6.1) decodes as `All`,
+    // which is what such a document meant.
+    if let Some(s) = get_str_from_map(&layout_map, KEY_PAGE_USAGE) {
+        layout.page_usage = crate::layout::page::PageUsage::from_odf(&s);
     }
 
     // Columns

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["loki-doc-model","loki-sheet-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","appthere-ui","loki-app-shell","loki-text","loki-spreadsheet","loki-presentation","loki-render-cache","loki-render-cpu","loki-renderer","loki-i18n","appthere-canvas","loki-fonts","loki-graphics","loki-presentation-model","loki-epub","loki-pdf","loki-acid","loki-templates","loki-spell","appthere-conformance","loki-bench","loki-model","loki-crypto","loki-server-audit","loki-server-store","loki-server-collab","loki-server-auth","loki-server-api","loki-server","loki-convert","loki-print","loki-headless","loki-basic","loki-vba","loki-macro-host","loki-macro-sig"]
+members = ["loki-doc-model","loki-sheet-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","appthere-ui","loki-app-shell","loki-text","loki-spreadsheet","loki-presentation","loki-render-cpu","loki-renderer","loki-i18n","appthere-canvas","loki-fonts","loki-graphics","loki-presentation-model","loki-epub","loki-pdf","loki-acid","loki-templates","loki-spell","appthere-conformance","loki-bench","loki-model","loki-crypto","loki-server-audit","loki-server-store","loki-server-collab","loki-server-auth","loki-server-api","loki-server","loki-convert","loki-print","loki-headless","loki-basic","loki-vba","loki-macro-host","loki-macro-sig"]
 
 [workspace.dependencies]
 # Shared across appthere-ui and any other workspace member that needs Dioxus.
@@ -72,6 +72,14 @@ base64 = "0.22"
 loki-file-access = { path = "patches/loki-file-access" }
 
 [patch.crates-io]
+# VENDORED (not a bug fix): `appthere-color` is AppThere's own crate, and the
+# colour work in Spec 08 Phase 5 needs to change it alongside its consumers.
+# Without this, every change is a crates.io release cycle before the picker can
+# use it. Unlike the entries below there is no upstream defect to remove — see
+# `patches/appthere-color/VENDORED.md` for the version, the compliance
+# measurement, and the un-vendoring condition.
+appthere-color = { path = "patches/appthere-color" }
+
 # PATCH: vendors dioxus-native-dom to avoid runtime unimplemented!() panics in
 # HtmlEventConverter (composition, touch, scroll, etc.) — remove when upstream
 # implements the converters Loki requires. See docs/patches.md.
@@ -84,6 +92,17 @@ dioxus-native-dom = { path = "patches/dioxus-native-dom" }
 # of continuing up.  Remove when upstream blitz-dom makes tabindex focus
 # on click work for non-input elements.
 blitz-dom = { path = "patches/blitz-dom" }
+
+# PATCH: parley 0.6.0 does not refresh `letter_spacing`/`word_spacing` when the
+# shaper breaks a run, so a styled run's tracking is taken from the paragraph's
+# *first* run and applied to all of it. Fixed upstream in 0.10 (which
+# `loki-layout` already uses); the Blitz stack is still on 0.6. Two lines, in
+# `src/shape/mod.rs`. See docs/patches.md.
+#
+# The version requirement is what keeps this narrow: it satisfies the Blitz
+# crates' `^0.6` and leaves `loki-layout`'s `^0.10` on the registry, so the two
+# shapers stay independent.
+parley = { path = "patches/parley", version = "0.6.0" }
 
 # PATCH: forwards WindowEvent::Touch to Dioxus touch handlers.
 # Remove when blitz-shell implements touch natively. See docs/patches.md.

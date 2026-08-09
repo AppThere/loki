@@ -9,7 +9,10 @@
 //! All user-visible strings are accepted as [`String`] props so translated
 //! strings from `loki_i18n::fl!()` can be passed directly.
 
+mod gallery_layout;
+mod open_button;
 mod recent_files;
+mod recent_menu;
 mod recent_row;
 mod template_gallery;
 
@@ -21,15 +24,12 @@ use template_gallery::AtTemplateGallery;
 use crate::responsive::use_breakpoint;
 use crate::safe_area::use_safe_area;
 use crate::tokens::colors::{
-    COLOR_ACCENT_PRIMARY, COLOR_ACCENT_PRIMARY_HOVER, COLOR_STATUS_ERROR_BG,
-    COLOR_STATUS_ERROR_BORDER, COLOR_STATUS_ERROR_TEXT, COLOR_SURFACE_BASE, COLOR_TEXT_ON_CHROME,
+    COLOR_STATUS_ERROR_BG, COLOR_STATUS_ERROR_BORDER, COLOR_STATUS_ERROR_TEXT, COLOR_SURFACE_BASE,
     COLOR_TEXT_ON_CHROME_SECONDARY, COLOR_TEXT_PRIMARY,
 };
 use crate::tokens::layout::TAB_BAR_HEIGHT;
-use crate::tokens::spacing::{RADIUS_SM, SPACE_2, SPACE_3, SPACE_4, SPACE_6, TOUCH_MIN};
-use crate::tokens::typography::{
-    FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_SEMIBOLD,
-};
+use crate::tokens::spacing::{RADIUS_SM, SPACE_2, SPACE_3, SPACE_4, SPACE_6};
+use crate::tokens::typography::{FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_SEMIBOLD};
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -86,13 +86,7 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
     let inset_total = insets.top.round() as u32 + insets.bottom.round() as u32;
     let outer_height = format!("calc(100vh - {}px)", inset_total + TAB_BAR_HEIGHT as u32);
 
-    let mut pick_error = props.pick_error;
-    let mut open_hovered = use_signal(|| false);
-    let open_bg = if open_hovered() {
-        COLOR_ACCENT_PRIMARY_HOVER
-    } else {
-        COLOR_ACCENT_PRIMARY
-    };
+    let pick_error = props.pick_error;
 
     let body_style = if is_desktop {
         format!(
@@ -114,10 +108,9 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
             style: format!(
                 "display: flex; flex-direction: column; \
                  height: {h}; overflow: hidden; \
-                 background: {bg}; font-family: {font}; color: {fg};",
+                 background: {bg}; color: {fg};",
                 h    = outer_height,
                 bg   = COLOR_SURFACE_BASE,
-                font = FONT_FAMILY_UI,
                 fg   = COLOR_TEXT_PRIMARY,
             ),
 
@@ -151,38 +144,54 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
                     }
                 }
 
-                // Recent documents section
+                // Recent documents section.
+                //
+                // A column with the heading pinned and **only the list
+                // scrolling**: the heading carries the Open action, and it used
+                // to sit inside this section's own `overflow-y: auto`, so on a
+                // full list it scrolled out of view — the same "primary way in
+                // is below the fold" problem T4.3 moved it up to fix, one level
+                // out.
                 div {
                     style: if is_desktop {
-                        "flex: 1; min-width: 0; overflow-y: auto;".to_string()
+                        "flex: 1; min-width: 0; display: flex; \
+                         flex-direction: column; min-height: 0;".to_string()
                     } else {
                         String::new()
                     },
-                    h2 {
-                        style: format!(
-                            "font-size: {size}px; color: {fg}; \
-                             margin: 0 0 {mb}px 0; font-weight: {weight};",
-                            size   = FONT_SIZE_BODY,
-                            fg     = COLOR_TEXT_ON_CHROME_SECONDARY,
-                            mb     = SPACE_2,
-                            weight = FONT_WEIGHT_SEMIBOLD,
-                        ),
-                        "{props.recent_label}"
-                    }
+                    // Heading + Open action on one row (T4.3 / I-02). The
+                    // action used to sit **below the list**, inside a container
+                    // that scrolls — so on a full list the primary way into the
+                    // application was below the fold. Built in `open_button` to
+                    // keep this file under the ceiling.
+                    {open_button::recent_heading(
+                        props.recent_label.clone(),
+                        props.open_file_label.clone(),
+                        move |()| props.on_open_file.call(()),
+                    )}
+                    // The scroller. `overflow-x: hidden` because a long file
+                    // name must not make the list pan sideways — the rows are
+                    // constrained to the column width in `recent_row`, and this
+                    // is the backstop for anything that still overshoots.
+                    div {
+                    style: if is_desktop {
+                        "flex: 1; min-height: 0; overflow-y: auto; \
+                         overflow-x: hidden;".to_string()
+                    } else {
+                        "overflow-x: hidden;".to_string()
+                    },
                     AtRecentFileList {
                         documents:       props.recent_documents.clone(),
-                        recent_label:    props.recent_label.clone(),
                         empty_label:     props.empty_recent_label.clone(),
-                        open_file_label: props.open_file_label.clone(),
                         menu_aria_label: props.recent_menu_aria_label.clone(),
                         remove_label:    props.recent_remove_label.clone(),
                         delete_label:    props.recent_delete_label.clone(),
                         open_copy_label: props.recent_open_copy_label.clone(),
                         on_select:    move |idx| { props.on_recent_open.call(idx); },
-                        on_open_file: move |_|   { props.on_open_file.call(()); },
                         on_remove:    move |idx| { props.on_recent_remove.call(idx); },
                         on_delete:    move |idx| { props.on_recent_delete.call(idx); },
                         on_open_copy: move |idx| { props.on_recent_open_copy.call(idx); },
+                    }
                     }
                 }
             }
@@ -206,33 +215,6 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
                 }
             }
 
-            // ── Primary Open File button (bottom) ─────────────────────────────
-            // Minimum interactive size: 44×44 logical pixels (WCAG 2.5.8).
-            div {
-                style: format!("padding: {p}px; flex-shrink: 0;", p = SPACE_4),
-                button {
-                    style: format!(
-                        "width: 100%; display: block; margin: 0 auto; \
-                         background: {bg}; color: {fg}; \
-                         border: none; border-radius: {r}px; \
-                         min-height: {touch}px; font-size: {size}px; \
-                         font-weight: {weight}; cursor: pointer;",
-                        bg     = open_bg,
-                        fg     = COLOR_TEXT_ON_CHROME,
-                        r      = RADIUS_SM,
-                        touch  = TOUCH_MIN,
-                        size   = FONT_SIZE_BODY,
-                        weight = FONT_WEIGHT_SEMIBOLD,
-                    ),
-                    onmouseenter: move |_| { open_hovered.set(true); },
-                    onmouseleave: move |_| { open_hovered.set(false); },
-                    onclick: move |_| {
-                        pick_error.set(None);
-                        props.on_open_file.call(());
-                    },
-                    "{props.open_file_label}"
-                }
-            }
         }
     }
 }

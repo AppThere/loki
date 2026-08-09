@@ -24,6 +24,10 @@ pub(crate) struct PageTileProps {
     /// Paginated render zoom factor — tile-local CSS px are
     /// `pt × 96/72 × zoom`, so hit-test conversions divide it back out.
     pub(crate) zoom: f64,
+    /// Rasterisation scale the texture budget allows this tile (Spec 08 T2.2).
+    /// `1.0` is full resolution; a reduced tile occupies the same on-screen box
+    /// and is sampled up, so nothing about hit-testing or layout changes.
+    pub(crate) raster_scale: f32,
     pub(crate) shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
     pub(crate) cursor_holder: Arc<Mutex<Option<RendererSelection>>>,
     pub(crate) selection: Option<RendererSelection>,
@@ -54,6 +58,7 @@ impl PartialEq for PageTileProps {
             && self.w == other.w
             && self.h == other.h
             && self.zoom == other.zoom
+            && self.raster_scale == other.raster_scale
             && Arc::ptr_eq(&self.cursor_holder, &other.cursor_holder)
             && self.selection == other.selection
             && self.doc_gen == other.doc_gen
@@ -81,6 +86,14 @@ pub(crate) fn PageTile(props: PageTileProps) -> Element {
         *guard = props.selection;
     }
 
+    // Publish the budgeted rasterisation scale the same way, through the shared
+    // page source: `LokiPageSource` is created once by `use_wgpu` and never sees
+    // a later prop update, which is also why `zoom` travels this route.
+    let raster_permille = crate::tile_key::quantise(props.raster_scale);
+    props
+        .source
+        .set_raster_permille(page_index, raster_permille);
+
     let canvas_id = use_wgpu(move || {
         LokiPageSource::new(source, page_index, shared_renderer, cursor_holder_wgpu)
     });
@@ -91,20 +104,24 @@ pub(crate) fn PageTile(props: PageTileProps) -> Element {
     // them must repaint as it changes. A collapsed caret only dirties the tile
     // it sits on, keeping plain caret movement cheap.
     // COMPAT(dioxus-native): data-* attributes confirmed working in Blitz.
+    // The rasterisation scale is part of the key: a tile reduced (or restored)
+    // under budget pressure must repaint, and the scale can change while the
+    // caret and the generation do not.
     let data_cursor = match props.selection {
         Some(sel) if !sel.is_collapsed() => format!(
-            "s{}-{}-{}-{}-{}",
+            "s{}-{}-{}-{}-{}-r{}",
             sel.anchor.paragraph_index,
             sel.anchor.byte_offset,
             sel.focus.paragraph_index,
             sel.focus.byte_offset,
             props.doc_gen,
+            raster_permille,
         ),
         Some(sel) if sel.focus.page_index == props.page_index => format!(
-            "{}-{}-{}",
-            sel.focus.paragraph_index, sel.focus.byte_offset, props.doc_gen
+            "{}-{}-{}-r{}",
+            sel.focus.paragraph_index, sel.focus.byte_offset, props.doc_gen, raster_permille,
         ),
-        _ => format!("{}", props.doc_gen),
+        _ => format!("{}-r{}", props.doc_gen, raster_permille),
     };
 
     rsx! {

@@ -92,7 +92,42 @@ pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y:
             .move_to_point(x as f32, y as f32);
 
         doc.set_focus_to(hit.node_id);
+        return;
     }
+
+    // PATCH(loki): focus moves on **mousedown**, not on click.
+    //
+    // It used to happen in `handle_click`, which the driver runs *after* the
+    // embedder's own handler — so a handler that mounted an `autofocus` element
+    // in response to the click had its focus silently taken back one step later.
+    // That is every "click a button, a menu opens" interaction there is: the
+    // menu really did receive focus, and then the trigger stole it, leaving a
+    // raised overlay whose keys all go to the button behind it.
+    //
+    // Browsers focus on mousedown for exactly this ordering reason, so this is
+    // the platform behaviour rather than a workaround for it. `handle_click`
+    // keeps the walk — it still decides where a default action applies — but no
+    // longer assigns focus.
+    focus_from_pointer(doc, target);
+}
+
+/// PATCH(loki): moves focus to the nearest focusable ancestor of a pressed
+/// node, or clears it if there is none.
+///
+/// Clicking a `tabindex="0"` container's child focuses the container, which is
+/// what makes subsequent keydowns reach it; clicking inert chrome focuses
+/// nothing, which is what makes Tab restart from the top rather than from
+/// wherever the user last clicked.
+fn focus_from_pointer(doc: &mut BaseDocument, target: usize) {
+    let mut maybe_node_id = Some(target);
+    while let Some(node_id) = maybe_node_id {
+        if doc.nodes[node_id].is_focussable() {
+            doc.set_focus_to(node_id);
+            return;
+        }
+        maybe_node_id = doc.nodes[node_id].parent;
+    }
+    doc.clear_focus();
 }
 
 pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
@@ -191,6 +226,13 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
                     let target_node = doc.get_node_mut(target_node_id).unwrap();
                     let syn_event = target_node.synthetic_click_event_data(event.mods);
                     handle_click(doc, target_node_id, &syn_event, dispatch_event);
+                    // PATCH(loki): explicit now that `handle_click` no longer
+                    // focuses. A label click focuses its bound input in every
+                    // browser, and mousedown hit the *label*, so nothing else
+                    // would move focus there.
+                    if doc.nodes[target_node_id].is_focussable() {
+                        doc.set_focus_to(target_node_id);
+                    }
                     return;
                 }
             }
@@ -256,19 +298,16 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
         }
         // el borrow released by NLL here.
 
-        // If the element has tabindex it is focusable — give it keyboard focus
-        // and stop the walk.  This mirrors browser behaviour: clicking any
-        // descendant of a tabindex="0" element moves keyboard focus to that
-        // ancestor so that subsequent keydown events reach it.
+        // A focusable ancestor ends the walk: its default action, if any, has
+        // run, and nothing above it should also act on this click.
+        //
+        // PATCH(loki): it no longer *assigns* focus — `handle_mousedown` does,
+        // before the embedder's handler runs. See `focus_from_pointer`.
         if is_focussable {
-            doc.set_focus_to(node_id);
             return;
         }
 
         // No match and not focusable.  Recurse up to parent.
         maybe_node_id = doc.nodes[node_id].parent;
     }
-
-    // If nothing matched and no focusable ancestor was found, clear focus.
-    doc.clear_focus();
 }

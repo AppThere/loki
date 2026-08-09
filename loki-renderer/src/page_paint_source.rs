@@ -16,7 +16,9 @@
 
 use std::sync::{Arc, Mutex};
 
+use crate::tile_key::TileKey;
 use anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle};
+use appthere_canvas::residency::{TextureResidency, texture_bytes};
 use vello::{AaConfig, RenderParams, Scene};
 
 use crate::doc_page_source::DocPageSource;
@@ -24,6 +26,9 @@ use crate::document_view::RendererSelection;
 
 #[path = "page_paint_render.rs"]
 mod render;
+
+#[path = "page_paint_lifecycle.rs"]
+mod lifecycle;
 
 /// Set once, when the first page tile is rendered, to attribute Vello's one-time
 /// pipeline warm-up to the open-path timing log (see the render path below).
@@ -46,86 +51,33 @@ pub(crate) struct LokiPageSource {
     wgpu_queue: Option<anyrender_vello::wgpu::Queue>,
     /// Currently registered Blitz texture handle.
     texture_handle: Option<TextureHandle>,
-    /// Document generation at which `texture_handle` was rendered.
-    texture_generation: u64,
-    /// Physical pixel dimensions `(w, h)` of `texture_handle`.
+    /// Everything `texture_handle` depends on, at the render that produced it.
+    /// `None` before the first render. See [`TileKey`] for the trigger list.
+    texture_key: Option<TileKey>,
+    /// Physical pixel dimensions `(w, h)` of `texture_handle`, kept separately
+    /// from the key because the residency counter needs them after the key has
+    /// been replaced.
     texture_size: (u32, u32),
     /// Shared cursor position written by PageTile on every Dioxus render.
     cursor_holder: Arc<Mutex<Option<RendererSelection>>>,
-    /// Cursor at last render — invalidates the reuse guard on cursor moves.
-    cursor_at_render: Option<RendererSelection>,
-}
-
-impl LokiPageSource {
-    pub(crate) fn new(
-        source: Arc<DocPageSource>,
-        page_index: usize,
-        renderer: Arc<Mutex<Option<vello::Renderer>>>,
-        cursor_holder: Arc<Mutex<Option<RendererSelection>>>,
-    ) -> Self {
-        Self {
-            source,
-            page_index,
-            renderer,
-            device: None,
-            wgpu_queue: None,
-            texture_handle: None,
-            texture_generation: 0,
-            texture_size: (0, 0),
-            cursor_holder,
-            cursor_at_render: None,
-        }
-    }
 }
 
 // ── CustomPaintSource ─────────────────────────────────────────────────────────
 
+// A trait impl cannot be split across modules, so the lifecycle half delegates
+// to inherent methods in `lifecycle`; `render` — the substantive one — stays
+// here. See `page_paint_lifecycle.rs` for why those three group together.
 impl CustomPaintSource for LokiPageSource {
     fn resume(&mut self, device_handle: &DeviceHandle) {
-        self.device = Some(device_handle.device.clone());
-        self.wgpu_queue = Some(device_handle.queue.clone());
-
-        let mut guard = self.renderer.lock().unwrap_or_else(|p| p.into_inner());
-        if guard.is_none() {
-            match crate::vello_init::create_vello_renderer(&device_handle.device) {
-                Ok(r) => *guard = Some(r),
-                Err(e) => tracing::warn!(
-                    page = self.page_index,
-                    error = %e,
-                    "LokiPageSource: vello renderer init failed",
-                ),
-            }
-        }
+        self.on_resume(device_handle);
     }
 
     fn suspend(&mut self) {
-        // Renderer intentionally not dropped on suspend — shared across all page
-        // sources; dropped when RendererState is dropped.
-        //
-        // The texture handle is cleared here without unregistering it from the
-        // renderer because suspend() has no CustomPaintCtx. That is safe for the
-        // app-level suspend path (the window renderer is recreated on resume,
-        // dropping every registered texture). Per-source teardown — a tile
-        // scrolling out of the virtualization window — instead goes through
-        // `release` below, which DOES unregister the texture; otherwise each
-        // unmounted page would leak its full-resolution texture (~10+ MB) in the
-        // renderer's registry, growing RAM without bound as the user scrolls.
-        self.device = None;
-        self.wgpu_queue = None;
-        self.texture_handle = None;
-        self.texture_generation = 0;
-        self.texture_size = (0, 0);
+        self.on_suspend();
     }
 
-    fn release(&mut self, mut ctx: CustomPaintCtx<'_>) {
-        // The tile is being unregistered while the renderer is still live, so
-        // free the GPU texture this source registered. Without this the texture
-        // outlives the source in the renderer's registry (see suspend()).
-        if let Some(handle) = self.texture_handle.take() {
-            ctx.unregister_texture(handle);
-        }
-        self.texture_generation = 0;
-        self.texture_size = (0, 0);
+    fn release(&mut self, ctx: CustomPaintCtx<'_>) {
+        self.on_release(ctx);
     }
 
     fn render(
@@ -135,16 +87,30 @@ impl CustomPaintSource for LokiPageSource {
         height: u32,
         scale: f64,
     ) -> Option<TextureHandle> {
-        let (Some(device), Some(queue)) = (self.device.as_ref(), self.wgpu_queue.as_ref()) else {
+        // R27: Blitz owns the display scale factor and this is the only place it
+        // reaches us. Recorded on the way past so the tile planner can use it on
+        // the *next* plan — see `dpr_probe` for the one-frame lag and why its
+        // direction is safe.
+        crate::dpr_probe::record(scale);
+        // Cloned rather than borrowed: `wgpu::Device`/`Queue` are handles over
+        // shared state, so this is a refcount bump, and holding them by value
+        // frees `self` for the residency bookkeeping below (which needs `&mut`).
+        let (Some(device), Some(queue)) = (self.device.clone(), self.wgpu_queue.clone()) else {
             return None;
         };
 
-        // Step 1: target physical texture dimensions. Every mounted tile renders
-        // at full resolution — the canvas's own physical pixel size — so the
-        // texture is 1:1 with what Blitz composites; virtualization bounds memory
-        // by limiting which pages mount.
-        let w_phys = width.max(1);
-        let h_phys = height.max(1);
+        // Step 1: target physical texture dimensions. A tile normally renders at
+        // the canvas's own physical pixel size, 1:1 with what Blitz composites.
+        // Under texture-budget pressure the planner asks for a *smaller*
+        // texture for off-centre pages (T2.2); it is sampled up to the same
+        // on-screen box, which is what makes the concession resolution rather
+        // than eviction.
+        let raster_permille = self.source.raster_permille(self.page_index);
+        let raster_scale = f32::from(raster_permille) / 1000.0;
+        let scale_dim =
+            |v: u32| ((f64::from(v) * f64::from(raster_scale)).round().max(1.0) as u32).max(1);
+        let w_phys = scale_dim(width.max(1));
+        let h_phys = scale_dim(height.max(1));
 
         // Step 2: read current document generation.
         let current_generation = self.source.current_generation();
@@ -154,24 +120,40 @@ impl CustomPaintSource for LokiPageSource {
             self.cursor_holder.lock().ok().and_then(|g| *g);
 
         // Step 3: reuse guard — return existing handle when nothing changed.
-        if self.texture_handle.is_some()
-            && self.texture_generation == current_generation
-            && self.texture_size == (w_phys, h_phys)
-            && self.cursor_at_render == current_sel
-        {
+        // The rule lives in `tile_key` so T2.3's triggers are testable without a
+        // wgpu device; R10's zoom case in particular could not be written while
+        // it was four `&&`s inside this callback.
+        let want = TileKey::new(
+            current_generation,
+            (w_phys, h_phys),
+            current_sel,
+            raster_scale,
+        );
+        if self.texture_handle.is_some() && self.texture_key == Some(want) {
             return self.texture_handle.clone();
         }
 
-        // Step 4: unregister stale texture before reallocating.
+        // Step 4: unregister stale texture before reallocating. Recorded before
+        // the new allocation, matching the real order: the old texture is
+        // released first, so a zoom change does not transiently double-count.
         if let Some(old) = self.texture_handle.take() {
             ctx.unregister_texture(old);
         }
+        self.record_texture_released();
 
         // Step 6: allocate new GPU texture.
-        let (texture, view) = render::allocate_page_texture(device, w_phys, h_phys);
+        let (texture, view) = render::allocate_page_texture(&device, w_phys, h_phys);
+        // Every early return between here and registration abandons that
+        // texture — it is dropped at end of scope, so the GPU memory goes but
+        // the counter would not see it, and the drift is permanent. Recorded at
+        // each such site rather than trusted to a reviewer, because the failure
+        // is invisible: residency simply reads high forever after.
+        let abandon = || TextureResidency::record_free(texture_bytes(w_phys, h_phys));
 
-        // Step 6: build Vello scene for this page.
-        let render_scale = scale as f32 * (96.0 / 72.0) * self.source.zoom();
+        // Step 6: build Vello scene for this page. The rasterisation scale
+        // multiplies in here as well as into the texture size, so a reduced
+        // tile paints the whole page smaller rather than a crop of it.
+        let render_scale = scale as f32 * (96.0 / 72.0) * self.source.zoom() * raster_scale;
 
         // Compute cursor paint data (scoped so its layout guard is dropped
         // before the second layout_for_generation call below).
@@ -196,7 +178,10 @@ impl CustomPaintSource for LokiPageSource {
 
         let paint_start = std::time::Instant::now();
         let layout_guard = self.source.layout_for_generation(current_generation);
-        let (_, layout) = layout_guard.as_ref()?;
+        let Some((_, layout)) = layout_guard.as_ref() else {
+            abandon();
+            return None;
+        };
         let mut scene = Scene::new();
         // One FontDataCache per document, shared across all page tiles via
         // DocPageSource (memory F5 / BM-9) — tiles no longer each clone the
@@ -224,7 +209,10 @@ impl CustomPaintSource for LokiPageSource {
         // AUDIT: Mutex poisoning on render — lock is held for the duration of
         // render_to_texture; poisoning here would mean the renderer is unusable.
         let mut guard = self.renderer.lock().unwrap_or_else(|p| p.into_inner());
-        let renderer = guard.as_mut()?;
+        let Some(renderer) = guard.as_mut() else {
+            abandon();
+            return None;
+        };
         let params = RenderParams {
             base_color: vello::peniko::Color::WHITE,
             width: w_phys,
@@ -235,25 +223,29 @@ impl CustomPaintSource for LokiPageSource {
             #[cfg(not(target_os = "android"))]
             antialiasing_method: AaConfig::Msaa16,
         };
-        if let Err(e) = renderer.render_to_texture(device, queue, &scene, &view, &params) {
+        if let Err(e) = renderer.render_to_texture(&device, &queue, &scene, &view, &params) {
             tracing::error!(
                 page = self.page_index,
                 error = %e,
                 "LokiPageSource: render_to_texture failed",
             );
+            abandon();
             return None;
         }
         drop(guard);
 
         // Open-path timing: the first tile rendered carries Vello's one-time
         // pipeline/shader compilation, so it dwarfs later tiles. Logged once so
-        // the GPU first-paint share of open latency is visible on-device.
+        // the first-paint share of open latency is visible on-device.
+        //
+        // `gpu_submit_ms` was `gpu_render_ms` until r55, and the old name made a
+        // claim it could not support — see `page_paint_render`'s module docs.
         if !FIRST_TILE_RENDERED.swap(true, std::sync::atomic::Ordering::Relaxed) {
             tracing::info!(
                 target: "loki_text::open",
                 page = self.page_index,
                 scene_build_ms = scene_ms,
-                gpu_render_ms = render_start.elapsed().as_secs_f64() * 1000.0,
+                gpu_submit_ms = render_start.elapsed().as_secs_f64() * 1000.0,
                 "first page tile rendered (includes Vello pipeline warm-up)",
             );
         }
@@ -261,14 +253,25 @@ impl CustomPaintSource for LokiPageSource {
         // Step 7: register with Blitz and record the reuse-guard state.
         let handle = ctx.register_texture(texture);
         self.texture_handle = Some(handle.clone());
-        self.texture_generation = current_generation;
+        self.texture_key = Some(want);
         self.texture_size = (w_phys, h_phys);
-        self.cursor_at_render = current_sel;
 
+        // Timed on **every** tile, not only the first (r54). This line fires on
+        // exactly the events in question — a page re-entering the mount window is
+        // a `rendered` line — so a screen session answers "is re-rasterisation
+        // perceptible?" for free. Both figures are CPU-side, and `gpu_submit_ms`
+        // is submission rather than completion: see `page_paint_render`'s module
+        // docs for the source read and for why completion is not measured here.
+        //
+        // The first-tile line stays separate because it carries Vello's one-time
+        // warm-up, which would overstate every later tile (L08-022, in the small).
         tracing::debug!(
             page = self.page_index,
             w = w_phys,
             h = h_phys,
+            raster_permille,
+            scene_build_ms = scene_ms,
+            gpu_submit_ms = render_start.elapsed().as_secs_f64() * 1000.0,
             "LokiPageSource: rendered",
         );
 

@@ -17,9 +17,7 @@ use super::frame::MacroDialogFrame;
 use super::{choice_button_style, MacroGrantChoice};
 use crate::tokens::colors::{COLOR_STATUS_ERROR_BORDER, COLOR_SURFACE_1, COLOR_TEXT_ON_CHROME};
 use crate::tokens::spacing::{RADIUS_SM, SPACE_1, SPACE_2};
-use crate::tokens::typography::{
-    FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_SIZE_MD, FONT_WEIGHT_SEMIBOLD,
-};
+use crate::tokens::typography::{FONT_SIZE_BODY, FONT_SIZE_MD, FONT_WEIGHT_SEMIBOLD};
 
 /// Props for [`AtNetworkPrompt`]. All display strings are props; the parent maps
 /// the emitted [`MacroGrantChoice`] to a `GrantScope` (clamping to session-max).
@@ -79,10 +77,10 @@ pub fn AtNetworkPrompt(props: AtNetworkPromptProps) -> Element {
             // look-alike host is legible and can't blend into the body copy.
             div {
                 style: format!(
-                    "font-family: {ui}; font-size: {fs}px; color: {fg}; \
+                    "font-size: {fs}px; color: {fg}; \
                      background: {bg}; padding: {py}px {px}px; border-radius: {r}px; \
                      word-break: break-all;",
-                    ui = FONT_FAMILY_UI, fs = FONT_SIZE_BODY, fg = COLOR_TEXT_ON_CHROME,
+                    fs = FONT_SIZE_BODY, fg = COLOR_TEXT_ON_CHROME,
                     bg = COLOR_SURFACE_1, py = SPACE_1, px = SPACE_2, r = RADIUS_SM,
                 ),
                 {props.origin.clone()}

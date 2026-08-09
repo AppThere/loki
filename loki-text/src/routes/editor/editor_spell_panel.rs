@@ -2,12 +2,47 @@
 
 //! Floating spelling-suggestions menu (the right-click context menu).
 //!
-//! Rendered as a `position: absolute` element anchored at the cursor — verified
-//! to work in the current Blitz stack (Stylo + stylo_taffy + Taffy 0.9). A
-//! full-size transparent backdrop sits behind it so a click anywhere outside
-//! dismisses the menu. The editor root is `position: relative`, so the menu's
-//! containing block is the editor area and the click's window-relative
-//! coordinates place it at the cursor.
+//! **This file renders the menu's *contents*. It does not place them and it owns
+//! no backdrop** — both are `AtPopoverHost`'s at the app root, since r63/r64.
+//! `editor_spell_popover` hands the host a request built by `editor_spell_place`;
+//! what is left here is the rows.
+//!
+//! # The three defects this file used to have are closed (r63) — kept as history
+//!
+//! The header below described them as **live in the shipping app** until r73,
+//! ten commits after the migration that closed them. That is worth recording
+//! rather than deleting: the correction went into `editor_spell_place`'s status
+//! section and into a comment sixty lines further down *this* file, while the
+//! module header — the thing a reader opens when they look up the spelling menu —
+//! kept the pre-migration account. Right content, wrong place, which is L08-053
+//! and the reason this audit exists.
+//!
+//! What they were, and what closed each:
+//!
+//! 1. **No bottom-edge collision.** Placement was a horizontal clamp with
+//!    viewport *height* not even a parameter; a menu opened near the bottom ran
+//!    298px of its 320px below the fold. `popover::place` flips.
+//! 2. **Clipped by its own containing block.** The editor root carries
+//!    `position: relative` **and `overflow: hidden`**, and an out-of-flow child
+//!    is clipped by an ancestor's overflow — so the overflow in (1) was *cut*,
+//!    not merely off-screen, and no `z-index` would have helped. The host is a
+//!    child of the app root, outside every clipping ancestor.
+//! 3. **Displaced ~41px downward by the shell chrome.** The anchor is
+//!    `client_x/client_y`, window-relative in this stack (see "Documented stack
+//!    deviations" in `docs/patches.md`), but it was used as `top`/`left` against
+//!    the **editor root**, which sits below `AtTabBar` (40px + 1px border). The
+//!    host's containing block is the app root, whose padding box starts at the
+//!    window origin, so the two spaces now agree.
+//!
+//!    That third one is the one that would have survived a screen session — a
+//!    context menu appearing just under the cursor looks like ordinary
+//!    behaviour. It is why `spell_menu_anchor` is a tested function rather than
+//!    two field reads.
+//!
+//! **Not established by any of this:** that the menu lands on the word on a real
+//! screen. The arithmetic and the absence of a scroll term in our path are
+//! tested; the platform half is the scroll-drift sitting, whose procedure and
+//! three readings are in `editor_spell_place`.
 
 use std::sync::{Arc, Mutex};
 
@@ -21,12 +56,10 @@ use crate::routes::editor::editor_spell::{
     SpellMenu, SpellSync, add_to_dictionary, ignore_word, replace_word,
 };
 
-/// Width of the floating menu in CSS pixels.
-const MENU_WIDTH_PX: f32 = 300.0;
-/// Maximum height before the menu scrolls.
-const MENU_MAX_HEIGHT_PX: f32 = 320.0;
-/// Gap kept between the menu and the viewport's right edge when clamping.
-const EDGE_MARGIN_PX: f32 = 8.0;
+// The width, max height and edge margin now live only in `editor_spell_place`,
+// which is where they belong: the host sizes the container from the resolved
+// placement, so a constant used here as well would be a second opinion about the
+// same measurement.
 
 /// Renders the floating suggestions menu when `spell_menu` is `Some`.
 ///
@@ -34,52 +67,41 @@ const EDGE_MARGIN_PX: f32 = 8.0;
 /// Blitz dispatches no `mouseenter`/`mouseleave` (and no CSS `:hover`), so hover
 /// is tracked from `onmousemove` on each row — entering a row sets its key,
 /// moving over the backdrop clears it — and applied as an inline background.
-pub(super) fn spelling_panel(
+/// The menu's **content**, with no position of its own (Spec 08 T4.1, r63).
+///
+/// # What left this function, and why that is the migration
+///
+/// It used to place itself — a horizontal clamp against the editor's measured
+/// width, `anchor_y.max(0.0)` vertically, and a backdrop at `z-index: 1000`. All
+/// three of the defects recorded above lived in those four lines. Placement is
+/// now `editor_spell_place` → `popover::place`, resolved once by
+/// `AtPopoverContext::open_resolved` and rendered by `AtPopoverHost` at the app
+/// root, which is outside every clipping ancestor and in the same coordinate
+/// space as the click.
+///
+/// So this builds rows and nothing else. It is **invoked by the host during the
+/// host's render** (see `PopoverRequest::content`), which is what keeps the row
+/// highlight live: reading `spell_hover` here subscribes the host, so a pointer
+/// move re-renders the menu.
+pub(super) fn spell_menu_content(
     doc_state: Arc<Mutex<DocumentState>>,
     sync: SpellSync,
     service: SpellService,
     mut spell_menu: Signal<Option<SpellMenu>>,
     mut is_language_panel_open: Signal<bool>,
-    viewport_width: f32,
     spell_hover: Signal<Option<String>>,
 ) -> Element {
     let Some(menu) = spell_menu.read().clone() else {
         return rsx! {};
     };
 
-    // Clamp horizontally so the menu never spills off the measured viewport's
-    // right edge.
-    let max_left = (viewport_width - MENU_WIDTH_PX - EDGE_MARGIN_PX).max(0.0);
-    let left = menu.anchor_x.clamp(0.0, max_left);
-    let top = menu.anchor_y.max(0.0);
-
     rsx! {
-        // Backdrop: a transparent full-area layer that dismisses on click.
-        // Moving over it (i.e. off any row) clears the hover highlight, since
-        // Blitz delivers no `mouseleave`.
-        div {
-            style: "position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000;",
-            onclick: move |_| { spell_menu.set(None); },
-            onmousemove: {
-                let mut spell_hover = spell_hover;
-                move |_| {
-                    if spell_hover.peek().is_some() {
-                        spell_hover.set(None);
-                    }
-                }
-            },
-        }
-
-        // The menu itself, anchored at the cursor.
         div {
             style: format!(
-                "position: absolute; left: {left}px; top: {top}px; z-index: 1001; \
-                 width: {w}px; max-height: {mh}px; box-sizing: border-box; \
+                "width: 100%; box-sizing: border-box; \
                  display: flex; flex-direction: column; \
                  background: {bg}; border: 1px solid {border}; border-radius: 6px; \
-                 overflow-y: auto; overflow-x: hidden; padding: {pad}px;",
-                w = MENU_WIDTH_PX,
-                mh = MENU_MAX_HEIGHT_PX,
+                 overflow-x: hidden; padding: {pad}px;",
                 bg = tokens::COLOR_SURFACE_1,
                 border = tokens::COLOR_BORDER_CHROME,
                 pad = tokens::SPACE_2,
@@ -94,8 +116,7 @@ pub(super) fn spelling_panel(
                 ),
                 span {
                     style: format!(
-                        "font-family: {ff}; font-size: {size}px; color: {fg}; font-weight: 600;",
-                        ff = tokens::FONT_FAMILY_UI,
+                        "font-size: {size}px; color: {fg}; font-weight: 600;",
                         size = tokens::FONT_SIZE_LABEL,
                         fg = tokens::COLOR_TEXT_ON_CHROME,
                     ),
@@ -211,12 +232,11 @@ fn menu_item_style(hovered: bool) -> String {
     format!(
         "display: block; width: 100%; text-align: left; \
          padding: {p}px {p2}px; background: {bg}; border: none; \
-         border-radius: 4px; color: {fg}; font-family: {ff}; \
+         border-radius: 4px; color: {fg}; \
          font-size: {size}px; cursor: pointer;",
         p = tokens::SPACE_1,
         p2 = tokens::SPACE_2,
         fg = tokens::COLOR_TEXT_ON_CHROME,
-        ff = tokens::FONT_FAMILY_UI,
         size = tokens::FONT_SIZE_LABEL,
     )
 }
@@ -242,8 +262,7 @@ fn hover_setter(
 
 fn muted_text_style() -> String {
     format!(
-        "font-family: {ff}; font-size: {size}px; color: {fg}; padding: {p}px {p2}px;",
-        ff = tokens::FONT_FAMILY_UI,
+        "font-size: {size}px; color: {fg}; padding: {p}px {p2}px;",
         size = tokens::FONT_SIZE_LABEL,
         fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
         p = tokens::SPACE_1,

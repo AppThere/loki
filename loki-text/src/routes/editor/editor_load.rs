@@ -59,7 +59,18 @@ pub(super) fn load_document(path: String) -> Result<Document, LoadError> {
     // Untitled paths encode how to build their initial content (blank, a bundled
     // template, or an imported external file) — see `loki_app_shell::untitled`.
     let mut doc = match new_document::parse_new_doc_source(&path) {
-        Some(NewDocSource::Blank) => Document::new_blank(),
+        Some(NewDocSource::Blank) => {
+            // T6.3/D-07: the app-scoped defaults seed a *new* document only.
+            // The other three arms carry geometry that belongs to whoever made
+            // the template or the file; re-seeding those would reformat other
+            // people's documents to this reader's preferences.
+            let mut blank = Document::new_blank();
+            super::editor_defaults::apply_document_defaults(
+                &mut blank,
+                &loki_app_shell::document_defaults::DocumentDefaults::load(),
+            );
+            blank
+        }
         Some(NewDocSource::Template(id)) => build_template(&id)?,
         Some(NewDocSource::Import(token)) => import_token(&token)?,
         None => import_token(&path)?, // real file path

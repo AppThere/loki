@@ -9,10 +9,18 @@ keywords = ["document", "shell", "loki"]
 categories = ["gui"]
 
 [dependencies]
+appthere-ui = { path = "../appthere-ui" }
 loki-i18n = { path = "../loki-i18n" }
+# Document-default geometry is stored as typed lengths + the measurement unit
+# (T6.3/T6.4); `loki-primitives` is the crate that owns both and pulls nothing
+# heavy, so the settings store holds the real types rather than stringly copies.
+loki-primitives = { path = "../loki-primitives", features = ["serde"] }
 loki-spell = { path = "../loki-spell" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# A failed calibration save is worth reporting: the reader will be asked to
+# measure their screen again, and a silent discard makes that look like a bug.
+tracing = "0.1"
 dirs = "6"
 # OS locale detection for picking the user's initial dictionary.
 sys-locale = "0.3"
@@ -27,3 +35,10 @@ reqwest = { version = "0.12", default-features = false, features = [
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+# X11/RandR physical-display query for Actual Size (Spec 08 T5.5). Already in
+# the lockfile — winit's own X11 backend uses it — so this is a manifest line
+# and no new transitive weight, which is the same measurement that chose
+# `sysinfo` over an `unsafe_code` exception for the memory probe.
+[target.'cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))'.dependencies]
+x11rb = { version = "0.13", default-features = false, features = ["randr"] }

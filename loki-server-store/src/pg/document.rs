@@ -125,6 +125,12 @@ impl DocumentStore for PgStores {
 
     async fn shred_dek(&self, id: DocumentId) -> Result<(), StoreError> {
         // Destroy every wrapped copy atomically (ADR-C020 crypto-shredding).
+        // NOTE: this shreds content only at **Tier 2**, where content is
+        // client-encrypted ciphertext the server cannot open. At Tier 0/1 the
+        // server stores plaintext (by design, ADR-C014) and the DEK never sealed
+        // it, so nulling the wrapped DEK does NOT render Tier-0/1 content
+        // unrecoverable — Tier-0/1 erasure is `delete_document` (row/oplog/blob
+        // deletion), not this. See ADR-C020's per-tier erasure model.
         let mut tx = self.pool().begin().await?;
         let result = sqlx::query("UPDATE doc_meta SET dek_wrapped = NULL WHERE id = $1")
             .bind(id.as_uuid())

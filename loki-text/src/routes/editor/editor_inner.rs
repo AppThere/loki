@@ -21,7 +21,7 @@
 
 use std::sync::Arc;
 
-use appthere_ui::{AtRibbon, AtStatusBar, tokens, use_breakpoint};
+use appthere_ui::{AtRibbon, tokens, use_breakpoint, use_device_profile, use_viewport_controller};
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_doc_model::get_mark_at;
@@ -45,6 +45,7 @@ use super::editor_ribbon::write_tab_content;
 use super::editor_ribbon_insert::insert_tab_content;
 use super::editor_ribbon_publish::publish_tab_content;
 use super::editor_save_banner::save_banner;
+use super::editor_seed_publish::{SeedTargets, publish_seed_and_mirror};
 use super::editor_spell::SpellMenu;
 use super::editor_state::{EditorState, StyleDraft, use_editor_state};
 use super::editor_style::style_picker_panel;
@@ -68,13 +69,19 @@ pub(super) fn EditorInner(path: String) -> Element {
     // ── Font-substitution detail panel open state ────────────────────────────
     // Closed by default; the status-bar chip (shown whenever substitutions
     // exist) toggles it.
-    let mut font_panel_open = use_signal(|| false);
+    let font_panel_open = use_signal(|| false);
+    // Raised by Actual Size on a display whose density is not yet known.
+    let calibrating = use_signal(|| false);
 
     // ── Ribbon collapse state ────────────────────────────────────────────────
     let mut ribbon_collapsed = use_signal(|| false);
 
     // ── Style search query (cleared on picker close) ─────────────────────────
     let style_search_query = use_signal(String::new);
+    // Bumped when an app-scoped setting is written (T6.3/T6.4). Those live in a
+    // file rather than in reactive state, so the style panel — which re-reads
+    // them each render — needs something to re-render on.
+    let settings_generation = use_signal(|| 0u64);
 
     let EditorState {
         doc_state,
@@ -90,8 +97,8 @@ pub(super) fn EditorInner(path: String) -> Element {
         hbar_drag,
         current_page,
         mut total_pages,
-        mut view_mode,
-        mut view_mode_user_set,
+        view_mode,
+        view_mode_user_set,
         mut bold_active,
         mut italic_active,
         mut underline_active,
@@ -104,7 +111,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         can_redo,
         is_style_picker_open,
         editing_style_draft,
-        mut zoom_percent,
+        zoom_percent,
         is_dirty,
         save_message,
         save_request,
@@ -143,7 +150,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
     let doc_sessions = use_context::<Signal<DocSessions>>();
     // "Clean" generation (matches disk), captured at load/save; tab is dirty when live gen differs.
-    let mut baseline_gen = use_signal(|| 0_u64);
+    let baseline_gen = use_signal(|| 0_u64);
 
     // The per-document signals reset or restored on tab switch, bundled for the
     // three handover sites below (every field is a `Copy` signal).
@@ -245,6 +252,8 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_docked = Arc::clone(&doc_state);
     let doc_state_style_picker = Arc::clone(&doc_state);
     let doc_state_style_editor = Arc::clone(&doc_state);
+    let doc_state_zoom = Arc::clone(&doc_state);
+    let doc_state_cap = Arc::clone(&doc_state);
     let doc_state_spell_ctx = Arc::clone(&doc_state);
     let doc_state_seed = Arc::clone(&doc_state);
     let doc_state_render = Arc::clone(&doc_state);
@@ -315,10 +324,12 @@ pub(super) fn EditorInner(path: String) -> Element {
                     return;
                 }
 
-                // Seed the layout so hit-testing works on the very first click,
-                // before any Loro mutation triggers apply_mutation_and_relayout.
-                let page_count =
-                    crate::editing::state::publish_seed_layout(&doc_state_seed, &doc, layout);
+                // Seed, mirror (I-10) and clean baseline together — see its docs.
+                let targets = SeedTargets {
+                    cursor_state,
+                    baseline_gen,
+                };
+                let page_count = publish_seed_and_mirror(&doc_state_seed, &doc, layout, targets);
 
                 match document_to_loro(&doc) {
                     Ok(l_doc) => {
@@ -330,10 +341,6 @@ pub(super) fn EditorInner(path: String) -> Element {
                         saved_state.set(tracker);
                         loro_doc.set(Some(l_doc));
                         undo_manager.set(Some(um));
-
-                        // The freshly-loaded document matches the file on disk:
-                        // record the current generation as the clean baseline.
-                        baseline_gen.set(cursor_state.peek().document_generation);
 
                         // Auto-place the cursor at the start of the document so
                         // the user can type immediately without clicking first.
@@ -521,6 +528,20 @@ pub(super) fn EditorInner(path: String) -> Element {
         )
     };
 
+    // ── Zoom measurements (Spec 08 T5.4 / T5.5) ───────────────────────────
+    // Read here because this is where the layout state and the measured canvas
+    // both are; each returns `None` until its input is real, so a fit or a cap
+    // is never computed from a placeholder. See `editor_zoom`.
+    let zoom_fit_inputs = move || super::editor_zoom::fit_inputs(&doc_state_zoom, scroll_metrics());
+    let display_ppi = move || use_device_profile().display.and_then(|d| d.css_px_per_inch);
+    let zoom_cap_permille = move || super::editor_zoom::capability_permille(&doc_state_cap);
+    // The one way the zoom changes, so anchoring cannot be forgotten at one of
+    // the six call sites (Spec 08 T5.6).
+    let zoom_command = super::editor_zoom::ZoomCommand::new(
+        zoom_percent,
+        use_viewport_controller(scroll_metrics, canvas_mounted),
+    );
+
     // Font substitutions reported by the layout engine (requested → substitute):
     // the status-bar chip is the indicator; the detail panel opens from it.
     let font_substitutions = super::editor_fonts::font_substitutions(&doc_state);
@@ -529,12 +550,12 @@ pub(super) fn EditorInner(path: String) -> Element {
     rsx! {
         div {
             style: format!(
-                // `position: relative` establishes the containing block for the
-                // floating spelling menu (an absolutely-positioned child).
+                // `position: relative`, and NO `z-index` — so no stacking
+                // context. The spelling menu left for `AtPopoverHost` in r63; the
+                // comment that named it as a child here outlived it by a commit.
                 "display: flex; flex-direction: column; flex: 1; position: relative; \
-                 overflow: hidden; background: {bg}; font-family: {ff};",
+                 overflow: hidden; background: {bg}; ",
                 bg = tokens::COLOR_SURFACE_BASE,
-                ff = tokens::FONT_FAMILY_UI,
             ),
 
             // ── Scrollable page canvas ────────────────────────────────────────
@@ -571,6 +592,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 spell_menu,
                 doc_state_spell_ctx,
                 zoom_percent,
+                zoom_command,
                 macro_run_request,
             )}
 
@@ -639,6 +661,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                         can_undo,
                         can_redo,
                         save_message,
+                        settings_generation,
                     },
                 )}
             }
@@ -648,6 +671,7 @@ pub(super) fn EditorInner(path: String) -> Element {
             // in flow; the spelling menu uses position: absolute (confirmed).
             {docked_panels(
                 doc_state_docked,
+                scroll_offset,
                 DockedSync {
                     loro_doc,
                     cursor_state,
@@ -660,7 +684,6 @@ pub(super) fn EditorInner(path: String) -> Element {
                 is_language_panel_open,
                 language_status,
                 spell_hover,
-                scroll_metrics().client_width,
                 link_draft,
             )}
 
@@ -746,55 +769,30 @@ pub(super) fn EditorInner(path: String) -> Element {
             }
 
             // ── Status bar ────────────────────────────────────────────────────
-            AtStatusBar {
+            // Extracted to `editor_status_bar` when the zoom badge became the
+            // zoom control (Spec 08 T5.4): its props roughly doubled, and this
+            // file is baselined over the ceiling and may not grow.
+            super::editor_status_bar::EditorStatusBar {
                 page_label:         page_label,
                 word_count_label:   word_count_label(),
-                language_label:     fl!("editor-language"),
-                zoom_percent:       zoom_percent(),
-                collaborator_count: 0,
-                collaborator_label: String::new(),
-                zoom_aria_label:    fl!("editor-zoom-aria"),
-                on_zoom_click:      move |_| {
-                    let next = appthere_ui::next_zoom(*zoom_percent.peek());
-                    zoom_percent.set(next);
-                },
-                view_mode_label:    if view_mode() == ViewMode::Reflow {
-                    fl!("editor-view-reflowed")
-                } else {
-                    fl!("editor-view-paginated")
-                },
-                view_mode_aria_label: fl!("editor-view-toggle-aria"),
-                on_view_mode_click: move |_| {
-                    // User override freezes the width-based default.
-                    view_mode_user_set.set(true);
-                    let next = if *view_mode.peek() == ViewMode::Reflow {
-                        ViewMode::Paginated
-                    } else {
-                        ViewMode::Reflow
-                    };
-                    view_mode.set(next);
-                },
-                // Font-substitution indicator (Spec 03 M3, inverted): the chip
-                // is the always-on signal that fonts were substituted; clicking
-                // it toggles the detail panel above the ribbon.
-                notice_label: if font_sub_count > 0 {
-                    fl!("editor-font-substitution-chip", count = font_sub_count)
-                } else {
-                    String::new()
-                },
-                notice_aria_label: fl!("editor-font-substitution-title"),
-                on_notice_click:    move |_| {
-                    let v = *font_panel_open.peek();
-                    font_panel_open.set(!v);
-                },
-                // Transient success chip ("Document saved", …). Auto-clears
-                // (use_save_status_autoclear) and clears on dirty; click = dismiss.
-                status_note_label: super::editor_save_banner::save_status_chip_label(save_message),
-                on_status_note_click: {
-                    let mut save_message = save_message;
-                    move |_| save_message.set(None)
-                },
+                font_sub_count:     font_sub_count,
+                fit_inputs:         zoom_fit_inputs(),
+                css_px_per_inch:    display_ppi(),
+                zoom_capability_limit_permille: zoom_cap_permille(),
+                zoom:               zoom_command,
+                view_mode:          view_mode,
+                view_mode_user_set: view_mode_user_set,
+                font_panel_open:    font_panel_open,
+                save_message:       save_message,
+                calibrating:        calibrating,
             }
+
+            // Display calibration (Spec 08 T5.5 / D-04). Mounted at a boundary
+            // as a component, per ADR-0013 — it owns hook scope of its own and
+            // must not be a function called inside an `if`.
+            {calibrating().then(|| rsx! {
+                super::editor_calibrate::EditorCalibrate { open: calibrating, zoom: zoom_command }
+            })}
         }
     }
 }

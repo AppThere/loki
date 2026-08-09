@@ -45,6 +45,15 @@ pub fn AtRibbonIconButton(
     is_disabled: bool,
     /// Callback when the button is clicked or tapped.
     on_click: EventHandler<()>,
+    /// Reports this button's mounted handle, once.
+    ///
+    /// Every popover trigger needs one — the host restores focus to it on
+    /// dismissal, and the placement needs its rect — and until I-28's migration
+    /// this component had no way to give it, so the one trigger in the crate
+    /// that needed it was a raw `button` element instead. Optional because most
+    /// ribbon buttons open nothing.
+    #[props(default)]
+    on_mounted: Option<EventHandler<MountedEvent>>,
     /// Icon content to render inside the button (typically an [`AtIcon`]).
     children: Element,
 ) -> Element {
@@ -85,6 +94,11 @@ pub fn AtRibbonIconButton(
             title:        aria_label.clone(),
             aria_pressed: if is_active { "true" } else { "false" },
             disabled:     is_disabled,
+            onmounted: move |e: MountedEvent| {
+                if let Some(cb) = on_mounted {
+                    cb.call(e);
+                }
+            },
             onmouseenter: move |_| hovered.set(true),
             onmouseleave: move |_| hovered.set(false),
             onclick: move |_| {

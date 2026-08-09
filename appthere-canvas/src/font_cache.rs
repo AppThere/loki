@@ -47,14 +47,13 @@ impl FontDataCache {
     pub fn get_coords(&mut self, data: &Arc<Vec<u8>>, font_index: u32) -> &[i16] {
         let key = (Arc::as_ptr(data) as usize, font_index);
         self.coords.entry(key).or_insert_with(|| {
-            if let Ok(font_ref) = read_fonts::FontRef::from_index(data, font_index) {
-                use read_fonts::TableProvider;
-                if let Ok(fvar) = font_ref.fvar() {
-                    if let Ok(axes) = fvar.axes() {
-                        // Default (all-zero) normalized position on every axis.
-                        return vec![0i16; axes.len()];
-                    }
-                }
+            use read_fonts::TableProvider;
+            if let Ok(font_ref) = read_fonts::FontRef::from_index(data, font_index)
+                && let Ok(fvar) = font_ref.fvar()
+                && let Ok(axes) = fvar.axes()
+            {
+                // Default (all-zero) normalized position on every axis.
+                return vec![0i16; axes.len()];
             }
             vec![]
         })

@@ -16,7 +16,7 @@ use crate::tokens::spacing::{
     ICON_SIZE_LG, RADIUS_SM, SPACE_1, SPACE_10, SPACE_2, SPACE_3, TOUCH_MIN,
 };
 use crate::tokens::typography::{
-    FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_BOLD, FONT_WEIGHT_SEMIBOLD,
+    FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_BOLD, FONT_WEIGHT_SEMIBOLD,
 };
 
 // ── AtTitleBar ────────────────────────────────────────────────────────────────
@@ -82,15 +82,13 @@ pub fn AtTitleBar(props: AtTitleBarProps) -> Element {
                 "height: {h}px; min-height: {h}px; background: {bg}; \
                  border-bottom: 1px solid {border}; \
                  display: flex; align-items: center; \
-                 padding: 0 {pr}px 0 {pl}px; flex-shrink: 0; gap: {gap}px; \
-                 font-family: {font};",
+                 padding: 0 {pr}px 0 {pl}px; flex-shrink: 0; gap: {gap}px;",
                 h      = bar_height,
                 bg     = palette.surface_chrome,
                 border = palette.border_chrome,
                 pr     = SPACE_3,
                 pl     = left_pad,
                 gap    = SPACE_2,
-                font   = FONT_FAMILY_UI,
             ),
 
             // ── App icon button ───────────────────────────────────────────────
@@ -211,12 +209,11 @@ fn TitleEditField(title: String, on_rename: EventHandler<String>) -> Element {
             style: format!(
                 "flex: 1; font-size: {size}px; font-weight: {weight}; \
                  color: {fg}; text-align: center; overflow: hidden; \
-                 background: transparent; border: none; font-family: {font}; \
+                 background: transparent; border: none; \
                  min-height: {touch}px;",
                 size   = FONT_SIZE_BODY,
                 weight = FONT_WEIGHT_SEMIBOLD,
                 fg     = palette.text_on_chrome,
-                font   = FONT_FAMILY_UI,
                 touch  = TOUCH_MIN,
             ),
             oninput: move |evt| draft.set(evt.value()),

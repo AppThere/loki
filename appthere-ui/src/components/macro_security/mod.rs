@@ -25,7 +25,7 @@ pub use trust::{AtMacroTrustDialog, AtMacroTrustDialogProps};
 
 use crate::tokens::colors::{COLOR_MACRO_BADGE, COLOR_SURFACE_3, COLOR_TEXT_ON_CHROME};
 use crate::tokens::spacing::{RADIUS_SM, SPACE_2, SPACE_3, TOUCH_MIN};
-use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_WEIGHT_SEMIBOLD};
+use crate::tokens::typography::{FONT_SIZE_BODY, FONT_WEIGHT_SEMIBOLD};
 
 /// The user's answer to the enable dialog (spec §2.3). The hosting app maps this
 /// onto the matching `MacroService` call.
@@ -69,7 +69,7 @@ pub(crate) fn choice_button_style(accented: bool) -> String {
         "width: 100%; min-height: {th}px; box-sizing: border-box; \
          padding: {py}px {px}px; border-radius: {r}px; \
          background: transparent; border: 1px solid {border}; \
-         color: {fg}; font-family: {font}; font-size: {fs}px; \
+         color: {fg}; font-size: {fs}px; \
          font-weight: {fw}; cursor: pointer; text-align: center; \
          display: flex; align-items: center; justify-content: center;",
         th = TOUCH_MIN,
@@ -78,7 +78,6 @@ pub(crate) fn choice_button_style(accented: bool) -> String {
         r = RADIUS_SM,
         border = border,
         fg = COLOR_TEXT_ON_CHROME,
-        font = FONT_FAMILY_UI,
         fs = FONT_SIZE_BODY,
         fw = FONT_WEIGHT_SEMIBOLD,
     )

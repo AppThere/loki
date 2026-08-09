@@ -45,3 +45,4 @@ vendor/
 # Python bytecode cache (from scripts/*.py gate helpers)
 __pycache__/
 *.pyc
+.claude/settings.local.json

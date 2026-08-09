@@ -17,76 +17,27 @@
 //! The `incremental == full` property test in `incremental_tests.rs` is the
 //! correctness gate.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use loki_doc_model::document::Document;
-use loki_doc_model::style::list_style::ListId;
 
 use crate::LayoutOptions;
 use crate::font::FontResources;
 use crate::result::{LayoutPage, PaginatedLayout};
 
 #[path = "incremental_diff.rs"]
-mod diff;
+pub mod diff;
 use diff::{blocks_equal_from, common_prefix_len, common_suffix_len, section_page_start};
 #[path = "incremental_notes.rs"]
 mod notes;
 use notes::block_has_note;
+
+#[path = "incremental_types.rs"]
+mod types;
+
 pub use notes::document_has_notes;
-
-/// Resumable flow state captured at a clean page top.
-///
-/// At a clean page top the content cursor is 0 and the item/paragraph
-/// accumulators are empty, so the only state that carries forward is the page
-/// number, the list counters, and the note counter. Equality of two checkpoints
-/// (plus equal trailing blocks) means the pages they produce are identical —
-/// this is what licenses suffix reuse.
-#[derive(Debug, Clone, PartialEq)]
-pub struct FlowCheckpoint {
-    /// 1-indexed page number the resumed page will carry.
-    pub(crate) page_number: usize,
-    /// Per-list counter arrays (see `flow::FlowState::list_counters`).
-    pub(crate) list_counters: HashMap<ListId, [u32; 9]>,
-    /// Most recently placed list id (drives new-list counter resets).
-    pub(crate) prev_list_id: Option<ListId>,
-    /// Section-wide footnote/endnote counter.
-    pub(crate) note_counter: u32,
-    /// Accumulated horizontal indent (0 at the top level; kept for completeness).
-    pub(crate) current_indent: f32,
-}
-
-/// A clean-page-top checkpoint: which page started, in which section, at which
-/// (section-local) block, and the [`FlowCheckpoint`] needed to resume there.
-#[derive(Debug, Clone)]
-pub struct PageStart {
-    /// Index into `PaginatedLayout::pages` (document-global) of the page here.
-    pub page_index: usize,
-    /// Index of the document section this page belongs to.
-    pub section_index: usize,
-    /// Index of the top-level block within its section that this page begins.
-    pub block_index: usize,
-    /// Resumable flow state at this page top (page number is section-local).
-    pub(crate) checkpoint: FlowCheckpoint,
-}
-
-/// Pages produced by resuming a paginated flow; see [`crate::flow::flow_section_resume`].
-pub(crate) struct ResumedFlow {
-    pub(crate) pages: Vec<LayoutPage>,
-    pub(crate) checkpoints: Vec<PageStart>,
-}
-
-/// Reuse metadata produced alongside a full paginated layout, stored by the
-/// editor so the next edit can attempt [`relayout_paginated_incremental`].
-#[derive(Debug, Clone)]
-pub struct PaginatedReuse {
-    /// Clean-page-top checkpoints across all sections, in increasing page order.
-    pub checkpoints: Vec<PageStart>,
-    /// Whether the document contains any footnote/endnote. Footnotes render at
-    /// section end, so a content change can renumber/repaginate the tail —
-    /// incremental reuse is disabled when this is set.
-    pub has_footnotes: bool,
-}
+pub(crate) use types::ResumedFlow;
+pub use types::{FlowCheckpoint, PageStart, PaginatedReuse};
 
 /// Attempts an incremental paginated relayout of `doc` given the previous
 /// document, its layout, and its [`PaginatedReuse`] metadata.
@@ -127,7 +78,7 @@ pub fn relayout_paginated_incremental(
     }
     let Some(sc) = changed else {
         // Nothing changed — reuse the previous layout verbatim.
-        return Some((prev_layout.clone(), prev_reuse.clone()));
+        return Some((prev_layout.clone(), reuse_verbatim(prev_reuse)));
     };
 
     // Multi-column sections are column-balanced by the full flow, not the resume
@@ -149,7 +100,7 @@ pub fn relayout_paginated_incremental(
     if c == old_blocks.len() && c == new_blocks.len() {
         // Blocks are identical (the section differed only in non-block data);
         // the layout is unchanged, so reuse it verbatim.
-        return Some((prev_layout.clone(), prev_reuse.clone()));
+        return Some((prev_layout.clone(), reuse_verbatim(prev_reuse)));
     }
     let suffix = common_suffix_len(old_blocks, new_blocks, c);
     // A footnote introduced anywhere in the changed region disables reuse (the
@@ -214,6 +165,7 @@ pub fn relayout_paginated_incremental(
     // Re-flowed ("middle") pages carry section-local numbers from the resumed
     // flow; lift them to document-global by the section's page start (0 for a
     // single-section document). Reused pages keep their numbers — no `make_mut`.
+    let reflowed_pages = resumed.pages.len();
     let mut middle = resumed.pages;
     for page in &mut middle {
         page.page_number += sc_start;
@@ -262,13 +214,20 @@ pub fn relayout_paginated_incremental(
     {
         return None;
     }
+    // `middle` starts at the prefix boundary, which is only the section's first
+    // page when the edit landed on it — so the section's first page number comes
+    // from the checkpoint that defines it. `sc_start` is a 0-based page index
+    // and `page_number` is 1-indexed.
     crate::flow::assign_headers_footers(
         &mut middle,
         &doc.sections[sc].layout,
         resources,
         &doc.styles,
         display_scale,
-        new_total as u32,
+        crate::flow::PagePosition {
+            section_first_page: sc_start + 1,
+            total_page_count: new_total as u32,
+        },
     );
 
     // ── Assemble: reused prefix (Arc bump) + fresh middle + reused suffix ──
@@ -287,8 +246,19 @@ pub fn relayout_paginated_incremental(
         PaginatedReuse {
             checkpoints: new_checkpoints,
             has_footnotes: false,
+            reflowed_pages,
         },
     ))
+}
+
+/// Clones `prev` for a verbatim reuse, resetting the re-flow count to zero —
+/// carrying the previous run's figure forward would report work this pass did not
+/// do, which is the reading the counter exists to prevent.
+fn reuse_verbatim(prev: &PaginatedReuse) -> PaginatedReuse {
+    PaginatedReuse {
+        reflowed_pages: 0,
+        ..prev.clone()
+    }
 }
 
 #[cfg(test)]

@@ -24,6 +24,7 @@
 //! [`crate::render_layout`].  Switching modes invalidates the cache and
 //! advances the generation so every tile re-renders.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -31,6 +32,7 @@ use loki_doc_model::document::Document;
 use loki_layout::{DocumentLayout, FontResources, LayoutMode, LayoutOptions, PaginatedLayout};
 use loki_vello::FontDataCache;
 
+use crate::render_layout::reflow_tile_width_for_content_pt as tile_for;
 use crate::render_layout::{MIN_REFLOW_CONTENT_PT, REFLOW_PADDING_PT, RenderLayout, RenderMode};
 
 // ── A4 page size at 96 dpi ────────────────────────────────────────────────────
@@ -82,7 +84,33 @@ pub struct DocPageSource {
     /// tile CSS size and the paint transform together, leaving the layout —
     /// which stays in points — untouched. Reflow keeps 1.0 (its "zoom" is the
     /// layout width). See `DocumentView` / `LokiPageSource::render`.
-    zoom: Mutex<f32>,
+    /// Holds the **requested** zoom, not the rendered one — see
+    /// `DocPageSource::set_zoom`. Read it through `requested_zoom()` /
+    /// `zoom()` rather than directly, so the capability cap cannot be bypassed.
+    pub(crate) zoom: Mutex<f32>,
+    /// Capability cap on rendered zoom, in thousandths, **and the inputs it was
+    /// computed from**; `None` in the second position is uncapped.
+    ///
+    /// Separate from `zoom` so a cap never overwrites intent: what a device can
+    /// serve varies with memory, page area and display scale, and a clamp that
+    /// stored its result would make a temporary constraint permanent.
+    ///
+    /// The inputs ride in the same lock as the answer rather than beside it, so
+    /// the memo cannot outlive what it memoises — see
+    /// [`DocPageSource::apply_capability_limit`].
+    pub(crate) zoom_capability_permille: Mutex<(
+        Option<crate::zoom_capability::CapabilityInputs>,
+        Option<u16>,
+    )>,
+    /// Per-page rasterisation scale in thousandths, set by the tile planner
+    /// under texture-budget pressure (Spec 08 T2.2). Absent means full scale.
+    ///
+    /// It lives here rather than on the tile props because `LokiPageSource` is
+    /// created once by `use_wgpu` and never sees a later prop update — the same
+    /// reason `zoom` is here. Keyed by page index and never pruned: an entry is
+    /// two bytes, bounded by the page count, and pruning would need a second
+    /// notion of which pages are live.
+    pub(crate) raster_permille: Mutex<HashMap<usize, u16>>,
 }
 
 impl DocPageSource {
@@ -97,20 +125,9 @@ impl DocPageSource {
             renderer: Mutex::new(None),
             generation: Arc::new(AtomicU64::new(1)),
             zoom: Mutex::new(1.0),
+            zoom_capability_permille: Mutex::new((None, None)),
+            raster_permille: Mutex::new(HashMap::new()),
         }
-    }
-
-    /// Sets the paginated render zoom factor (clamped to a sane range). The
-    /// next paint picks it up; the tile resize that accompanies a zoom change
-    /// forces the repaint (texture-size mismatch), so no generation bump is
-    /// needed.
-    pub fn set_zoom(&self, zoom: f32) {
-        *self.zoom.lock().unwrap_or_else(|e| e.into_inner()) = zoom.clamp(0.25, 4.0);
-    }
-
-    /// The current paginated render zoom factor.
-    pub fn zoom(&self) -> f32 {
-        *self.zoom.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Returns the current document.
@@ -255,11 +272,10 @@ impl DocPageSource {
                         &options,
                     ) {
                         DocumentLayout::Continuous(cl) => {
-                            // Size tiles to the widest content (e.g. a fixed-width
-                            // table that overflows the wrap width) so it can be
-                            // reached by horizontal scrolling rather than clipped.
-                            let widest = loki_vello::content_max_x(&cl).max(content_width);
-                            let tile_width_pt = widest + 2.0 * REFLOW_PADDING_PT;
+                            // T7.3/T7.4: the tile is the measure. The helper
+                            // cannot see the content, so it cannot be sized to
+                            // it. TODO(t7.3-element-scroller).
+                            let tile_width_pt = tile_for(content_width);
                             RenderLayout::Reflow {
                                 layout: cl,
                                 tile_width_pt,

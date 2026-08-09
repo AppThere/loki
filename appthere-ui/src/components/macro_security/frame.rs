@@ -23,7 +23,7 @@ use crate::tokens::colors::{
 };
 use crate::tokens::spacing::{RADIUS_MD, RADIUS_SM, SPACE_1, SPACE_2, SPACE_4};
 use crate::tokens::typography::{
-    FONT_FAMILY_UI, FONT_SIZE_LABEL, FONT_SIZE_MD, FONT_WEIGHT_BOLD, FONT_WEIGHT_SEMIBOLD,
+    FONT_SIZE_LABEL, FONT_SIZE_MD, FONT_WEIGHT_BOLD, FONT_WEIGHT_SEMIBOLD,
 };
 
 /// Width of a macro dialog card in logical pixels (narrow enough for Compact
@@ -80,14 +80,13 @@ pub fn MacroDialogFrame(props: MacroDialogFrameProps) -> Element {
                      display: flex; flex-direction: column; gap: {gap}px; \
                      background: {bg}; border: 2px solid {accent}; \
                      border-radius: {r}px; padding: {pad}px; \
-                     font-family: {font}; color: {fg};",
+                     color: {fg};",
                     w = CARD_WIDTH_PX,
                     gap = SPACE_2,
                     bg = COLOR_SURFACE_1,
                     accent = COLOR_MACRO_BADGE,
                     r = RADIUS_MD,
                     pad = SPACE_4,
-                    font = FONT_FAMILY_UI,
                     fg = COLOR_TEXT_ON_CHROME,
                 ),
                 role: "dialog",

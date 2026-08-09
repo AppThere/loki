@@ -19,3 +19,34 @@ loki-i18n  = { path = "../loki-i18n" }
 futures-channel = "0.3"
 # StreamExt::next, to drain those ticks on the UI thread.
 futures-util = { version = "0.3", default-features = false }
+# A reposition loop (popover::interaction_anchor) must surface as a log line
+# rather than as a frame-rate complaint. A counter with no production voice is
+# an instrument that speaks only where the hazard is not.
+tracing = "0.1"
+
+# The memory probe on the two platforms with no `/proc/meminfo` (Spec 08 I-25).
+#
+# **Target-scoped deliberately**: Linux and Android keep the hand-parsed
+# `MemAvailable` path that the budget divisors are calibrated against, so this
+# adds nothing to those builds and changes nothing about the anchor point.
+#
+# Chosen over an `unsafe` FFI exception on a *stated standard*, not a taste:
+# `#![forbid(unsafe_code)]` at crate roots is written down in CLAUDE.md and
+# enforced by `scripts/check-unsafe-policy.py`; "take no new dependencies" is
+# not. The exception route would have traded a written rule for an unwritten
+# one — and measured, `default-features = false, features = ["system"]` is one
+# crate whose entire transitive closure (`libc`, `memchr`) is already in this
+# lockfile at the same versions.
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+sysinfo = { version = "0.38", default-features = false, features = ["system"] }
+
+# Linux-only, and **dev-only**: the equivalence test below never ships.
+#
+# The production Linux path stays hand-parsed (see `device_probe_macos.rs` for
+# why), which leaves two live derivations of one quantity — the shape L08-029
+# says drifts invisibly. `sysinfo`'s Linux `available_memory` reads the same
+# `MemAvailable`, so asserting the two agree converts "unifying later would be
+# semantics-preserving" from a claim into a test, in the one environment that
+# can run it.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+sysinfo = { version = "0.38", default-features = false, features = ["system"] }

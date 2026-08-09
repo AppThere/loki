@@ -7,6 +7,7 @@
 
 use quick_xml::Writer;
 
+use loki_doc_model::content::table::col::TableWidth;
 use loki_doc_model::content::table::core::Table;
 use loki_doc_model::content::table::row::Cell;
 
@@ -30,7 +31,17 @@ pub(super) fn write_table<W: std::io::Write>(
     if let Some(style) = tbl.style_name() {
         let _ = write_empty(w, "w:tblStyle", &[("w:val", style)]);
     }
-    let _ = write_empty(w, "w:tblW", &[("w:w", "0"), ("w:type", "auto")]);
+    // Table width, the inverse of `map_tbl_width`: a fixed width in points →
+    // twips (`dxa`), a percentage → fiftieths of a percent (`pct`, 5000 = 100%),
+    // anything else → `auto`. Previously hardcoded to `auto`, silently dropping
+    // `Table.width`. One `write_empty` (the attrs are chosen first) so the
+    // discarded-Result count does not grow.
+    let (tbl_w, tbl_type) = match &tbl.width {
+        Some(TableWidth::Fixed(pt)) => (pts_to_twips(f64::from(*pt)).to_string(), "dxa"),
+        Some(TableWidth::Percent(p)) => (format!("{:.0}", p * 50.0), "pct"),
+        _ => ("0".to_string(), "auto"),
+    };
+    let _ = write_empty(w, "w:tblW", &[("w:w", &tbl_w), ("w:type", tbl_type)]);
     write_tbl_look(w, tbl.table_look_code());
     let _ = write_end(w, "w:tblPr");
 

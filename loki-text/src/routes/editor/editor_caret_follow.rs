@@ -57,44 +57,45 @@
 //! The same reasoning covers R25: a caret that stays put while an async font
 //! load or image resolution shifts the layout under it will not yank the view.
 //!
-//! # I-21: the trigger point, and what inspection has already ruled out
+//! # I-21: the trigger point — diagnosed, then tuned
 //!
-//! The reveal fires when `caret_top + caret_height + 3 × line` passes the
-//! viewport bottom — that is, when fewer than three line-heights of space
-//! remain below the caret's own line. The screen test reports it firing
-//! *earlier* than that. T1.9 gives four candidate causes; two are ruled out
-//! here, and the `tracing::debug!` below separates the rest in one observation.
+//! The reveal fires when `caret_top + caret_height + CARET_TRAILING_LINES ×
+//! line` passes the viewport bottom — that is, when fewer than that many
+//! line-heights of space remain below the caret's own line. The screen test
+//! reported it firing *earlier* than the three lines T1.3 shipped. T1.9 gave
+//! four candidate causes; three were bugs and one was taste, and the value was
+//! deliberately left alone until the four had been told apart, because lowering
+//! it would have masked any of the three.
 //!
-//! **Ruled out — the margin arithmetic.** `RevealMargin::caret_lines` is one
-//! line leading, three trailing, and `reveal_offset` adds the target's own
-//! height before the trailing term. Three clear lines below the caret's line is
-//! what the code computes, matching T1.3's wording.
+//! **Ruled out by inspection — the margin arithmetic.**
+//! `RevealMargin::caret_lines` is one line leading and `CARET_TRAILING_LINES`
+//! trailing, and `reveal_offset` adds the target's own height before the
+//! trailing term. Clear lines below the caret's own line is what the code
+//! computes, matching T1.3's wording.
 //!
-//! **Ruled out — chrome inside `client_height`.** The custom scrollbars are
-//! siblings of the scroll container, not children (`editor_canvas`: the
-//! vertical bar is beside it in the row, the horizontal bar below it in the
-//! column), so neither steals visible height.
+//! **Ruled out by inspection — chrome inside `client_height`.** The custom
+//! scrollbars are siblings of the scroll container, not children
+//! (`editor_canvas`: the vertical bar is beside it in the row, the horizontal
+//! bar below it in the column), so neither steals visible height.
 //!
-//! **Ruled out — a missing zoom factor.** The margin is derived from the caret
-//! rect's height, which is already in CSS px at the current zoom, so it scales
-//! with zoom by construction rather than by a separate multiply.
+//! **Ruled out by inspection — a missing zoom factor.** The margin is derived
+//! from the caret rect's height, which is already in CSS px at the current
+//! zoom, so it scales with zoom by construction rather than by a separate
+//! multiply.
 //!
-//! **Still open, and separated by the log line.**
+//! **Ruled out on screen (r11) — a fixed pixel term.** The candidate was
+//! `content_top_px`, the container's 24 px top padding: if Blitz placed the
+//! scroll origin after the padding, every caret rect would be 24 px low and the
+//! trigger 24 px early, constant across zoom and font size. The observed
+//! trigger gap instead **scales with body font size**, which only the
+//! line-metric path produces. R26 closed.
 //!
-//! 1. *A fixed pixel term.* `content_top_px` is the container's 24 px top
-//!    padding, and the caret rect is offset by it on the assumption that
-//!    `scrollTop = 0` sits at the top of the padding box. If Blitz places the
-//!    scroll origin after the padding instead, every caret rect is 24 px low
-//!    and the trigger comes 24 px early — constant across zoom and font size.
-//!    Signature in the log: `caret_bottom` exceeds the caret's true on-screen
-//!    position by a constant.
-//! 2. *Three lines is simply too generous.* Signature: `caret_bottom` and
-//!    `visible_bottom - 3 × line` agree, and the reveal is behaving exactly as
-//!    specified. Then it is a taste change and the value moves — but only then.
-//!
-//! **The value has deliberately not been tuned.** T1.9 is explicit that three
-//! of the four causes are bugs, and lowering the constant would mask any of
-//! them while making the symptom go away.
+//! **What was left is taste, and r13 tunes it.** With the three bugs
+//! eliminated, the remaining explanation is that three lines of lookahead is
+//! simply more than a typist wants. `CARET_TRAILING_LINES` is now **2**; see
+//! its docs in `appthere_ui::scroll::reveal` for the value's history and for
+//! why 1 is the floor to try next. It is deliberately a single named constant
+//! so the next taste change is one edit and no arithmetic.
 //!
 //! # The soft keyboard (T1.5) needs no special case
 //!
@@ -127,6 +128,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use appthere_ui::scroll::CARET_TRAILING_LINES;
 use appthere_ui::{RevealMargin, ScrollMetrics, use_viewport_controller};
 use dioxus::prelude::*;
 use loki_renderer::ViewMode;
@@ -235,17 +237,18 @@ pub(super) fn CaretFollow(props: CaretFollowProps) -> Element {
         // without ever revealing it, and the next keystroke at the same
         // position would not retry.
         last_revision.set(Some(revision));
-        // T1.3: the margin is three body lines below and one above, measured
-        // from the caret's own line so it holds at every size and zoom.
+        // T1.3/T1.9: the margin is `CARET_TRAILING_LINES` body lines below and
+        // `CARET_LEADING_LINES` above, measured from the caret's own line so it
+        // holds at every size and zoom.
         let line = caret_line_height_px(Some(rect), FALLBACK_LINE_PX);
-        // I-21 instrument. The reported symptom — "triggers higher in the
-        // viewport than 3 lines" — has four possible causes that a screen test
-        // cannot tell apart by eye but these numbers separate immediately:
-        // compare `caret_bottom` against `visible_bottom - 3 × line`. If they
-        // agree, the margin is doing exactly what it says and 3 lines is simply
-        // too generous (a taste change); if they disagree, the shortfall is the
-        // bug, and whether it is constant, scales with zoom, or scales with
-        // line height names which one. See the module docs.
+        // I-21 instrument, kept after the diagnosis. It separated the four
+        // candidate causes by comparing `caret_bottom` against `visible_bottom
+        // - trailing_margin_px`; agreement meant the margin was doing exactly
+        // what it said and the value was taste, disagreement meant a bug whose
+        // shape (constant / scales with zoom / scales with line height) named
+        // which one. It now stays as the instrument for the *next* taste
+        // change, so a report of "still fires early" can be checked against
+        // numbers rather than re-litigated by eye. See the module docs.
         tracing::debug!(
             target: "loki_text::caret_follow",
             caret_top = rect.1,
@@ -253,7 +256,7 @@ pub(super) fn CaretFollow(props: CaretFollowProps) -> Element {
             line_px = line,
             scroll_top = m.scroll_top,
             visible_bottom = m.scroll_top + m.client_height,
-            trailing_margin_px = line * 3.0,
+            trailing_margin_px = line * CARET_TRAILING_LINES,
             "caret reveal evaluated",
         );
         // Instant, always. A smooth caret-follow would lag the text at typing

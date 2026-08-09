@@ -4,6 +4,6 @@
 # Regenerate with: scripts/check-file-ceiling.py --update
 
 1013 loki-spreadsheet/src/routes/editor/editor_inner.rs
-800 loki-text/src/routes/editor/editor_inner.rs
-767 loki-layout/src/para.rs
-432 loki-text/src/routes/editor/editor_canvas.rs
+798 loki-text/src/routes/editor/editor_inner.rs
+752 loki-layout/src/para.rs
+336 loki-text/src/routes/editor/editor_canvas.rs

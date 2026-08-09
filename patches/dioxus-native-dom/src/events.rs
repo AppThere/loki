@@ -1,15 +1,16 @@
 use blitz_traits::events::{BlitzKeyEvent, BlitzMouseButtonEvent, MouseEventButton};
 use dioxus_html::{
-    geometry::{ClientPoint, ElementPoint, PagePoint, ScreenPoint},
+    geometry::{ClientPoint, ElementPoint, PagePoint, ScreenPoint, WheelDelta},
     input_data::{MouseButton, MouseButtonSet},
     point_interaction::{
         InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
     },
     AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
     FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
-    HasScrollData, HasTouchData, HasTouchPointData, HtmlEventConverter, ImageData, KeyboardData,
-    MediaData, MountedData, MouseData, PlatformEventData, PointerData, ResizeData, ScrollData,
-    SelectionData, ToggleData, TouchData, TouchPoint, TransitionData, VisibleData, WheelData,
+    HasScrollData, HasTouchData, HasTouchPointData, HasWheelData, HtmlEventConverter, ImageData,
+    KeyboardData, MediaData, MountedData, MouseData, PlatformEventData, PointerData, ResizeData,
+    ScrollData, SelectionData, ToggleData, TouchData, TouchPoint, TransitionData, VisibleData,
+    WheelData,
 };
 use keyboard_types::{Code, Key, Location, Modifiers};
 use std::any::Any;
@@ -135,8 +136,14 @@ impl HtmlEventConverter for NativeConverter {
         unimplemented!("todo: convert_transition_data in dioxus-native. requires support in blitz")
     }
 
-    fn convert_wheel_data(&self, _event: &PlatformEventData) -> WheelData {
-        unimplemented!("todo: convert_wheel_data in dioxus-native. requires support in blitz")
+    fn convert_wheel_data(&self, event: &PlatformEventData) -> WheelData {
+        // PATCH(loki): wheel events are dispatched by
+        // DioxusDocument::handle_wheel (see dioxus_document.rs).
+        event
+            .downcast::<NativeWheelData>()
+            .expect("wheel event payload must be NativeWheelData")
+            .clone()
+            .into()
     }
 
     fn convert_resize_data(&self, _event: &PlatformEventData) -> ResizeData {
@@ -322,6 +329,123 @@ impl HasScrollData for NativeScrollData {
 
     fn client_height(&self) -> i32 {
         self.client_height
+    }
+}
+
+// ── Wheel data ────────────────────────────────────────────────────────────────
+
+/// PATCH(loki): wheel-gesture payload dispatched by
+/// `DioxusDocument::handle_wheel`.
+///
+/// # Not a `NativeClickData` with a delta bolted on
+///
+/// The obvious build wraps the click payload and delegates. It cannot: a wheel
+/// has no triggering button and no button state the shell tracks, so wrapping
+/// means constructing a `BlitzMouseButtonEvent` with a fabricated `button` and
+/// empty `buttons` — and `trigger_button()` would then report `Some(Primary)`
+/// for a gesture where nothing was pressed. This carries only what the gesture
+/// actually had.
+///
+/// # `screen_coordinates` / `page_coordinates` panic, as they do for clicks
+///
+/// Inherited, not chosen: `NativeClickData` has the same two `unimplemented!()`
+/// arms upstream, and there is one answer in this fork to "where is this on the
+/// screen" — *unavailable*. Giving the wheel a different answer from the click
+/// would make the two disagree at the same pixel.
+///
+/// The live consequence is that `{:?}` on a `WheelData` panics, because
+/// `WheelData`'s `Debug` reaches `coordinates()`, which reaches both. That is
+/// equally true of `MouseData` today, so it is not new — but it is worth
+/// knowing before reaching for `dbg!` on a wheel handler.
+/// TODO(native-screen-coords): give `NativeClickData` real screen/page
+/// coordinates from the window position, and this delegates to them.
+#[derive(Clone, Debug)]
+pub struct NativeWheelData {
+    /// Pointer position in window (client) coordinates.
+    pub client_x: f64,
+    /// Pointer position in window (client) coordinates.
+    pub client_y: f64,
+    /// Pointer position relative to the target element's top-left corner.
+    pub element_x: f64,
+    /// Pointer position relative to the target element's top-left corner.
+    pub element_y: f64,
+    /// Pointer position relative to the top-left of the innermost **scrollport**
+    /// containing the target, or `None` when nothing in the chain scrolls.
+    ///
+    /// # Not the same frame as `element_*`, and the difference is the point
+    ///
+    /// `element_*` is relative to the event's *target*, which for a wheel over
+    /// text is the text run — several levels below whatever element carries the
+    /// `onwheel` handler and at whatever position it happens to occupy inside
+    /// the scrolled content. That is the correct web semantics and the wrong
+    /// frame for anything asking "where in the visible area did this happen".
+    ///
+    /// A consumer cannot convert between the two: recovering the scrollport
+    /// frame needs the target's position within it, which is exactly what the
+    /// event does not carry. So it is computed here, by `BaseDocument::
+    /// scrollport_origin`, where the layout is.
+    pub scrollport: Option<(f64, f64)>,
+    /// Wheel movement, already carrying its own unit.
+    pub delta: WheelDelta,
+    /// Live keyboard modifiers — this is what makes a wheel a zoom.
+    pub modifiers: Modifiers,
+}
+
+impl InteractionLocation for NativeWheelData {
+    fn client_coordinates(&self) -> ClientPoint {
+        ClientPoint::new(self.client_x, self.client_y)
+    }
+
+    fn screen_coordinates(&self) -> ScreenPoint {
+        unimplemented!()
+    }
+
+    fn page_coordinates(&self) -> PagePoint {
+        unimplemented!()
+    }
+}
+
+impl InteractionElementOffset for NativeWheelData {
+    fn element_coordinates(&self) -> ElementPoint {
+        ElementPoint::new(self.element_x, self.element_y)
+    }
+}
+
+impl ModifiersInteraction for NativeWheelData {
+    fn modifiers(&self) -> Modifiers {
+        self.modifiers
+    }
+}
+
+impl PointerInteraction for NativeWheelData {
+    /// `None`: a wheel turn is not a button press. The web reports `button: 0`
+    /// here for want of a null, and `Some(Primary)` is how a handler comes to
+    /// believe the primary button was down during a scroll.
+    fn trigger_button(&self) -> Option<MouseButton> {
+        None
+    }
+
+    /// Empty for the same reason: the shell does not carry button state on the
+    /// wheel path, and an empty set is the honest report of *not known to be
+    /// held* — where a fabricated set would be a claim.
+    fn held_buttons(&self) -> MouseButtonSet {
+        MouseButtonSet::empty()
+    }
+}
+
+impl HasMouseData for NativeWheelData {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self as &dyn std::any::Any
+    }
+}
+
+impl HasWheelData for NativeWheelData {
+    fn delta(&self) -> WheelDelta {
+        self.delta
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self as &dyn std::any::Any
     }
 }
 

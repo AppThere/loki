@@ -81,8 +81,9 @@ pub(crate) enum OdfParagraphChild {
         name: String,
     },
 
-    /// A computed text field. ODF 1.3 §12.
-    Field(OdfField),
+    /// A computed text field, plus its last-rendered display text (the element
+    /// body — the field's cached `current_value`, ADR-0005), if any. ODF 1.3 §12.
+    Field(OdfField, Option<String>),
 
     /// An anchored drawing frame (`draw:frame`). ODF 1.3 §10.4.
     Frame(OdfFrame),

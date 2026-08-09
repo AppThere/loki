@@ -193,6 +193,8 @@ pub const KEY_MARGINS: &str = "margins";
 pub const KEY_ORIENTATION: &str = "orientation";
 /// Optional sub-map under KEY_LAYOUT for multi-column settings.
 pub const KEY_COLUMNS: &str = "columns";
+/// `style:page-usage` on a section layout (`"all"`/`"mirrored"`/`"left"`/`"right"`).
+pub const KEY_PAGE_USAGE: &str = "page_usage";
 
 // Header / footer slot keys under KEY_LAYOUT
 pub const KEY_HEADER: &str = "header";

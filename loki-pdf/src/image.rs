@@ -6,7 +6,9 @@
 //! Document images arrive as `data:` URIs. Each distinct image is decoded
 //! once, converted to **DeviceCMYK** samples (so it matches the PDF/X CMYK
 //! colour pipeline and the output intent), Flate-compressed, and embedded as an
-//! image XObject. Transparency is preserved via a DeviceGray soft mask.
+//! image XObject. For PDF/X-4, transparency is preserved via a DeviceGray soft
+//! mask; for PDF/X-1a / X-3 (which forbid live transparency) it is flattened
+//! over opaque white at decode time (see [`ImageBank::set_flatten_transparency`]).
 
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -45,13 +47,25 @@ pub struct ImageBank {
     // Maps a content hash to the entry index, or `None` for un-decodable images
     // so they are not retried per occurrence.
     by_hash: HashMap<u64, Option<usize>>,
+    // When true, composite alpha over white at decode time and emit no soft mask
+    // (PDF/X-1a / X-3, which forbid live transparency). Default false preserves
+    // the soft mask (PDF/X-4).
+    flatten_transparency: bool,
 }
 
 impl ImageBank {
-    /// Creates an empty bank.
+    /// Creates an empty bank (transparency preserved as a soft mask, PDF/X-4).
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sets whether transparency is flattened over white (PDF/X-1a / X-3) rather
+    /// than preserved as a soft mask (PDF/X-4). Must be set before any
+    /// [`Self::use_image`] call, since decoding — and thus the flatten decision —
+    /// happens there.
+    pub fn set_flatten_transparency(&mut self, yes: bool) {
+        self.flatten_transparency = yes;
     }
 
     /// Registers the image referenced by `src` (a `data:` URI), returning the
@@ -65,7 +79,8 @@ impl ImageBank {
         let slot = match self.by_hash.get(&key) {
             Some(cached) => *cached,
             None => {
-                let decoded = decode_and_convert(src, self.entries.len());
+                let decoded =
+                    decode_and_convert(src, self.entries.len(), self.flatten_transparency);
                 let idx = decoded.map(|entry| {
                     self.entries.push(entry);
                     self.entries.len() - 1
@@ -135,7 +150,11 @@ impl ImageBank {
 }
 
 /// Decodes a `data:` URI image and converts it to a CMYK [`ImageEntry`].
-fn decode_and_convert(src: &str, index: usize) -> Option<ImageEntry> {
+///
+/// When `flatten` is set (PDF/X-1a / X-3, which forbid live transparency) each
+/// pixel is composited over opaque white and no soft mask is produced; when
+/// clear (PDF/X-4) the alpha travels as a separate DeviceGray soft mask.
+fn decode_and_convert(src: &str, index: usize, flatten: bool) -> Option<ImageEntry> {
     let bytes = decode_data_uri(src)?;
     let img = image::load_from_memory(&bytes).ok()?;
     let rgba = img.to_rgba8();
@@ -149,19 +168,29 @@ fn decode_and_convert(src: &str, index: usize) -> Option<ImageEntry> {
     let mut has_alpha = false;
     for px in rgba.pixels() {
         let [r, g, b, a] = px.0;
-        let c = layout_to_cmyk(LayoutColor::new(
-            f32::from(r) / 255.0,
-            f32::from(g) / 255.0,
-            f32::from(b) / 255.0,
-            1.0,
-        ));
+        // Normalised channel, composited over white when flattening. `1.0` is the
+        // paper-white background PDF/X-1a / X-3 flatten onto.
+        let chan = |c: u8| {
+            let n = f32::from(c) / 255.0;
+            if flatten {
+                let af = f32::from(a) / 255.0;
+                n * af + (1.0 - af)
+            } else {
+                n
+            }
+        };
+        let c = layout_to_cmyk(LayoutColor::new(chan(r), chan(g), chan(b), 1.0));
         cmyk.push(to_byte(c.c));
         cmyk.push(to_byte(c.m));
         cmyk.push(to_byte(c.y));
         cmyk.push(to_byte(c.k));
-        alpha.push(a);
-        if a != 255 {
-            has_alpha = true;
+        // Only collect the soft mask when transparency is permitted (X-4);
+        // flattening has already folded alpha into the colour above.
+        if !flatten {
+            alpha.push(a);
+            if a != 255 {
+                has_alpha = true;
+            }
         }
     }
 
@@ -229,5 +258,42 @@ mod tests {
         // Second use of the same URI is cached (no new entry).
         assert_eq!(bank.use_image(&uri).as_deref(), Some("Im0"));
         assert_eq!(bank.entries().len(), 1);
+    }
+
+    /// A semi-transparent PNG (alpha = 128).
+    fn translucent_png_uri() -> String {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        let img = image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 0, 0, 128]));
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut buf, image::ImageFormat::Png)
+            .unwrap();
+        format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(buf.get_ref())
+        )
+    }
+
+    #[test]
+    fn x4_keeps_a_soft_mask_but_x1a_x3_flatten_it() {
+        let uri = translucent_png_uri();
+
+        // Default (PDF/X-4): the alpha is preserved as a soft mask.
+        let mut keep = ImageBank::new();
+        keep.use_image(&uri).expect("decode");
+        assert!(
+            keep.entries()[0].alpha_flate.is_some(),
+            "X-4 must keep the soft mask"
+        );
+
+        // PDF/X-1a / X-3: transparency is forbidden, so it is flattened and no
+        // soft mask (and thus no s_mask reference) is emitted.
+        let mut flat = ImageBank::new();
+        flat.set_flatten_transparency(true);
+        flat.use_image(&uri).expect("decode");
+        assert!(
+            flat.entries()[0].alpha_flate.is_none(),
+            "X-1a/X-3 must flatten transparency, not emit a soft mask"
+        );
+        assert!(flat.allocate_refs(&mut 3)[0].smask.is_none());
     }
 }

@@ -28,7 +28,10 @@ fn effective_options(doc: &loki_doc_model::Document, options: &LayoutOptions) ->
     if eff.default_tab_stop_pt.is_none() {
         eff.default_tab_stop_pt = doc.settings.as_ref().map(|s| s.default_tab_stop_pt);
     }
-    eff.mirror_margins |= doc.settings.as_ref().is_some_and(|s| s.mirror_margins);
+    // Same one question as the DOCX writer asks — see `Document::mirrors_margins`.
+    // Reading only `settings` here is why an ODT with `style:page-usage="mirrored"`
+    // laid out single-sided (Spec 08 T6.1).
+    eff.mirror_margins |= doc.mirrors_margins();
     eff
 }
 
@@ -247,13 +250,18 @@ pub fn layout_paginated_full(
         if let Some(bp) = blank {
             all_pages.push(bp);
         }
+        // This slice *is* the whole section, so its first page is the section's.
+        let pos = flow::PagePosition {
+            section_first_page: pages.first().map(|p| p.page_number).unwrap_or(1),
+            total_page_count: global_page_count as u32,
+        };
         flow::assign_headers_footers(
             &mut pages,
             &section.layout,
             resources,
             &doc.styles,
             display_scale,
-            global_page_count as u32,
+            pos,
         );
         all_pages.extend(pages);
     }
@@ -266,6 +274,9 @@ pub fn layout_paginated_full(
         PaginatedReuse {
             checkpoints,
             has_footnotes: incremental::document_has_notes(doc),
+            // A full layout reuses nothing, so it re-flows nothing in the sense
+            // this counter measures — it is a reuse metric, not a work metric.
+            reflowed_pages: 0,
         },
     )
 }

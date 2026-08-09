@@ -8,7 +8,7 @@ use loki_i18n::fl;
 use crate::theme::use_theme;
 use crate::tokens::layout::TAB_BAR_HEIGHT;
 use crate::tokens::spacing::{RADIUS_SM, SPACE_1, SPACE_3, TOUCH_MIN};
-use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_LABEL, FONT_WEIGHT_MEDIUM};
+use crate::tokens::typography::{FONT_SIZE_LABEL, FONT_WEIGHT_MEDIUM};
 
 // ── Truncation ────────────────────────────────────────────────────────────────
 
@@ -111,7 +111,7 @@ pub fn AtDocumentTab(props: AtDocumentTabProps) -> Element {
                     "font-size: {size}px; font-weight: {weight}; \
                      color: {fg}; flex: 1; min-width: 0; max-width: 140px; \
                      overflow: hidden; white-space: nowrap; \
-                     text-overflow: ellipsis; font-family: {font};",
+                     text-overflow: ellipsis; ",
                     // COMPAT(dioxus-native): white-space: nowrap is unconfirmed —
                     // verify at runtime.
                     // COMPAT(dioxus-native): text-overflow: ellipsis is unconfirmed —
@@ -126,7 +126,6 @@ pub fn AtDocumentTab(props: AtDocumentTabProps) -> Element {
                     } else {
                         palette.text_on_chrome_secondary
                     },
-                    font   = FONT_FAMILY_UI,
                 ),
                 "{label}"
             }

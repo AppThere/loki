@@ -79,7 +79,7 @@ What macro malware actually does, and which layer of this design stops it:
 | T4 | **Data exfiltration** | read doc/clipboard → POST to attacker host | §5: clipboard + network are separate capabilities; network deferred to v2 with per-host prompts |
 | T5 | **VBA stomping / p-code abuse** | source stream wiped, malicious compiled p-code executes | §4.4: Loki *only* parses decompressed source; p-code and `PerformanceCache` are never read, never executed |
 | T6 | **Excel 4.0 (XLM) macro sheets** | `=EXEC()` in hidden macro sheets | §7: never implemented; sheets preserved as inert data, flagged in UI |
-| T7 | **Dialog spoofing / social engineering** | fake "security update" MsgBox chains | §5.5: macro-originated dialogs are rate-limited and rendered in a visually distinct, badged frame that app chrome never uses |
+| T7 | **Dialog spoofing / social engineering** | fake "security update" MsgBox chains | §5.5: macro-originated dialogs render in a visually distinct, badged frame that app chrome never uses, and a token-bucket rate-limiter (~5 / 10 s) suspends a dialog storm; modal dialogs also block on a user reply |
 | T8 | **Resource exhaustion (DoS)** | infinite loops, gigabyte string concat | §8: fuel metering, memory caps, watchdog + always-available cancel |
 | T9 | **Parser exploitation** | malformed CFB/OVBA/XML crafted to exploit the *reader* | §12: parsing is `forbid(unsafe_code)` pure Rust, fuzzed in CI, and runs before any trust decision — so it must be hardened regardless |
 | T10 | **Trust-metadata forgery** | document claims "I am trusted" in its own bytes | §2.4: trust state lives *only* in the local user profile, keyed by payload hash; nothing inside the file can influence trust |
@@ -381,10 +381,15 @@ There is deliberately **no "always for all documents"** scope.
 
 Macro-originated dialogs (T7) render inside a visually distinct frame:
 a "Macro: <project name>" badge header in a reserved accent style that app
-chrome never uses, with the host document title. Dialog storms are
-rate-limited (token bucket, e.g. 5 dialogs / 10 s; exceeding it suspends
-the macro with a "misbehaving macro" infobar offering Stop). `MsgBox`
-button results are returned normally so benign flows work.
+chrome never uses, with the host document title. `MsgBox` button results
+are returned normally so benign flows work. **Dialog storms are rate-limited**
+(a token bucket, ~5 dialogs / 10 s, starting full; exceeding it suspends the run
+with an untrappable `RuntimeError::dialog_rate_limited`, spec §8's "misbehaving
+macro" stop — `loki-macro-host/src/dialog_rate.rs`). In practice each dialog is
+modal and blocks on a user reply, so this backstops a machine-speed / frantic
+rapid-click storm rather than being the primary defence (the badged frame is).
+The auto-suspend surfaces through the normal run-error path; a dedicated
+"misbehaving macro" infobar is a future UI refinement.
 
 ### 5.6 Auto-run events are a separate, scarier decision
 
@@ -482,9 +487,17 @@ asserting each row raises `ErrFeatureRefused` (§12).
   budget (config constant, order 10⁸ steps) — exhausting it suspends with
   a "macro is taking a long time — Continue / Stop" infobar. UDFs get a
   much smaller fixed budget with **no** continue option.
-- **Memory caps:** interpreter heap (strings, arrays, objects) accounted
-  and capped (order 256 MiB); exceeding → runtime error, not OOM.
-- **Recursion/depth caps** and per-run **wall-clock watchdog**.
+- **Memory caps:** a **per-allocation** bound (`MAX_STRING_BYTES` = 128 MiB for
+  any single string; `MAX_ELEMENTS` for arrays) turns an unbounded string concat
+  or `String(n)`/`Space(n)` into an "Out of memory" runtime error (VBA err 7)
+  instead of an OOM-abort — a doubling `s = s & s` loop trips it as one over-cap
+  allocation. This is not yet full order-256-MiB **total-heap** accounting
+  (`TODO(macro-heap-caps)` tracks that), but it closes the concrete DoS vectors.
+- **Recursion/depth caps** and a per-run **wall-clock watchdog** (implemented:
+  `CapabilityBroker::with_wall_clock_budget`, a cooperative deadline checked in
+  `consume_fuel` — 120 s default for an interactive run, 5 s for an unattended
+  UDF; it bounds a runaway *compute* loop, while a blocked host call is bounded
+  by that call's own timeout, e.g. the 30 s HTTP one).
 - **Threading:** macros execute on a worker thread; the UI thread renders
   progress and the always-available **Stop** control. Document mutation
   batches apply via the normal signal path on the UI thread.

@@ -70,8 +70,7 @@ pub(super) fn insert_link_panel(
                 ),
                 span {
                     style: format!(
-                        "font-family: {ff}; font-size: {fs}px; font-weight: {fw}; color: {fg};",
-                        ff = tokens::FONT_FAMILY_UI,
+                        "font-size: {fs}px; font-weight: {fw}; color: {fg};",
                         fs = tokens::FONT_SIZE_LABEL,
                         fw = tokens::FONT_WEIGHT_MEDIUM,
                         fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
@@ -104,13 +103,12 @@ pub(super) fn insert_link_panel(
                     style: format!(
                         "flex: 1; height: 24px; padding: 0 {p}px; background: {bg}; \
                          border: 1px solid {border}; border-radius: {r}px; \
-                         font-family: {ff}; font-size: {fs}px; color: {fg}; \
+                         font-size: {fs}px; color: {fg}; \
                          box-sizing: border-box;",
                         p = tokens::SPACE_2,
                         bg = tokens::COLOR_SURFACE_2,
                         border = tokens::COLOR_BORDER_DEFAULT,
                         r = tokens::RADIUS_SM,
-                        ff = tokens::FONT_FAMILY_UI,
                         fs = tokens::FONT_SIZE_BODY,
                         fg = tokens::COLOR_TEXT_ON_CHROME,
                     ),
@@ -195,13 +193,12 @@ fn action_button_style(primary: bool) -> String {
     // Min interactive size: 44×44 logical px (WCAG 2.5.8) — Spec 03 M5 (R-15).
     format!(
         "min-height: {touch}px; padding: 0 {p}px; background: {bg}; border: 1px solid {border}; \
-         border-radius: {r}px; font-family: {ff}; font-size: {fs}px; color: {fg}; cursor: pointer;",
+         border-radius: {r}px; font-size: {fs}px; color: {fg}; cursor: pointer;",
         touch = tokens::TOUCH_MIN,
         p = tokens::SPACE_3,
         bg = bg,
         border = tokens::COLOR_BORDER_CHROME,
         r = tokens::RADIUS_SM,
-        ff = tokens::FONT_FAMILY_UI,
         fs = tokens::FONT_SIZE_LABEL,
         fg = fg,
     )

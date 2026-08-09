@@ -57,8 +57,7 @@ pub(super) fn language_panel(
                 ),
                 span {
                     style: format!(
-                        "font-family: {ff}; font-size: {size}px; color: {fg}; font-weight: 600;",
-                        ff = tokens::FONT_FAMILY_UI,
+                        "font-size: {size}px; color: {fg}; font-weight: 600;",
                         size = tokens::FONT_SIZE_LABEL,
                         fg = tokens::COLOR_TEXT_ON_CHROME,
                     ),
@@ -169,8 +168,7 @@ pub(super) fn language_panel(
 
 fn name_style() -> String {
     format!(
-        "font-family: {ff}; font-size: {size}px; color: {fg};",
-        ff = tokens::FONT_FAMILY_UI,
+        "font-size: {size}px; color: {fg};",
         size = tokens::FONT_SIZE_LABEL,
         fg = tokens::COLOR_TEXT_ON_CHROME,
     )
@@ -178,8 +176,7 @@ fn name_style() -> String {
 
 fn muted_style() -> String {
     format!(
-        "font-family: {ff}; font-size: {size}px; color: {fg};",
-        ff = tokens::FONT_FAMILY_UI,
+        "font-size: {size}px; color: {fg};",
         size = tokens::FONT_SIZE_XS,
         fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
     )

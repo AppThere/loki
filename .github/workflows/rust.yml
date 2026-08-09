@@ -44,9 +44,36 @@ jobs:
     - name: Suppression ratchet (`let _ =` swallows + `#[allow]`)
       # Audit Q-3/Q-4. Per-file counts may only shrink; new files start at 0/0.
       run: python3 scripts/check-suppressions.py
+    - name: Retracted-claim sweep (a withdrawn claim, restated elsewhere)
+      # Spec 08 L08-032, generalised. A retraction filed in a ledger loses to the
+      # wrong story sitting at the point of use; this greps for the phrasings.
+      run: python3 scripts/check-retracted-claims.py
     - name: TODO-format gate (TODO(<topic>) tags)
       # Spec 01 audit A-11. No bare TODO / FIXME / HACK / XXX in production code.
       run: python3 scripts/check-todo-format.py
+    - name: UI typeface gate (one declaration, at the root)
+      # Spec 08 r94/r95. The UI face used to be opt-in per component — 91 copies
+      # of one fact — so the failure it produced was a *missing* copy: anything
+      # the popover host rendered fell through to the CSS initial value and drew
+      # in serif. Two of the 91 had also drifted to `system-ui`, which no review
+      # caught, because a `font-family` line looks like diligence.
+      run: python3 scripts/check-ui-font.py
+    - name: Root layer band (app crates out of the popover's z-index range)
+      # Spec 08 r65. A leftover backdrop at 1000 painted over a root-hosted menu
+      # at 41 and swallowed every click — invisible to types, tests and every
+      # other gate, because it is a paint-order relationship between two files
+      # that never mention each other.
+      run: python3 scripts/check-root-layer-band.py
+    - name: Pending-question trigger (an instrument landing re-opens decisions)
+      # Spec 08 r57, L9-019 made mechanical. Fails when a recorded "what would
+      # settle it" instrument appears, so the sweep of decisions taken while the
+      # question was open happens at that moment rather than three commits later.
+      run: python3 scripts/check-pending-questions.py
+    - name: Document scale isolation (I-24 must not reach page pixels)
+      # Spec 08 r51. Chrome scales with the platform text setting; document
+      # content does not. If a text-scale term crossed into rendering, a 2.0x
+      # setting would multiply texture demand ~4x on the axis Phase 2 bounded.
+      run: python3 scripts/check-document-scale-isolation.py
     - name: Dependency-direction gate (acyclic, downhill-only)
       # Spec 01 audit A-13 / ADR-0009. Fails on any uphill internal edge.
       run: python3 scripts/check-dependency-direction.py

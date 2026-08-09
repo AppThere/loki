@@ -48,8 +48,8 @@ pub(super) fn add_custom_properties(
     for (pid, (name, value)) in pairs.iter().enumerate() {
         xml.push_str(&format!(
             "<property fmtid=\"{FMTID}\" pid=\"{pid}\" name=\"{}\"><vt:lpwstr>{}</vt:lpwstr></property>",
-            escape(name),
-            escape(value),
+            crate::xml_util::escape_xml(name),
+            crate::xml_util::escape_xml(value),
             pid = pid + 2,
         ));
     }
@@ -67,20 +67,4 @@ pub(super) fn add_custom_properties(
         .map_err(OoxmlError::Opc)?;
     pkg.content_type_map_mut().add_override(&part, MT_CUSTOM);
     Ok(())
-}
-
-/// Escapes XML text / attribute values.
-fn escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&apos;"),
-            _ => out.push(c),
-        }
-    }
-    out
 }

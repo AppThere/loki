@@ -32,6 +32,40 @@ pub(crate) fn handle_keypress<F: FnMut(DomEvent)>(
             return;
         }
 
+        // PATCH(loki): Enter and Space activate a focused non-text element.
+        //
+        // Without this, `handle_keypress` does nothing at all for anything that
+        // is not a text input — so a focused `button` could be *reached* by Tab
+        // and never *pressed*, and every control in an embedder's UI was
+        // pointer-only. Tab traversal already worked, which is what made the gap
+        // hard to see: focus visibly moves, and then the keyboard stops.
+        //
+        // Dispatched as a synthetic click rather than as a new event kind, so a
+        // handler written for the pointer is the handler the keyboard runs —
+        // one activation path, which is what makes "the keyboard does what the
+        // mouse does" a property of the DOM rather than of each embedder.
+        //
+        // **A `DomEvent`, not a call to `handle_click`.** `label` forwards to
+        // `handle_click` directly (see `events::mouse`), and copying that here
+        // is the mistake this comment exists to stop: `handle_click` is the
+        // *default action* for a click the embedder has already been told about,
+        // so calling it runs the built-in behaviour and the embedder's own
+        // `onclick` never fires. Going through `dispatch_event` puts the click
+        // back on the driver's queue, where the handler sees it first — which is
+        // the whole point, since in a Dioxus app every button's behaviour lives
+        // in an `onclick`.
+        //
+        // Text inputs are excluded because Enter means newline-or-submit and
+        // Space means a space there; that is decided below, and the check is
+        // `is_text_input` rather than the element name so a `contenteditable`
+        // host is covered too.
+        if is_activation_key(&event.key) && event.state.is_pressed() && !is_text_input(doc, node_id)
+        {
+            let data = doc.nodes[node_id].synthetic_click_event(event.modifiers);
+            dispatch_event(DomEvent::new(node_id, data));
+            return;
+        }
+
         let node = &mut doc.nodes[node_id];
         let Some(element_data) = node.element_data_mut() else {
             return;
@@ -63,6 +97,28 @@ pub(crate) fn handle_keypress<F: FnMut(DomEvent)>(
             }
         }
     }
+}
+
+/// PATCH(loki): the two keys that activate a control, per the HTML activation
+/// behaviour every platform's accessibility guidance assumes.
+///
+/// `Space` arrives as `Character(" ")` rather than as a named key — the same
+/// translation trap an embedder hits, and the reason this is a named predicate
+/// rather than a literal in the `if`.
+fn is_activation_key(key: &Key) -> bool {
+    match key {
+        Key::Enter => true,
+        Key::Character(c) => c == " ",
+        _ => false,
+    }
+}
+
+/// PATCH(loki): whether the node edits text, and so owns Enter and Space itself.
+fn is_text_input(doc: &BaseDocument, node_id: usize) -> bool {
+    doc.nodes[node_id]
+        .data
+        .downcast_element()
+        .is_some_and(|el| el.text_input_data().is_some())
 }
 
 #[cfg(target_os = "macos")]

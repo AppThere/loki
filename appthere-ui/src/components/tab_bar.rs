@@ -15,7 +15,7 @@ use crate::components::document_tab::AtDocumentTab;
 use crate::theme::use_theme;
 use crate::tokens::layout::TAB_BAR_HEIGHT;
 use crate::tokens::spacing::{SPACE_2, SPACE_3, TOUCH_MIN};
-use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_LABEL, FONT_WEIGHT_SEMIBOLD};
+use crate::tokens::typography::{FONT_SIZE_LABEL, FONT_WEIGHT_SEMIBOLD};
 
 // ── AtDocumentTabData ─────────────────────────────────────────────────────────
 
@@ -79,7 +79,7 @@ pub fn AtTabBar(props: AtTabBarProps) -> Element {
                 "height: {h}px; min-height: {h}px; max-height: {h}px; \
                  background: {bg}; border-bottom: 1px solid {border}; \
                  display: flex; flex-direction: row; align-items: center; \
-                 flex-shrink: 0; font-family: {font}; \
+                 flex-shrink: 0; \
                  overflow-x: auto; overflow-y: hidden;",
                 // COMPAT(dioxus-native): overflow-x: auto is confirmed working.
                 // overflow-y: hidden clips any child that exceeds TAB_BAR_HEIGHT
@@ -88,7 +88,6 @@ pub fn AtTabBar(props: AtTabBarProps) -> Element {
                 h      = TAB_BAR_HEIGHT,
                 bg     = palette.surface_chrome,
                 border = palette.border_chrome,
-                font   = FONT_FAMILY_UI,
             ),
 
             // ── Home tab (always present, cannot be closed) ───────────────────

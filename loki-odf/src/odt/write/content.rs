@@ -31,7 +31,6 @@ const HEADER: &str = concat!(
     " xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"",
     " xmlns:xlink=\"http://www.w3.org/1999/xlink\"",
     " xmlns:svg=\"urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0\"",
-    " office:version=\"1.3\">",
 );
 
 /// Shared writer state threaded through the body: the automatic-style collector,
@@ -103,6 +102,10 @@ pub(crate) fn content_xml(doc: &Document) -> Rendered {
     }
     let mut out = String::with_capacity(body.len() + 1024);
     out.push_str(HEADER);
+    out.push_str(&format!(
+        " office:version=\"{}\">",
+        super::xml::office_version(doc)
+    ));
     out.push_str("<office:automatic-styles>");
     out.push_str(&cx.auto.render());
     out.push_str("</office:automatic-styles>");

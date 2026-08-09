@@ -16,7 +16,7 @@ use loki_primitives::units::Points;
 /// Encode section column widths (points) as a `;`-joined string, or `None`
 /// when empty (equal-width columns need no explicit widths). The read path
 /// splits on `;` and parses each field back to [`Points`].
-pub(super) fn encode_col_widths(widths: &[Points]) -> Option<String> {
+pub(crate) fn encode_col_widths(widths: &[Points]) -> Option<String> {
     if widths.is_empty() {
         return None;
     }

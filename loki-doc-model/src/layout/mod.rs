@@ -9,6 +9,8 @@
 
 pub mod header_footer;
 pub mod page;
+pub mod page_usage;
+pub mod paper_catalog;
 pub mod section;
 
 pub use header_footer::{HeaderFooter, HeaderFooterKind};
@@ -16,4 +18,5 @@ pub use page::{
     LineNumberRestart, LineNumbering, PageBorders, PageLayout, PageMargins, PageOrientation,
     PageSize, SectionColumns,
 };
+pub use paper_catalog::{MATCH_TOLERANCE_PT, PAPERS, Paper, paper_by_id, paper_for};
 pub use section::{Section, SectionStart};

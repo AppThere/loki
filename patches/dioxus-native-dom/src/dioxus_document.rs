@@ -1,16 +1,18 @@
 //! Integration between Dioxus and Blitz
 use crate::events::{
     BlitzKeyboardData, NativeClickData, NativeConverter, NativeFormData, NativeScrollData,
+    NativeWheelData,
 };
 use crate::mutation_writer::{DioxusState, MutationWriter};
 use crate::qual_name;
 use crate::NodeId;
 use blitz_dom::{
-    Attribute, BaseDocument, Document, DocumentConfig, EventDriver, EventHandler, Node, DEFAULT_CSS,
+    Attribute, BaseDocument, Document, DocumentConfig, EventDriver, EventHandler, Node,
+    WheelGesture, WheelUnit, DEFAULT_CSS,
 };
 use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
 use dioxus_core::{ElementId, Event, VirtualDom};
-use dioxus_html::{set_event_converter, PlatformEventData};
+use dioxus_html::{geometry::WheelDelta, set_event_converter, PlatformEventData};
 use futures_util::task::noop_waker;
 use futures_util::{pin_mut, FutureExt};
 use std::ops::{Deref, DerefMut};
@@ -213,7 +215,8 @@ impl Document for DioxusDocument {
 
         // Preserve focus across re-renders: capture the focused node's Dioxus ElementId
         // (stable across re-renders) before render_immediate may rebuild the DOM tree.
-        let focus_dioxus_id = self.inner.focus_node_id
+        let focus_before = self.inner.focus_node_id;
+        let focus_dioxus_id = focus_before
             .and_then(|id| self.inner.get_node(id))
             .and_then(get_dioxus_id);
 
@@ -224,10 +227,33 @@ impl Document for DioxusDocument {
 
         // Re-apply focus if render_immediate replaced the focused blitz node with a new one
         // (same Dioxus ElementId, different blitz node ID) or cleared focus entirely.
-        if let Some(dxid) = focus_dioxus_id {
-            if let Some(new_node_id) = self.vdom_state.try_element_to_node_id(dxid) {
-                if self.inner.focus_node_id != Some(new_node_id) {
-                    self.inner.set_focus_to(new_node_id);
+        //
+        // PATCH(loki): **unless the render itself moved focus on purpose.** The
+        // mutation flush is where `autofocus` fires, so a render that mounts an
+        // `autofocus` element focuses it *inside* the block above — and restoring
+        // unconditionally then handed focus straight back to whatever had it
+        // before. The visible result: a menu opens, and every subsequent key goes
+        // to the button that opened it. Focus preservation cannot tell "the DOM
+        // moved my node" from "the DOM deliberately moved focus" by looking at
+        // the element id alone, which is why this needs the before/after pair
+        // rather than a smarter lookup.
+        //
+        // The discriminator is *changed to something live*: a focus that is
+        // merely stale (its node was removed, or its id was reused) is the case
+        // this restoration exists for, and it is exactly the case where the
+        // current focus does not name a node that still exists.
+        let moved_deliberately = self.inner.focus_node_id != focus_before
+            && self
+                .inner
+                .focus_node_id
+                .is_some_and(|id| self.inner.get_node(id).is_some());
+
+        if !moved_deliberately {
+            if let Some(dxid) = focus_dioxus_id {
+                if let Some(new_node_id) = self.vdom_state.try_element_to_node_id(dxid) {
+                    if self.inner.focus_node_id != Some(new_node_id) {
+                        self.inner.set_focus_to(new_node_id);
+                    }
                 }
             }
         }
@@ -268,6 +294,79 @@ impl Document for DioxusDocument {
             let event = Event::new(data, false);
             self.vdom.runtime().handle_event("scroll", event, id);
         }
+    }
+
+    // PATCH(loki): dispatch a DOM `wheel` event into the Dioxus VirtualDom.
+    // Routed via this trait hook for the same reason as `handle_scroll_changes`
+    // — blitz-traits 0.2 has no wheel `DomEventData` variant.
+    //
+    // Wheel events **bubble**, matching web semantics, and that is load-bearing
+    // here rather than pedantry: the gesture's target is whatever the hit test
+    // landed on, which for a wheel over text is a text node several levels below
+    // the element carrying `onwheel`.
+    fn handle_wheel(&mut self, gesture: WheelGesture) {
+        // Walk up to the nearest node Dioxus knows about. `handle_scroll_changes`
+        // can skip an unmapped node because a scroll offset only ever changes on
+        // a scroll container, which is an element; a wheel's target is a hit-test
+        // result and is routinely a text node. Skipping here would make the hook
+        // silent in exactly the case it exists for.
+        //
+        // Nothing is lost by starting at the ancestor: the nodes stepped over
+        // have no `data-dioxus-id`, so they carry no Dioxus listeners for the
+        // bubble to have visited.
+        let mut cursor = Some(gesture.node_id);
+        let listener = loop {
+            let Some(node_id) = cursor else {
+                return; // no mapped ancestor — nothing to dispatch to
+            };
+            let Some(node) = self.inner.get_node(node_id) else {
+                return;
+            };
+            if let Some(id) = get_dioxus_id(node) {
+                break (node_id, id);
+            }
+            cursor = node.parent;
+        };
+        let (target_node_id, id) = listener;
+
+        // Element-local origin from the same derivation the click path uses —
+        // the box of the node the event is *dispatched* at, so
+        // `element_coordinates` is relative to the event's target, as on the web.
+        let origin = self
+            .inner
+            .get_node(target_node_id)
+            .map(Node::border_box_position)
+            .unwrap_or_default();
+
+        // And separately the scrollport frame, which the target-relative
+        // coordinates above cannot be converted into — see `NativeWheelData::
+        // scrollport`. Measured from the *original* hit node rather than from
+        // the dispatch target: the walk to a Dioxus-mapped ancestor could
+        // otherwise step over a scroll container and report its parent's.
+        let scrollport = self.inner.scrollport_origin(gesture.node_id).map(|p| {
+            (
+                f64::from(gesture.x - p.x),
+                f64::from(gesture.y - p.y),
+            )
+        });
+
+        let data = wrap_event_data(NativeWheelData {
+            client_x: f64::from(gesture.x),
+            client_y: f64::from(gesture.y),
+            element_x: f64::from(gesture.x - origin.x),
+            element_y: f64::from(gesture.y - origin.y),
+            scrollport,
+            // The unit travels from the platform to the handler untouched. A
+            // conversion here would need a line height nobody in this path
+            // knows, and `WheelDelta` exists precisely so it is not needed.
+            delta: match gesture.unit {
+                WheelUnit::Pixels => WheelDelta::pixels(gesture.delta_x, gesture.delta_y, 0.0),
+                WheelUnit::Lines => WheelDelta::lines(gesture.delta_x, gesture.delta_y, 0.0),
+            },
+            modifiers: gesture.mods,
+        });
+        let event = Event::new(data, true);
+        self.vdom.runtime().handle_event("wheel", event, id);
     }
 }
 
@@ -310,13 +409,14 @@ impl EventHandler for DioxusEventHandler<'_> {
             return;
         }
 
-        // Compute element-local origin once: the document-absolute position of the
-        // event target's top-left corner, accounting for scroll offsets at every
-        // ancestor level via Node::absolute_position.
+        // Compute element-local origin once: the on-screen position of the event
+        // target's box, accounting for ancestor scroll offsets. See
+        // `Node::border_box_position` for why the target's *own* offset is not
+        // subtracted.
         let target_origin = mutr
             .doc
             .get_node(event.target)
-            .map(|n| n.absolute_position(0.0, 0.0))
+            .map(Node::border_box_position)
             .unwrap_or_default();
 
         let event_data = match &event.data {

@@ -1,18 +1,20 @@
 [package]
 name        = "appthere-canvas"
 version     = "0.1.0"
-edition     = "2021"
+edition     = "2024"
 license     = "Apache-2.0"
 description = "Generic GPU canvas infrastructure for AppThere applications"
 
 [features]
 default    = []
-# The PageSource trait and GPU texture handle are provided by loki-render-cache
-# (the canonical implementation); `gpu` forwards to its wgpu-backed utilities.
-gpu        = ["loki-render-cache/gpu"]
+# `gpu` enables the wgpu-backed `GpuTexture` handle and the `PageSource` trait
+# used by loki-renderer. These types were the whole of `loki-render-cache`,
+# deleted by Spec 08 D-10 / T2.4 and folded in here — see ADR-0016.
+gpu        = ["dep:wgpu"]
 font-cache = ["dep:peniko"]
 
 [dependencies]
-loki-render-cache = { path = "../loki-render-cache", default-features = false }
-peniko    = { version = "0.5", optional = true }
+peniko     = { version = "0.5", optional = true }
 read-fonts = "0.40"
+thiserror  = { workspace = true }
+wgpu       = { version = "26", optional = true }

@@ -16,6 +16,16 @@ pub const MARK_UNDERLINE: &str = "underline";
 pub const MARK_STRIKETHROUGH: &str = "strikethrough";
 pub const MARK_COLOR: &str = "color";
 pub const MARK_HIGHLIGHT_COLOR: &str = "highlight_color";
+/// Character shading (`w:shd @fill` / ODF `fo:background-color` on text) — a
+/// `DocumentColor` in the bridge's colour-codec form.
+///
+/// Distinct from [`MARK_HIGHLIGHT_COLOR`], which carries one of sixteen fixed
+/// names. This is where an arbitrary highlight colour lives (Spec 08 T5.3), and
+/// it is also what a DOCX `w:shd` on a run imports as — the importer, the
+/// exporter and the layout all handled it before this mark existed, so a shaded
+/// run painted correctly on load and lost its shading the moment the document
+/// went through the CRDT.
+pub const MARK_BACKGROUND_COLOR: &str = "background_color";
 pub const MARK_FONT_FAMILY: &str = "font_family";
 pub const MARK_FONT_SIZE_PT: &str = "font_size_pt";
 pub const MARK_VERTICAL_ALIGN: &str = "vertical_align";
@@ -111,6 +121,7 @@ pub const CHAR_MARK_KEYS: &[&str] = &[
     MARK_STRIKETHROUGH,
     MARK_COLOR,
     MARK_HIGHLIGHT_COLOR,
+    MARK_BACKGROUND_COLOR,
     MARK_FONT_FAMILY,
     MARK_FONT_SIZE_PT,
     MARK_VERTICAL_ALIGN,

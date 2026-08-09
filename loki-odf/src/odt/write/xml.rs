@@ -78,6 +78,31 @@ pub(super) fn sanitize_ncname(id: &str) -> String {
     out
 }
 
+/// The `office:version` to write for `doc`, preserving an ODF-sourced
+/// document's original version (ADR-0002) and defaulting to the newest edition
+/// this writer emits otherwise.
+///
+/// Only an *ODF* source's version is trusted: a document imported from DOCX (or
+/// built programmatically) has no meaningful ODF version, so it is emitted at
+/// the default rather than, say, a Word version string. The value is
+/// constrained to the versions this writer can actually produce, so a corrupt
+/// or unexpected source string cannot reach the attribute. Without this,
+/// exporters hardcoded `"1.3"` and silently upgraded every 1.1/1.2 file —
+/// exactly the round-trip breakage ADR-0002 exists to prevent.
+#[must_use]
+pub(super) fn office_version(doc: &loki_doc_model::document::Document) -> &'static str {
+    match doc
+        .source
+        .as_ref()
+        .filter(|s| s.format == "odf")
+        .and_then(|s| s.version.as_deref())
+    {
+        Some("1.1") => "1.1",
+        Some("1.2") => "1.2",
+        _ => "1.3",
+    }
+}
+
 /// Appends ` name="value"` to `out`, escaping the value.
 pub(super) fn attr(out: &mut String, name: &str, value: &str) {
     out.push(' ');

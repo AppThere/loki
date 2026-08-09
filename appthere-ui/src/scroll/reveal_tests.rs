@@ -3,7 +3,7 @@
 
 //! Tests for [`super::reveal_offset`]. Extracted per the file-ceiling idiom.
 
-use super::{reveal_offset, RevealMargin};
+use super::{reveal_offset, RevealMargin, CARET_LEADING_LINES, CARET_TRAILING_LINES};
 
 /// A 900 px viewport over 10 000 px of content: max_scroll = 9100.
 const CLIENT: f32 = 900.0;
@@ -37,18 +37,50 @@ fn target_above_the_fold_scrolls_the_minimum() {
     assert_eq!(out, Some(800.0));
 }
 
+/// One body line, in px, at the size these tests measure against.
+const LINE: f32 = 20.0;
+
+#[test]
+fn caret_margin_is_derived_from_the_named_constants() {
+    // T1.9: the lookahead is one number, changed in one place. A call site that
+    // re-derived either edge from a literal would pass every other test in this
+    // file and silently uncouple the trigger from the rest position.
+    let margin = RevealMargin::caret_lines(LINE);
+    assert_eq!(margin.leading, LINE * CARET_LEADING_LINES);
+    assert_eq!(margin.trailing, LINE * CARET_TRAILING_LINES);
+}
+
 #[test]
 fn trailing_margin_is_kept_below_the_target() {
     // The caret-follow case: a caret at the very bottom of the viewport is
-    // technically visible, but the three trailing lines are not, so we scroll.
-    let margin = RevealMargin::caret_lines(20.0); // 20 above, 60 below
-    let caret_top = 1000.0 + CLIENT - 20.0; // last line of the visible band
-    let out = reveal_offset(1000.0, CLIENT, MAX, caret_top, 20.0, margin);
-    let expected = caret_top + 20.0 + 60.0 - CLIENT;
+    // technically visible, but the trailing lines are not, so we scroll.
+    let margin = RevealMargin::caret_lines(LINE);
+    let trailing = LINE * CARET_TRAILING_LINES;
+    let caret_top = 1000.0 + CLIENT - LINE; // last line of the visible band
+    let out = reveal_offset(1000.0, CLIENT, MAX, caret_top, LINE, margin);
+    let expected = caret_top + LINE + trailing - CLIENT;
     assert_eq!(out, Some(expected));
-    // And the caret keeps at least its 60 px (3 lines) of trailing space.
+    // And the caret comes to rest with exactly its trailing lines below it —
+    // trigger and rest are the same value, which is what makes the view
+    // stair-step by a line instead of lurching.
     let new_bottom = expected + CLIENT;
-    assert!(new_bottom - (caret_top + 20.0) >= 60.0);
+    assert_eq!(new_bottom - (caret_top + LINE), trailing);
+}
+
+#[test]
+fn phase_1_acceptance_two_trailing_lines_survive_at_the_page_bottom() {
+    // Spec 08 Phase 1 acceptance: continuous typing at the bottom of a page
+    // keeps at least two body lines of trailing space. Pinned here so lowering
+    // CARET_TRAILING_LINES below 2 fails the criterion rather than the feel.
+    let margin = RevealMargin::caret_lines(LINE);
+    let caret_top = 1000.0 + CLIENT - LINE;
+    let out = reveal_offset(1000.0, CLIENT, MAX, caret_top, LINE, margin)
+        .expect("a caret on the last visible line must reveal");
+    let trailing_space = (out + CLIENT) - (caret_top + LINE);
+    assert!(
+        trailing_space >= 2.0 * LINE,
+        "acceptance needs >=2 lines below the caret, got {trailing_space} px"
+    );
 }
 
 #[test]
@@ -89,8 +121,9 @@ fn target_taller_than_the_viewport_anchors_its_leading_edge() {
 
 #[test]
 fn margins_exceeding_the_viewport_still_show_the_caret() {
-    // Pathological: 3 lines of trailing space at a huge line height.
-    let margin = RevealMargin::caret_lines(400.0); // 400 + 1200 > 900
+    // Pathological: the caret's own margins exceed the viewport at a huge line
+    // height (400 leading + 20 caret + 800 trailing > 900 client).
+    let margin = RevealMargin::caret_lines(400.0);
     let out = reveal_offset(0.0, CLIENT, MAX, 3000.0, 20.0, margin);
     assert_eq!(out, Some(3000.0 - 400.0));
 }

@@ -28,9 +28,7 @@ use dioxus::prelude::*;
 
 use crate::theme::use_theme;
 use crate::tokens::spacing::{RADIUS_MD, RADIUS_SM, SPACE_2, SPACE_3, SPACE_4, TOUCH_MIN};
-use crate::tokens::typography::{
-    FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_SIZE_MD, FONT_WEIGHT_SEMIBOLD,
-};
+use crate::tokens::typography::{FONT_SIZE_BODY, FONT_SIZE_MD, FONT_WEIGHT_SEMIBOLD};
 
 /// Card width — matches `AtConfirmDialog`; the list scrolls inside.
 const BROWSER_WIDTH_PX: f32 = 360.0;
@@ -75,14 +73,13 @@ pub fn AtTemplateBrowser(props: AtTemplateBrowserProps) -> Element {
                      display: flex; flex-direction: column; gap: {gap}px; \
                      background: {bg}; border: 1px solid {border}; \
                      border-radius: {r}px; padding: {pad}px; \
-                     font-family: {font}; color: {fg};",
+                     color: {fg};",
                     w = BROWSER_WIDTH_PX,
                     gap = SPACE_3,
                     bg = palette.surface_1,
                     border = palette.border_chrome,
                     r = RADIUS_MD,
                     pad = SPACE_4,
-                    font = FONT_FAMILY_UI,
                     fg = palette.text_on_chrome,
                 ),
                 role: "dialog",
@@ -113,7 +110,7 @@ pub fn AtTemplateBrowser(props: AtTemplateBrowserProps) -> Element {
                                 "min-height: {th}px; box-sizing: border-box; \
                                  padding: {py}px {px}px; border-radius: {r}px; \
                                  background: {bg}; border: 1px solid {border}; \
-                                 color: {fg}; font-family: {font}; \
+                                 color: {fg}; \
                                  font-size: {fs}px; cursor: pointer; \
                                  display: flex; align-items: center; \
                                  text-align: left;",
@@ -124,7 +121,6 @@ pub fn AtTemplateBrowser(props: AtTemplateBrowserProps) -> Element {
                                 bg = palette.surface_2,
                                 border = palette.border_chrome,
                                 fg = palette.text_on_chrome,
-                                font = FONT_FAMILY_UI,
                                 fs = FONT_SIZE_BODY,
                             ),
                             onclick: move |evt| {
@@ -145,7 +141,7 @@ pub fn AtTemplateBrowser(props: AtTemplateBrowserProps) -> Element {
                         style: format!(
                             "min-height: {th}px; box-sizing: border-box; \
                              padding: {py}px {px}px; border-radius: {r}px; \
-                             font-family: {font}; font-size: {fs}px; \
+                             font-size: {fs}px; \
                              font-weight: {fw}; background: transparent; \
                              border: 1px solid {border}; color: {fg}; \
                              display: flex; align-items: center; justify-content: center;",
@@ -153,7 +149,6 @@ pub fn AtTemplateBrowser(props: AtTemplateBrowserProps) -> Element {
                             py = SPACE_2,
                             px = SPACE_4,
                             r = RADIUS_MD,
-                            font = FONT_FAMILY_UI,
                             fs = FONT_SIZE_BODY,
                             fw = FONT_WEIGHT_SEMIBOLD,
                             border = palette.border_chrome,

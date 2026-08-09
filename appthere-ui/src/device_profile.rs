@@ -36,6 +36,10 @@
 
 use dioxus::prelude::*;
 
+#[path = "device_profile_gpu.rs"]
+mod gpu;
+pub use gpu::GpuClass;
+
 /// What kind of pointing device is in use.
 ///
 /// Both variants can be true at once: an Android desktop device with a
@@ -91,42 +95,28 @@ impl PointerPrecision {
     }
 }
 
-/// Rough capability class of the GPU, from the wgpu adapter.
-///
-/// Replaces `cfg!(target_os = "android")` as the renderer-path selector: the
-/// question the renderer actually asks is "can this device run Vello's compute
-/// pipelines", which an emulator on x86 answers differently from a physical
-/// Android device (S0.6 §2a, §3).
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum GpuClass {
-    /// Not yet probed.
-    #[default]
-    Unknown,
-    /// Discrete GPU.
-    Discrete,
-    /// Integrated GPU.
-    Integrated,
-    /// Software rasteriser (SwiftShader, llvmpipe) — cannot run Vello compute.
-    Software,
-    /// No usable adapter; the CPU renderer is the only option.
-    None,
-}
-
-impl GpuClass {
-    /// `true` when the GPU paint path is viable.
-    #[must_use]
-    pub fn supports_gpu_paint(self) -> bool {
-        matches!(self, Self::Discrete | Self::Integrated)
-    }
-}
-
 /// Physical characteristics of the display a window is on.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct PhysicalDisplay {
-    /// Measured or calibrated pixels per inch. `None` while unknown — per D-04
-    /// the calibration prompt appears on first use of Actual Size, never at
-    /// first run, so an unknown value is a normal state and not an error.
-    pub px_per_inch: Option<f32>,
+    /// Measured or calibrated **CSS** pixels per inch. `None` while unknown —
+    /// per D-04 the calibration prompt appears on first use of Actual Size,
+    /// never at first run, so an unknown value is a normal state, not an error.
+    ///
+    /// # CSS pixels, not device pixels — and the rename that made that true
+    ///
+    /// This was `px_per_inch` on a struct called `PhysicalDisplay`, which reads
+    /// as *device* pixels per inch. Its only consumer is
+    /// `components::zoom::fit::actual_size_zoom_percent`, which needs CSS pixels
+    /// per inch, and the two differ by exactly the device scale factor. On the
+    /// 2× display named in T5.5's own acceptance criterion — "within 2% of a
+    /// physical sheet on the MacBook Air 2020" — the ambiguity is a **100%
+    /// error**, and the name would have been the only thing that said so.
+    ///
+    /// So it is named for the quantity it holds (evidence rule 4: rename rather
+    /// than fence). A platform query reports device pixels and millimetres;
+    /// dividing by the scale factor is the probe's job, and
+    /// `loki_app_shell::display_density` is where that happens once.
+    pub css_px_per_inch: Option<f32>,
 }
 
 /// How the window is presented.
@@ -148,20 +138,69 @@ pub enum WindowMode {
 /// field is independently `Unknown`/`None` until then, and consumers must
 /// behave sensibly in that state rather than waiting for it.
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
+/// There is deliberately **no `hardware_keyboard`** field. It existed until r20
+/// and was removed rather than left unwired.
+///
+/// S0.6 introduced it and §3.5 assigned it two consumers, I-05 and I-07. Both
+/// collapsed for the same reason: the Android inset chain reports *actual* IME
+/// visibility (`WindowInsets.Type.ime()` folded into the mask, re-queried on every
+/// visibility change), so no consumer needs to ask whether a keyboard is attached —
+/// with a hardware keyboard there is no IME, so the inset is 0 and nothing is
+/// reserved, for free.
+///
+/// That left a `bool` nothing read, whose own doc comment forbade using it to
+/// reserve space — its only intended purpose. An API that invites a use its
+/// contract forbids is the trap L08-031 is about, and an unread field is the
+/// version of that trap nobody notices until they reach for it. If a genuine
+/// consumer appears — surfacing keyboard shortcuts only when a keyboard exists is
+/// the plausible one — adding a probed `bool` back is a smaller change than
+/// discovering this one was never wired.
 pub struct DeviceProfile {
     /// What is pointing at the app.
     pub pointer: PointerPrecision,
-    /// Whether a hardware keyboard is attached. Advisory: the IME safe area is
-    /// driven by the actual inset value, which is already 0 when no soft
-    /// keyboard is shown (S0.4 §7), so this must not be used to *reserve*
-    /// space.
-    pub hardware_keyboard: bool,
     /// Total system RAM, when the platform has been queried.
     pub system_ram_bytes: Option<u64>,
+    /// RAM the OS believes is available without swapping, when known.
+    ///
+    /// Prefer this over [`Self::system_ram_bytes`] when sizing a budget: total
+    /// RAM says what the machine has, not what this process may take while a
+    /// browser and the OS are also resident — which is the situation Spec 06's
+    /// 8 GB design floor describes.
+    pub available_ram_bytes: Option<u64>,
     /// GPU capability class.
+    ///
+    /// There is deliberately no `gpu_memory_bytes` beside it.
+    /// TODO(device-profile-gpu-memory): wgpu exposes no portable VRAM figure —
+    /// `AdapterInfo` carries a device type, vendor and backend but no capacity —
+    /// so a budget derives from system RAM and this class instead. Recording the
+    /// absence rather than inventing a number is the point: an integrated GPU
+    /// shares system RAM (so the system figure *is* the constraint), and a
+    /// discrete one has its own budget we cannot see.
     pub gpu_class: GpuClass,
+    /// Physical pixels per CSS pixel on the display this window is on, when
+    /// observed.
+    ///
+    /// `None` means no page tile has painted yet, and is deliberately distinct
+    /// from `Some(1.0)`: a consumer must be able to tell an unprobed HiDPI
+    /// display from a genuine standard-DPI one, because resident texture bytes go
+    /// as the *square* of this number (Spec 08 §3.2a) and assuming 1.0 on a 3x
+    /// display under-states the cost ninefold.
+    ///
+    /// Owned by the compositor rather than by us, so it is observed on the way
+    /// past rather than queried — see `loki_renderer::dpr_probe` — and it can
+    /// change mid-session when a window moves between displays.
+    pub device_scale_factor: Option<f64>,
     /// The current display's physical characteristics.
     pub display: Option<PhysicalDisplay>,
+
+    /// Whether [`Self::display`] came from a reader's calibration rather than a
+    /// platform query.
+    ///
+    /// Carried on the profile rather than inside `PhysicalDisplay` because it is
+    /// about the *provenance* of the number, and its one consumer —
+    /// `note_display_density`'s precedence rule — needs it even in the frame
+    /// where `display` is being replaced.
+    pub display_is_calibrated: bool,
     /// How the window is presented.
     pub window_mode: WindowMode,
     /// Whether the user or platform asked for reduced motion. Wired to
@@ -172,6 +211,25 @@ pub struct DeviceProfile {
     /// `SPI_GETCLIENTAREAANIMATION`, macOS
     /// `accessibilityDisplayShouldReduceMotion`. Until then this is only ever
     /// set by an explicit user preference, and defaults to full motion.
+    /// **Never written and never read — Spec 08 I-26.** Inventoried r61: the only
+    /// other mention of this field in the workspace is prose. So it is not "the
+    /// profile knows about reduced motion", it is a field nobody fills and nobody
+    /// consults, which from the outside reads as a capability.
+    ///
+    /// # Why this one is worse than the other unwired probes
+    ///
+    /// `has_hover` and `hardware_keyboard` are also unwired, and absence there is
+    /// at least honest — nothing claims the app adapts. This field names an
+    /// **accessibility preference the system may be actively signalling**, and its
+    /// presence implies the signal is honoured. Someone with vestibular
+    /// sensitivity who has set that preference gets the animation anyway, and the
+    /// code that would tell you otherwise reads as though it wouldn't.
+    ///
+    /// Kept rather than deleted: T1.1's animation driver is its consumer and
+    /// Phase 5's zoom animation will be a second, so the field is where it
+    /// belongs and only the wiring is missing. **A reader must not take its
+    /// presence as evidence the preference is observed** — nothing observes it,
+    /// on any platform.
     pub reduced_motion: bool,
 }
 
@@ -209,6 +267,12 @@ pub fn use_device_profile() -> DeviceProfile {
 /// precision actually changes, so a stream of mouse-moves does not wake the
 /// consumers of the signal.
 pub fn note_pointer(seen: PointerPrecision) {
+    // A forced pointer wins over every observation. Otherwise the first real
+    // mouse-move would overwrite it and the branch under test would stop being
+    // the branch that runs — which is the whole failure the override addresses.
+    if crate::device_profile_override::current().pointer.is_some() {
+        return;
+    }
     let Some(ctx) = try_consume_context::<AtDeviceProfileContext>() else {
         return;
     };
@@ -219,6 +283,10 @@ pub fn note_pointer(seen: PointerPrecision) {
         profile.write().pointer = next;
     }
 }
+
+#[path = "device_profile_apply.rs"]
+mod apply;
+pub use apply::apply_profile_override;
 
 #[cfg(test)]
 #[path = "device_profile_tests.rs"]

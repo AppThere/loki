@@ -32,7 +32,10 @@ text content:
 
 The ODF reader maps each `text:*` field element to a concrete `OdfField`
 variant (e.g. `OdfField::PageNumber`, `OdfField::Date`). Unknown field
-elements fall through to `OdfField::Unknown { local_name, current_value }`.
+elements are intended to fall through to `OdfField::Unknown { local_name,
+current_value }`. *(Not implemented: the reader currently returns `Other` for an
+unmodelled field and the mapper drops it, so `OdfField::Unknown` is never
+constructed — `TODO(odf-unknown-field)`.)*
 
 The document mapper converts `OdfField` to a `loki_doc_model` `Field` with a
 `FieldKind`:
@@ -51,9 +54,13 @@ The document mapper converts `OdfField` to a `loki_doc_model` `Field` with a
 | `text:bookmark-ref` | `FieldKind::CrossReference { target, format }` |
 | `text:chapter`, unknown | `FieldKind::Raw { instruction }` |
 
-`Field::current_value` stores the element's text content (the last-rendered
-snapshot), so headless exporters can fall back to the cached value when the
-field cannot be re-evaluated.
+`Field::current_value` is *meant to* store the element's text content (the
+last-rendered snapshot), so headless/EPUB exporters can fall back to the cached
+value. *(Implementation status: ODF import does **not** yet capture it — the
+reader skips the field body and the mapper sets `current_value: None`, so an ODF
+`text:date`/`text:page-number`'s cached display text is lost and Date/Time
+`office:date-value` is dropped; a page-number renders `1`, others blank. DOCX
+import does populate it. `TODO(odf-field-value)`.)*
 
 ## Rationale
 
@@ -61,9 +68,11 @@ ODF's element-per-kind model is simpler to parse than OOXML's state machine:
 each `text:*` field element is self-contained and can be mapped immediately
 on the `Start` or `Empty` event without buffering multiple events.
 
-Storing unknown fields in `FieldKind::Raw` rather than discarding them
-preserves lossless round-tripping within ODF — the instruction string can be
-used to reconstruct the original element on export.
+Storing unknown fields in `FieldKind::Raw` rather than discarding them is
+*intended to* preserve lossless round-tripping within ODF — the instruction
+string can be used to reconstruct the original element on export. *(Not yet
+realised: unmodelled `text:*` field elements are currently dropped on import;
+only the modelled set plus `text:chapter` reach `FieldKind::Raw`.)*
 
 ## Consequences
 

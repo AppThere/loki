@@ -10,8 +10,11 @@
 use quick_xml::Writer;
 
 use loki_doc_model::style::props::para_props::{LineHeight, ParaProps, Spacing};
+use loki_primitives::units::Points;
 
-use crate::docx::write::xml::{pts_to_twips, write_empty, write_end, write_start, wval};
+use crate::docx::write::xml::{
+    hex_color_val, pts_to_twips, write_empty, write_end, write_start, wval,
+};
 
 /// Writes a `<w:pPr>` element from [`ParaProps`] (nothing if no field is set).
 pub(super) fn write_para_props_elem<W: std::io::Write>(w: &mut Writer<W>, pp: &ParaProps) {
@@ -21,12 +24,30 @@ pub(super) fn write_para_props_elem<W: std::io::Write>(w: &mut Writer<W>, pp: &P
         || pp.indent_first_line.is_some();
     let has_spacing =
         pp.space_before.is_some() || pp.space_after.is_some() || pp.line_height.is_some();
-    let has_content =
-        pp.alignment.is_some() || has_ind || has_spacing || pp.outline_level.is_some();
+    let has_borders = pp.border_top.is_some()
+        || pp.border_bottom.is_some()
+        || pp.border_left.is_some()
+        || pp.border_right.is_some()
+        || pp.border_between.is_some();
+    let has_flags = pp.keep_together.is_some()
+        || pp.keep_with_next.is_some()
+        || pp.widow_control.is_some()
+        || pp.page_break_before.is_some();
+    let has_content = pp.alignment.is_some()
+        || has_ind
+        || has_spacing
+        || pp.outline_level.is_some()
+        || has_borders
+        || has_flags
+        || pp.background_color.is_some();
     if !has_content {
         return;
     }
     let _ = write_start(w, "w:pPr", &[]);
+
+    // keep/widow/break toggles, the border box, and shading — the export
+    // canonicalisation pass places these in CT_PPr order, so emit here.
+    write_para_flags_borders_shading(w, pp);
 
     if let Some(align) = pp.alignment {
         use loki_doc_model::style::props::para_props::ParagraphAlignment;
@@ -128,4 +149,119 @@ fn spacing_twips(s: Spacing) -> i32 {
         Spacing::Exact(pt) => pts_to_twips(pt.value()),
         _ => 0,
     }
+}
+
+/// Emits the `w:pPr` children both the styles and direct-props writers share but
+/// historically dropped on DOCX export (importer parsed them, no writer wrote
+/// them — the paragraph-level sibling of the `emit_char_props` symmetry): the
+/// keep/widow/break `CT_OnOff` toggles, the paragraph border box (`w:pBdr`, five
+/// edges each carrying its padding as `w:space`), and paragraph shading
+/// (`w:shd`). Inverse of `map_ppr` (`docx/mapper/props.rs`). Child order is
+/// normalised by the export canonicalisation pass, so these may be emitted
+/// alongside the alignment/indent/spacing children in any order.
+pub(super) fn write_para_flags_borders_shading<W: std::io::Write>(
+    w: &mut Writer<W>,
+    pp: &ParaProps,
+) {
+    write_on_off(w, "w:keepNext", pp.keep_with_next);
+    write_on_off(w, "w:keepLines", pp.keep_together);
+    write_on_off(w, "w:pageBreakBefore", pp.page_break_before);
+    // widow_control is Option<u8> (map_ppr maps the OOXML bool → 2/0): a positive
+    // value is on, 0 is an explicit off.
+    match pp.widow_control {
+        Some(0) => {
+            let _ = write_empty(w, "w:widowControl", &wval("false"));
+        }
+        Some(_) => {
+            let _ = write_empty(w, "w:widowControl", &wval("true"));
+        }
+        None => {}
+    }
+
+    if pp.border_top.is_some()
+        || pp.border_bottom.is_some()
+        || pp.border_left.is_some()
+        || pp.border_right.is_some()
+        || pp.border_between.is_some()
+    {
+        let _ = write_start(w, "w:pBdr", &[]);
+        write_pbdr_edge(w, "w:top", pp.border_top.as_ref(), pp.padding_top);
+        write_pbdr_edge(w, "w:left", pp.border_left.as_ref(), pp.padding_left);
+        write_pbdr_edge(w, "w:bottom", pp.border_bottom.as_ref(), pp.padding_bottom);
+        write_pbdr_edge(w, "w:right", pp.border_right.as_ref(), pp.padding_right);
+        // The inter-paragraph rule carries no padding of its own.
+        write_pbdr_edge(w, "w:between", pp.border_between.as_ref(), None);
+        let _ = write_end(w, "w:pBdr");
+    }
+
+    if let Some(ref bg) = pp.background_color
+        && let Some(hex) = bg.to_hex()
+    {
+        // `w:val="clear"` + `@w:fill` round-trips through the reader's
+        // `resolve_shading` (same shape as run/cell shading).
+        let fill = hex_color_val(&hex);
+        let _ = write_empty(w, "w:shd", &[("w:val", "clear"), ("w:fill", &fill)]);
+    }
+}
+
+/// Emits a `CT_OnOff` paragraph toggle: `Some(true)` → bare element, `Some(false)`
+/// → `@w:val="false"`, `None` → nothing.
+fn write_on_off<W: std::io::Write>(w: &mut Writer<W>, tag: &str, v: Option<bool>) {
+    match v {
+        Some(true) => {
+            let _ = write_empty(w, tag, &[]);
+        }
+        Some(false) => {
+            let _ = write_empty(w, tag, &wval("false"));
+        }
+        None => {}
+    }
+}
+
+/// One `w:pBdr` edge (`w:top`/`w:bottom`/`w:left`/`w:right`/`w:between`), the
+/// inverse of `map_border_edge`: style → `@w:val`, width in points → eighth-pt
+/// `@w:sz` (clamped 2..=96), padding in points → `@w:space`, colour → hex/auto.
+/// A `BorderStyle::None` edge writes `@w:val="nil"`.
+fn write_pbdr_edge<W: std::io::Write>(
+    w: &mut Writer<W>,
+    tag: &str,
+    border: Option<&loki_doc_model::style::props::border::Border>,
+    padding: Option<Points>,
+) {
+    use loki_doc_model::style::props::border::BorderStyle;
+    let Some(b) = border else { return };
+    if b.style == BorderStyle::None {
+        let _ = write_empty(w, tag, &wval("nil"));
+        return;
+    }
+    let val = match b.style {
+        BorderStyle::Dashed => "dashed",
+        BorderStyle::Dotted => "dotted",
+        BorderStyle::Double => "double",
+        BorderStyle::Inset => "inset",
+        BorderStyle::Outset => "outset",
+        BorderStyle::Wave => "wave",
+        _ => "single",
+    };
+    #[allow(clippy::cast_possible_truncation)] // clamped to 2..=96 above the cast
+    let sz = ((b.width.value() * 8.0).round().clamp(2.0, 96.0) as i32).to_string();
+    // `w:space` is in points (the reader reads it back into padding directly).
+    #[allow(clippy::cast_possible_truncation)] // bounded document measurement
+    let space = padding
+        .map_or(0, |p| p.value().round().clamp(0.0, 31.0) as i32)
+        .to_string();
+    let color = b
+        .color
+        .as_ref()
+        .map_or_else(|| "auto".to_string(), crate::docx::write::xml::color_to_hex);
+    let _ = write_empty(
+        w,
+        tag,
+        &[
+            ("w:val", val),
+            ("w:sz", &sz),
+            ("w:space", &space),
+            ("w:color", &color),
+        ],
+    );
 }

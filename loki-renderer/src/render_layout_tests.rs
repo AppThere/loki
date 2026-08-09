@@ -213,3 +213,36 @@ fn compact_layout_measure_narrows_by_the_scale() {
         "compact measure {compact} must be narrower than the unscaled {unscaled}"
     );
 }
+
+/// **T7.4's standing clause, as a test: the tile is the measure, never the
+/// content.**
+///
+/// The regression this guards is a real one that shipped — `doc_page_source`
+/// sized the reflow tile to `content_max_x(&layout).max(content_width)` so an
+/// oversized element could be reached by scrolling sideways, which is precisely
+/// the thing T7.4 says never to ship.
+///
+/// The structural half of the guard is
+/// [`reflow_tile_width_for_content_pt`]'s signature: it has no access to the
+/// laid-out content, so it *cannot* size the tile to it. This test pins the
+/// other half — that the tile really is the content column plus its two insets,
+/// and grows only with the column.
+#[test]
+fn the_reflow_tile_is_the_measure_plus_its_insets() {
+    use crate::render_layout::{REFLOW_PADDING_PT, reflow_tile_width_for_content_pt};
+
+    for content in [50.0f32, 200.0, 400.0, 612.0] {
+        assert!(
+            (reflow_tile_width_for_content_pt(content) - (content + 2.0 * REFLOW_PADDING_PT)).abs()
+                < 1e-3,
+            "the tile at a {content} pt column is not the column plus its insets"
+        );
+    }
+
+    // Strictly monotone in the column, and in nothing else — there is nothing
+    // else it can read.
+    assert!(
+        reflow_tile_width_for_content_pt(200.0) < reflow_tile_width_for_content_pt(400.0),
+        "the tile did not grow with the reading column"
+    );
+}

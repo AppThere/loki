@@ -70,6 +70,9 @@ fn repeat(c: char, n: i32) -> Result<Value, RuntimeError> {
     if n < 0 {
         return Err(RuntimeError::invalid_call());
     }
+    if (n as usize).saturating_mul(c.len_utf8()) > crate::value::MAX_STRING_BYTES {
+        return Err(RuntimeError::new(7, "Out of memory"));
+    }
     Ok(Value::Str(std::iter::repeat_n(c, n as usize).collect()))
 }
 
@@ -84,6 +87,9 @@ fn string_fn(a: &[Value]) -> Result<Value, RuntimeError> {
         Value::Str(s) => s.chars().next().unwrap_or(' '),
         other => char::from_u32(u32::try_from(other.to_i32()?).unwrap_or(32)).unwrap_or(' '),
     };
+    if (n as usize).saturating_mul(ch.len_utf8()) > crate::value::MAX_STRING_BYTES {
+        return Err(RuntimeError::new(7, "Out of memory"));
+    }
     Ok(Value::Str(std::iter::repeat_n(ch, n as usize).collect()))
 }
 

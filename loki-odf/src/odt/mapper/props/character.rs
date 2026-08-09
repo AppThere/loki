@@ -45,6 +45,20 @@ pub(crate) fn map_text_props(props: &OdfTextProps) -> CharProps {
         Some("normal") => Some(false),
         _ => None,
     };
+    // A numeric fo:font-weight (100..900, ODF 1.3 §20.194) carries more than the
+    // bold/normal keywords do, so store it on the richer `font_weight` field —
+    // which supersedes `bold` in layout and export. The keyword arms above keep
+    // populating `bold`; only a numeric value reaches here (previously it was
+    // dropped, so a LibreOffice run tagged `fo:font-weight="600"` imported as
+    // neither bold nor weighted).
+    if let Some(n) = props
+        .font_weight
+        .as_deref()
+        .and_then(|w| w.parse::<u16>().ok())
+        .filter(|n| (1..=1000).contains(n))
+    {
+        out.font_weight = Some(n);
+    }
     out.italic = match props.font_style.as_deref() {
         Some("italic" | "oblique") => Some(true),
         Some("normal") => Some(false),
@@ -123,11 +137,15 @@ pub(crate) fn map_text_props(props: &OdfTextProps) -> CharProps {
     if let Some(v) = props.letter_kerning {
         out.kerning = Some(v);
     }
-    // style:text-scale is a percentage string like "150%" → 150.0 (same unit as OOXML w:w)
+    // style:text-scale is a percentage string like "150%", but the model stores
+    // the scale as a FRACTION (1.5) — the layout + OOXML `w:w` contract (`w:w`
+    // is divided by 100 on import) — so divide the parsed percent here. Storing
+    // the raw percent made an ODF-sourced scaled run ~100× too wide in layout
+    // and corrupted DOCX export.
     if let Some(pct) = props.text_scale.as_deref()
         && let Some(v) = pct.strip_suffix('%').and_then(|s| s.parse::<f32>().ok())
     {
-        out.scale = Some(v);
+        out.scale = Some(v / 100.0);
     }
 
     // ── Language ───────────────────────────────────────────────────────────

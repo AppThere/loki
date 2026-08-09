@@ -71,6 +71,69 @@ thread_local! {
 #[cfg(feature = "incremental")]
 use style::selector_parser::RestyleDamage;
 
+/// PATCH(loki): whether a node establishes a scrollport, per axis.
+///
+/// Extracted from `scroll_node_by_collect_inner`, which is still its only
+/// scrolling caller — `BaseDocument::scrollport_origin` is the second, and two
+/// copies of "what counts as a scroll container" is the kind of pair that agrees
+/// everywhere except on the case that matters (`overflow: visible` on `html`/
+/// `body`, which scrolls despite the value that normally means it does not).
+fn scroll_axes(node: &Node) -> (bool, bool) {
+    let is_html_or_body = node.data.downcast_element().is_some_and(|e| {
+        let tag = &e.name.local;
+        tag == "html" || tag == "body"
+    });
+
+    node.primary_styles()
+        .map(|styles| {
+            (
+                matches!(styles.clone_overflow_x(), Overflow::Scroll | Overflow::Auto),
+                matches!(styles.clone_overflow_y(), Overflow::Scroll | Overflow::Auto)
+                    || (styles.clone_overflow_y() == Overflow::Visible && is_html_or_body),
+            )
+        })
+        .unwrap_or((false, false))
+}
+
+/// PATCH(loki): the unit a wheel delta is expressed in, carried alongside the
+/// delta because the two are only meaningful together.
+///
+/// Platforms report wheel movement in *either* unit and there is no honest
+/// conversion between them: turning lines into pixels needs a line height, and
+/// picking one fabricates a pixel count the platform never gave. So the unit
+/// travels with the number, and the consumer decides — which is also what the
+/// web does (`WheelEvent.deltaMode`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WheelUnit {
+    /// Device pixels, as reported by a trackpad or a high-resolution wheel.
+    Pixels,
+    /// Text lines, as reported by a classic notched wheel.
+    Lines,
+}
+
+/// PATCH(loki): one wheel gesture, as the shell observed it.
+///
+/// A struct rather than seven parameters: `delta_x`/`delta_y`/`unit` are one
+/// fact in three pieces and must not be passed separately, and `x`/`y` next to
+/// two more `f64`s at a call site is how a coordinate ends up in a delta slot.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WheelGesture {
+    /// The node the gesture is over — hover, else focus.
+    pub node_id: usize,
+    /// Horizontal movement, in [`Self::unit`].
+    pub delta_x: f64,
+    /// Vertical movement, in [`Self::unit`].
+    pub delta_y: f64,
+    /// The unit both deltas are expressed in.
+    pub unit: WheelUnit,
+    /// Pointer position in window coordinates at the time of the gesture.
+    pub x: f32,
+    /// Pointer position in window coordinates at the time of the gesture.
+    pub y: f32,
+    /// The live keyboard modifiers — this is what makes a wheel a zoom.
+    pub mods: keyboard_types::Modifiers,
+}
+
 /// Abstraction over wrappers around [`BaseDocument`] to allow for them all to
 /// be driven by [`blitz-shell`](https://docs.rs/blitz-shell)
 pub trait Document: Deref<Target = BaseDocument> + DerefMut + 'static {
@@ -95,6 +158,26 @@ pub trait Document: Deref<Target = BaseDocument> + DerefMut + 'static {
     /// scroll DomEventData variant.
     fn handle_scroll_changes(&mut self, changes: &[(usize, f64, f64)]) {
         let _ = changes;
+    }
+
+    /// PATCH(loki): notify the embedder of a wheel gesture, before the shell
+    /// decides whether to scroll with it.
+    ///
+    /// # Why a hook and not a `DomEventData` variant
+    ///
+    /// The same reason `handle_scroll_changes` is one: blitz-traits 0.2 has no
+    /// wheel variant, and adding one means vendoring blitz-traits — which
+    /// cascades into blitz-dom, blitz-paint and blitz-shell, four forks for one
+    /// event. This is the established shape in this fork for exactly that
+    /// trade.
+    ///
+    /// # The shell still owns the scroll
+    ///
+    /// This reports; it does not consume. What a wheel *does* — scroll, or zoom
+    /// — is the shell's policy, because only the shell can decline to scroll.
+    /// See `blitz-shell`'s `MouseWheel` handler.
+    fn handle_wheel(&mut self, gesture: WheelGesture) {
+        let _ = gesture;
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -905,7 +988,9 @@ impl BaseDocument {
 
     pub fn focus_next_node(&mut self) -> Option<usize> {
         let focussed_node_id = self.get_focussed_node_id()?;
-        let id = self.next_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
+        // PATCH(loki): the tab order, not mere focusability — a `tabindex="-1"`
+        // overlay is focusable on purpose and must not be a Tab stop.
+        let id = self.next_node(&self.nodes[focussed_node_id], |node| node.is_tab_focussable())?;
         self.set_focus_to(id);
         Some(id)
     }
@@ -1320,6 +1405,36 @@ impl BaseDocument {
         self.scroll_node_by_collect(node_id, current.x - x, current.y - y, changed)
     }
 
+    /// PATCH(loki): the Document-relative origin of the scrollport containing
+    /// `node_id` — the innermost scrolling ancestor, `node_id` itself included.
+    ///
+    /// # Why an embedder needs this and cannot compute it
+    ///
+    /// A DOM event's `offsetX`/`offsetY` are relative to its **target**, which
+    /// for a pointer gesture is whatever the hit test landed on — a text run, an
+    /// image, a page. A consumer that wants "where in the visible area did this
+    /// happen" (pointer-anchored zoom is the case this was added for) is asking
+    /// about the *scrollport*, and the two frames differ by however far the
+    /// target sits inside the scrolled content. Nothing the embedder receives
+    /// lets it recover that: the target's own position is exactly what it does
+    /// not know.
+    ///
+    /// Returns `None` when nothing in the chain scrolls, which is a real answer
+    /// — there is no scrollport, so there is no such frame — and not something
+    /// to substitute the window for.
+    pub fn scrollport_origin(&self, node_id: usize) -> Option<taffy::Point<f32>> {
+        let mut cursor = Some(node_id);
+        while let Some(id) = cursor {
+            let node = self.nodes.get(id)?;
+            let (x, y) = scroll_axes(node);
+            if x || y {
+                return Some(node.border_box_position());
+            }
+            cursor = node.parent;
+        }
+        None
+    }
+
     /// Scroll a node by given x and y
     /// Will bubble scrolling up to parent node once it can no longer scroll further
     /// If we're already at the root node, bubbles scrolling up to the viewport
@@ -1380,21 +1495,7 @@ impl BaseDocument {
             return false;
         };
 
-        let is_html_or_body = node.data.downcast_element().is_some_and(|e| {
-            let tag = &e.name.local;
-            tag == "html" || tag == "body"
-        });
-
-        let (can_x_scroll, can_y_scroll) = node
-            .primary_styles()
-            .map(|styles| {
-                (
-                    matches!(styles.clone_overflow_x(), Overflow::Scroll | Overflow::Auto),
-                    matches!(styles.clone_overflow_y(), Overflow::Scroll | Overflow::Auto)
-                        || (styles.clone_overflow_y() == Overflow::Visible && is_html_or_body),
-                )
-            })
-            .unwrap_or((false, false));
+        let (can_x_scroll, can_y_scroll) = scroll_axes(node);
 
         let initial = node.scroll_offset;
         let new_x = node.scroll_offset.x - x;

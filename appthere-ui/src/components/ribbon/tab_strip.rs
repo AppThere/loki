@@ -12,7 +12,6 @@ use crate::components::ribbon::RibbonTabDesc;
 use crate::components::ribbon::RibbonTabIndex;
 use crate::responsive::{use_breakpoint, Breakpoint};
 use crate::tokens;
-use crate::tokens::FONT_FAMILY_UI;
 
 /// The tab-strip height for a breakpoint (Spec 04 M6, R-14): the touch-first
 /// Compact class gets full [`tokens::TOUCH_MIN`] targets (WCAG 2.5.8);
@@ -160,15 +159,12 @@ fn AtRibbonTab(
             aria_selected: if is_active { "true" } else { "false" },
             aria_label: aria_label,
             style: format!(
-                // Atkinson registration is locked by loki-layout's
-                // ui_font_registration test (launch-time blob set).
                 "min-width: 64px; padding: 0 {p}px; display: flex; \
                  align-items: center; justify-content: center; \
                  background: {bg}; border: none; cursor: pointer; \
-                 font-family: {font}; font-size: {size}px; font-weight: {weight}; \
+                 font-size: {size}px; font-weight: {weight}; \
                  color: {fg}; box-sizing: border-box; {bottom_border}",
                 p      = tokens::SPACE_3,
-                font   = FONT_FAMILY_UI,
                 size   = tokens::FONT_SIZE_BODY,
                 weight = tokens::FONT_WEIGHT_MEDIUM,
                 fg     = label_color,

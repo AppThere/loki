@@ -211,10 +211,22 @@ impl Node {
         }
     }
 
+    /// Whether this node may hold focus at all — see
+    /// [`ElementData::is_focussable`].
     pub fn is_focussable(&self) -> bool {
         self.data
             .downcast_element()
             .map(|el| el.is_focussable)
+            .unwrap_or(false)
+    }
+
+    /// PATCH(loki): whether Tab stops here — see
+    /// [`ElementData::is_tab_focussable`]. Used by sequential navigation only;
+    /// everything else wants [`Self::is_focussable`].
+    pub fn is_tab_focussable(&self) -> bool {
+        self.data
+            .downcast_element()
+            .map(|el| el.is_tab_focussable)
             .unwrap_or(false)
     }
 
@@ -782,6 +794,30 @@ impl Node {
             .get()
             .map(|i| self.with(i).absolute_position(x, y))
             .unwrap_or(taffy::Point { x, y })
+    }
+
+    /// PATCH(loki): the Document-relative position of this node's **border box**.
+    ///
+    /// [`Self::absolute_position`] subtracts this node's *own* scroll offset as
+    /// well as every ancestor's, which places the origin at the top of the
+    /// node's scrolled content rather than at the box itself. For a leaf that is
+    /// no difference — a leaf scrolls nothing — which is why the click path
+    /// never saw it. It matters the moment the node in question is a scroll
+    /// container, where the two differ by exactly the live scroll offset.
+    ///
+    /// **Border box, not padding box**, and the name says so because the
+    /// distinction is real: the web measures `offsetX`/`offsetY` and a
+    /// scrollport's origin from the *padding* edge, which sits one border-width
+    /// inside this. Nothing in this fork adds that inset yet, so a bordered
+    /// scroll container would be off by its border width.
+    /// TODO(border-inset): subtract the resolved border widths here once a
+    /// caller has a bordered container.
+    pub fn border_box_position(&self) -> taffy::Point<f32> {
+        let p = self.absolute_position(0.0, 0.0);
+        taffy::Point {
+            x: p.x + self.scroll_offset.x as f32,
+            y: p.y + self.scroll_offset.y as f32,
+        }
     }
 
     /// Creates a synthetic click event

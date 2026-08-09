@@ -179,6 +179,11 @@ fn concat(lhs: &Value, rhs: &Value) -> Result<Value, RuntimeError> {
     } else {
         rhs.to_basic_string()?
     };
+    // Bound the result before allocating so an unbounded `s = s & s` loop raises
+    // a runtime error instead of OOM-aborting (macro spec §8).
+    if a.len().saturating_add(b.len()) > super::MAX_STRING_BYTES {
+        return Err(RuntimeError::new(7, "Out of memory"));
+    }
     Ok(Value::Str(a + &b))
 }
 

@@ -39,6 +39,16 @@ impl MountedBackend for ProxyMountedBackend {
         ));
     }
 
+    fn focus_node(&self, node_id: usize, focus: bool) {
+        let _ = self.proxy.send_event(BlitzShellEvent::embedder_event(
+            DioxusNativeEvent::FocusNode {
+                window: self.window,
+                node_id,
+                focus,
+            },
+        ));
+    }
+
     fn query_geometry(
         &self,
         node_id: usize,
@@ -84,6 +94,18 @@ pub enum DioxusNativeEvent {
         node_id: usize,
         x: f64,
         y: f64,
+    },
+
+    /// PATCH(loki): move focus to / away from a node. Backs
+    /// `MountedData::set_focus`.
+    ///
+    /// A node that has been removed by the time this is handled is a no-op:
+    /// focus restoration on dismissal races the unmount that caused it, and a
+    /// stale id must not reach `set_focus_to`.
+    FocusNode {
+        window: WindowId,
+        node_id: usize,
+        focus: bool,
     },
 
     /// PATCH(loki): read a node's scroll / client geometry, replying through the
@@ -194,6 +216,27 @@ impl DioxusNativeApplication {
                         // Dispatch `onscroll` so reactive state (e.g. the custom
                         // scrollbar) tracks the programmatic scroll.
                         view.doc.handle_scroll_changes(&changes);
+                    }
+                    view.poll();
+                    view.request_redraw();
+                }
+            }
+
+            DioxusNativeEvent::FocusNode {
+                window,
+                node_id,
+                focus,
+            } => {
+                if let Some(view) = self.inner.windows.get_mut(window) {
+                    // `get_node` first: `set_focus_to` snapshots the node, and
+                    // the id may name a node this dismissal has already removed.
+                    if view.doc.get_node(*node_id).is_none() {
+                        return;
+                    }
+                    if *focus {
+                        view.doc.set_focus_to(*node_id);
+                    } else {
+                        view.doc.clear_focus();
                     }
                     view.poll();
                     view.request_redraw();

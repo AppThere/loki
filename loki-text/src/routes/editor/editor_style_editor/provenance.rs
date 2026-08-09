@@ -53,13 +53,11 @@ pub(super) fn StyleProvenanceList(
             style: format!(
                 "width: {w}; min-width: {w}; overflow-y: auto; \
                  border-left: 1px solid {border}; display: flex; \
-                 flex-direction: column; gap: {gap}px; padding: {p}px; \
-                 font-family: {ff};",
+                 flex-direction: column; gap: {gap}px; padding: {p}px;",
                 w = posture.section_width(220.0),
                 border = tokens::COLOR_BORDER_CHROME,
                 gap = tokens::SPACE_2,
                 p = tokens::SPACE_3,
-                ff = tokens::FONT_FAMILY_UI,
             ),
 
             div {
@@ -164,9 +162,8 @@ pub(super) fn StyleProvenanceList(
                                         style: format!(
                                             "background: transparent; border: none; cursor: pointer; \
                                              padding: 0; {touch} text-align: left; text-decoration: underline; \
-                                             font-family: {ff}; font-size: {fs}px; color: {fg};",
+                                             font-size: {fs}px; color: {fg};",
                                             touch = posture.touch_min_css(),
-                                            ff = tokens::FONT_FAMILY_UI,
                                             fs = tokens::FONT_SIZE_XS,
                                             fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                                         ),

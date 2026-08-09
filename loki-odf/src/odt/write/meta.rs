@@ -17,7 +17,10 @@ pub(crate) fn meta_xml(doc: &Document) -> String {
         " xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"",
         " xmlns:dc=\"http://purl.org/dc/elements/1.1/\"",
         " xmlns:meta=\"urn:oasis:names:tc:opendocument:xmlns:meta:1.0\"",
-        " office:version=\"1.3\"><office:meta>",
+    ));
+    out.push_str(&format!(
+        " office:version=\"{}\"><office:meta>",
+        super::xml::office_version(doc)
     ));
     let m = &doc.meta;
     {

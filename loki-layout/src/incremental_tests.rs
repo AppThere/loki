@@ -341,3 +341,139 @@ fn sequential_edits_keep_matching() {
         cur_doc = edited;
     }
 }
+
+/// Records how much of the incremental path the property tests above actually
+/// reach — which is currently far less than their names suggest (Spec 08 R30).
+///
+/// `check_edit` asserts `incremental == full`, and that assertion is real. But a
+/// resume can only begin at a checkpoint, and this fixture produces **one**, at
+/// block 0. So every "incremental" result those tests compare was produced by
+/// resuming from the very start of the document and re-flowing all of it. The
+/// property they guard — that a resume from an *arbitrary* point reproduces a full
+/// layout — has never been exercised.
+///
+/// That is the `preserve_for_editing: false` trap in a different costume: a test
+/// that passes without running the thing it protects. It is recorded here as a
+/// measured fact rather than a comment so that **T3.4 will fail this test**, which
+/// is the intended signal — at that point the checkpoint count becomes the page
+/// count, resume-from-anywhere starts happening for the first time, and the
+/// property tests above become meaningful.
+///
+/// When T3.4 lands: update the expectation to the page count, and treat the
+/// silent-splice hazard as *newly* covered — but verify that coverage red-first, by
+/// introducing an off-by-one on the resume line index and confirming `check_edit`
+/// catches it. If it does not, the top-ranked hazard has no net beneath it.
+#[test]
+fn the_property_tests_only_ever_resume_from_block_zero() {
+    let mut fonts = FontResources::new();
+    let doc = base_doc();
+    let (layout, reuse) = layout_paginated_full(&mut fonts, &doc, 1.0, &opts());
+
+    assert!(
+        layout.pages.len() > 1,
+        "fixture must span several pages for this to say anything",
+    );
+    assert_eq!(
+        reuse.checkpoints.len(),
+        1,
+        "expected the pre-T3.4 state: one checkpoint per document. If this now \
+         equals the page count ({}), T3.4 has landed — see this test's docs for \
+         what to do next.",
+        layout.pages.len(),
+    );
+    assert_eq!(
+        reuse.checkpoints[0].block_index, 0,
+        "the single checkpoint is at block 0, so every resume starts there",
+    );
+}
+
+/// **The incremental path must agree with the full path about headers, too.**
+///
+/// `pages_eq` has always compared `header_items` and `footer_items`, but no
+/// fixture in this file gave any section a header — so the comparison was
+/// between two empty vectors and could not fail. An instrument that cannot
+/// speak where the hazard is.
+///
+/// **What this does and does not establish.** It closes the empty-vs-empty
+/// blind spot: headers now render on both sides, so a divergence in *which*
+/// variant a page got is visible. It does **not** yet discriminate
+/// `assign_headers_footers`'s `section_first_page` argument on this path —
+/// per `the_property_tests_only_ever_resume_from_block_zero`, this fixture
+/// yields one checkpoint per section at block 0, so the re-flowed middle always
+/// *is* the whole section and `sc_start + 1` equals `pages.first()`. Passing the
+/// value in is correct in advance of T3.4 rather than a fix for a live
+/// divergence; when T3.4 lands and resumes start mid-section, this test gains
+/// that discrimination and should be re-mutation-checked.
+///
+/// The PAGE field in the default header is what makes the restart observable:
+/// without it `display_pn` is computed and never rendered.
+#[test]
+fn multi_section_header_variants_match_full_layout() {
+    use loki_doc_model::content::field::types::{Field, FieldKind};
+    use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
+
+    let page_number_para = || {
+        Block::StyledPara(StyledParagraph {
+            style_id: None,
+            direct_para_props: None,
+            direct_char_props: None,
+            inlines: vec![Inline::Field(
+                Field::new(FieldKind::PageNumber).with_current_value("1"),
+            )],
+            attr: Default::default(),
+        })
+    };
+
+    let mut fonts = FontResources::new();
+    let mut doc = multi_section_doc();
+    for (i, s) in doc.sections.iter_mut().enumerate() {
+        s.layout.header_first = Some(HeaderFooter {
+            kind: HeaderFooterKind::First,
+            blocks: vec![para(&"F".repeat(i + 1))],
+        });
+        s.layout.header_even = Some(HeaderFooter {
+            kind: HeaderFooterKind::Even,
+            blocks: vec![para(&"E".repeat(i + 4))],
+        });
+        // Carries a PAGE field so the numbering restart below is rendered
+        // rather than merely computed.
+        s.layout.header = Some(HeaderFooter {
+            kind: HeaderFooterKind::Default,
+            blocks: vec![page_number_para()],
+        });
+        s.layout.page_number_start = Some(1);
+    }
+
+    let prev = layout_paginated_full(&mut fonts, &doc, 1.0, &opts());
+    assert!(
+        prev.0.pages.len() > 3,
+        "fixture should span multiple pages, got {}",
+        prev.0.pages.len()
+    );
+    // The fixture is only discriminating if the headers actually rendered —
+    // an empty header on both sides is the blind spot this test exists to close.
+    assert!(
+        prev.0.pages.iter().any(|p| !p.header_items.is_empty()),
+        "no page rendered a header — the comparison would be vacuous"
+    );
+
+    // One edit per section, at a different depth in each: `check_edit` runs a
+    // full layout and Debug-formats every page, so the count is kept to what
+    // distinguishes the sections rather than a sweep.
+    let mut fired = false;
+    for (s, idx) in [(0usize, 0usize), (1, 15), (2, 29)] {
+        let edited = flip_char(&doc, s, idx);
+        let (_, _, f) = check_edit(
+            &mut fonts,
+            &doc,
+            &prev,
+            &edited,
+            &format!("header edit @ s{s} b{idx}"),
+        );
+        fired |= f;
+    }
+    assert!(
+        fired,
+        "incremental never fired — the comparison would be vacuous"
+    );
+}

@@ -10,8 +10,29 @@ editor-word-count = { $count ->
     [one]   1 word
    *[other] { $count } words
 }
+# Shown while the first word count is still being computed. Deliberately not
+# "0 words": a figure nobody has computed yet must not read as a figure (I-10).
+editor-word-count-pending = Counting words…
 editor-language = English (US)
 editor-zoom-aria = Zoom level
+editor-zoom-out = Zoom out
+editor-zoom-in = Zoom in
+editor-zoom-menu = Zoom level, opens preset list
+editor-zoom-fit-width = Fit width
+editor-zoom-fit-page = Fit page
+editor-zoom-actual-size = Actual size
+editor-zoom-reduced = Reduced to fit this device's memory
+
+# Display calibration for Actual Size — shown on first use, never at first run.
+editor-calibrate-title = Measure your screen
+editor-calibrate-instructions = Hold a bank card or a ruler against the blue bar. It should be { $mm } mm wide — type what it really measures.
+editor-calibrate-field = Measured width (mm)
+editor-calibrate-apply = Use this
+editor-calibrate-cancel = Cancel
+editor-color-area = Saturation and brightness
+editor-color-hue = Hue
+
+editor-calibrate-rejected = That doesn't look like a measurement of this bar. Check you're using millimetres and try again.
 
 # Document title for unsaved blank documents
 editor-untitled = Untitled
@@ -147,3 +168,9 @@ editor-insert-table-success = Table inserted
 editor-insert-footnote-success = Footnote inserted
 editor-insert-no-cursor = Place the cursor in the document first
 editor-insert-failed = Could not insert here
+
+# Reflow view → oversized elements (Spec 08 T7.3). A block wider than the
+# reading column gets its own horizontal scroll container; the toggle chooses
+# between fitting it to the column and letting it scroll at its own width.
+editor-oversized-expand = Expand
+editor-oversized-fit = Fit to column

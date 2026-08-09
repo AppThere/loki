@@ -39,13 +39,12 @@ pub(super) fn MacroViewerPanel(view: MacroView, on_close: EventHandler<()>) -> E
     let container = format!(
         "display: flex; flex-direction: column; gap: {gap}px; padding: {pv}px {ph}px; \
          background: {bg}; border-top: 1px solid {border}; border-bottom: 1px solid {border}; \
-         font-family: {ff}; color: {fg}; flex-shrink: 0; max-height: 45vh;",
+         color: {fg}; flex-shrink: 0; max-height: 45vh;",
         gap = tokens::SPACE_2,
         pv = tokens::SPACE_2,
         ph = tokens::SPACE_4,
         bg = tokens::COLOR_SURFACE_2,
         border = tokens::COLOR_BORDER_CHROME,
-        ff = tokens::FONT_FAMILY_UI,
         fg = tokens::COLOR_TEXT_ON_CHROME,
     );
     let close_btn = format!(

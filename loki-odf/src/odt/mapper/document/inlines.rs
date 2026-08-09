@@ -128,7 +128,9 @@ fn map_inline(child: &OdfParagraphChild, ctx: &mut OdfMappingContext<'_>) -> Opt
         OdfParagraphChild::BookmarkEnd { name } => {
             Some(Inline::Bookmark(BookmarkKind::End, name.clone()))
         }
-        OdfParagraphChild::Field(field) => Some(Inline::Field(map_field(field))),
+        OdfParagraphChild::Field(field, current) => {
+            Some(Inline::Field(map_field(field, current.clone())))
+        }
         OdfParagraphChild::Frame(frame) => map_frame(frame, ctx),
         // Tracked-change milestones are consumed by `map_inline_children`.
         OdfParagraphChild::SoftReturn
@@ -205,7 +207,7 @@ fn map_note(note: &OdfNote, ctx: &mut OdfMappingContext<'_>) -> Inline {
 
 // ── Fields ─────────────────────────────────────────────────────────────────────
 
-fn map_field(odf: &OdfField) -> Field {
+fn map_field(odf: &OdfField, current_value: Option<String>) -> Field {
     let kind = match odf {
         OdfField::PageNumber { .. } => FieldKind::PageNumber,
         OdfField::PageCount => FieldKind::PageCount,
@@ -241,7 +243,10 @@ fn map_field(odf: &OdfField) -> Field {
     };
     Field {
         kind,
-        current_value: None,
+        // The element's last-rendered display text (ADR-0005), so a headless/EPUB
+        // exporter and the layout can fall back to it when the field cannot be
+        // re-evaluated (a fixed date/time, a page-number snapshot, …).
+        current_value,
         extensions: ExtensionBag::default(),
     }
 }
