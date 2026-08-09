@@ -240,78 +240,30 @@ may not grow, and a file split to ≤300 must be removed from the baseline. So t
 backlog can only shrink. When you split a file below the ceiling, drop its line
 with `scripts/check-file-ceiling.py --update` (review the diff).
 
-The split pass is **in progress** — current backlog is the **4** entries in the
-baseline file, which is the authority; the table below is a convenience copy and
-has been wrong before (it claimed 29 entries and seven sizes that matched
-nothing, corrected 2026-08-02 during the Phase 5 close). **When the two
-disagree, believe `scripts/file-ceiling-baseline.txt`** — the gate reads it, this
-file does not. Three techniques (the third added 2026-07-08):
+The split pass is **in progress**. The authoritative backlog is
+`scripts/file-ceiling-baseline.txt` — **the gate reads it, this file does not** —
+so trust the baseline over any copy here. Three splitting techniques (worked
+examples are in git history):
 1. *Inline-test extraction* (safest, no production-code change): move a file's
    `#[cfg(test)] mod tests { … }` into a sibling `<name>_tests.rs` referenced via
-   `#[cfg(test)] #[path = "<name>_tests.rs"] mod tests;`. Done 2026-06-21 for
-   `block.rs`, `docx/mapper/{paragraph,numbering,mod,table}.rs`, `odt/import.rs`,
-   `odt/mapper/lists.rs`, `layout/result.rs`, `renderer/render_layout.rs`, and
-   2026-06-28 for `editing/hit_test.rs`, `xml_util.rs`, `pdf/src/page.rs`, and
-   2026-07-08 for `odt/reader/styles.rs` (1554 → 1298), `odt/reader/document.rs`
-   (1492 → 1002; ~490-line module), `loki-vello/scene.rs` (948 → 727),
-   `loki-odf/package.rs` (644 → 410), and `loki-ooxml/docx/mapper/document.rs`
-   (611 → 448) — each was over the ceiling only because of a large inline
-   test module (or, as with `styles.rs`, partly so).
+   `#[cfg(test)] #[path = "<name>_tests.rs"] mod tests;`.
 2. *Directory split*: convert `foo.rs` → a `foo/` directory with section-cohesive
    submodules, re-export the public entry points from `foo/mod.rs`, and move the
    tests via the same `#[path]` idiom. Give each submodule its **own explicit
    `use` list** (importing siblings via `use super::sibling::fn`) — `use super::*`
-   trips `clippy::wildcard_imports`. Done for `odt/mapper/props.rs` →
-   `odt/mapper/props/` and `odt/mapper/document.rs` →
-   `odt/mapper/document/` (`mod`/`inlines`/`frames`/`blocks`/`page`/`meta`; worked
-   examples).
+   trips `clippy::wildcard_imports`.
 3. *Cohesive-cluster extraction* (for a monolith whose tests are already
    extracted, so technique 1 doesn't apply): move a self-contained group of
    functions into a new `<name>_helper.rs` sibling declared via
    `#[path = "…"] mod <name>;`, accessing the parent's state through `super::`
-   (mark the shared items `pub(super)`). The new file must itself be ≤300.
-   Done 2026-07-08 for `loki-layout/src/flow.rs` (1948 → 1535, two cuts): the
-   four table-geometry helpers → `flow_table_geom.rs` (`table_geom` submodule),
-   and the PAGE/NUMPAGES field cluster → `flow_page_fields.rs` (`page_fields`
-   submodule; a `pub(crate)` item used elsewhere is re-exported from `flow.rs`
-   so its external path stays stable). Also `loki-layout/src/para.rs`
-   (1856 → 1698): the tab-stop cluster → `para_tabs.rs` (`tabs` submodule); and
-   `loki-layout/src/resolve.rs` (978 → 865): the `ParaProps`→`ResolvedParaProps`
-   mapping → `para_props_map.rs` (`para_map` submodule). A fourth variant is
-   *function-internal phase extraction* — a single >300-line function split by
-   moving self-contained phases into helper fns in a sibling module (thread the
-   captured locals as params; `#[allow(clippy::too_many_arguments)]` at the
-   narrowest scope is acceptable, per the `flow_cell_blocks` precedent). Done
-   2026-07-08 for `flow.rs`'s `flow_table` (~420 lines): row-height measurement +
-   cell-decoration passes → `flow_table_paint.rs` (`table_paint` submodule),
-   `flow.rs` 1535 → 1362; and for `para.rs`'s `layout_paragraph_uncached`
-   (~630 lines): the two selection-geometry underlay passes (highlight fills +
-   spelling squiggles) → `para_underlays.rs` (`underlays` submodule),
-   `para.rs` 1698 → 1626; and `flow.rs`'s `flow_table` pass 3a (the per-cell
-   content-flow loop) → `flow_table_cells.rs` (`table_cells` submodule),
-   `flow.rs` 1362 → 1209 (this landed the `rotated-cell-editing` path in a
-   sub-ceiling module, unblocking deferred-feature 4b.5).
+   (mark the shared items `pub(super)`). The new file must itself be ≤300. A
+   fourth variant is *function-internal phase extraction* — a single >300-line
+   function split by moving self-contained phases into helper fns in a sibling
+   module (thread the captured locals as params; a narrowly-scoped
+   `#[allow(clippy::too_many_arguments)]` is acceptable, per the
+   `flow_cell_blocks` precedent).
 
 (Test files are exempt from the production-line count.)
-
-| File | Current lines | Priority |
-|---|---|---|
-| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1013 | High |
-| `loki-text/src/routes/editor/editor_inner.rs` | 798 | High |
-| `loki-layout/src/para.rs` | 752 | Med |
-| `loki-text/src/routes/editor/editor_canvas.rs` | 336 | Low |
-
-*(The whole baseline, not the worst of it — there are four entries. Refreshed
-2026-08-02 by reading `scripts/file-ceiling-baseline.txt`; `flow.rs`,
-`docx/write/document.rs`, `resolve.rs` and `odt/reader/styles.rs` all came off it
-between 2026-07-11 and now, which is why the previous table matched nothing.)*
-
-(`odt/mapper/document.rs` (1094 lines) was split into the `odt/mapper/document/`
-directory on 2026-06-26 — each module is now under the ceiling.)
-
-(`read.rs` was split into `read.rs` + `props_read.rs`; both are now under 300
-lines. `loro_bridge/inlines.rs` is now 219 lines, under the ceiling.
-`loki-text/src/components/document_source.rs` no longer exists.)
 
 ## Known tech debt — Loro bridge round-trip gaps
 
@@ -320,8 +272,6 @@ but are **not perfectly round-tripped through the Loro CRDT**.
 
 | Field(s) | Status | Priority |
 |---|---|---|
-| `tab_stops` | **DONE** (2026-07-04) — structured `"pos:Align:Leader;…"` codec (`loro_bridge/decode.rs`) written and read back; tested by `bridge_tab_stops_roundtrip`. Pre-fix Debug strings decode as absent. | — |
-| `background_color` (paragraph) | **DONE** (2026-07-04) — total `DocumentColor` codec (`loro_bridge/color_codec.rs`, covers Rgb/Cmyk/Theme/Transparent) written and read back; tested by `bridge_para_background_color_roundtrip`. | — |
 | `DocumentMeta` / `DublinCoreMeta` | Round-trips **through the Loro CRDT** (`loro_bridge::meta`) **and is written back on export** — core properties + extended Dublin Core reach DOCX (`docProps/core.xml` + `custom.xml`) and ODT (`meta.xml`), tested by `metadata_round_trip.rs` / `extended_dublin_core_round_trips`. Remaining tail (not the Loro bridge): custom user properties, `meta:editing-duration`, and OOXML `docProps/app.xml` are still not written. | Low |
 
 ---
@@ -467,32 +417,13 @@ upstream source, then bump the pin) — never just bump the version number.
 
 ---
 
-## appthere-ui — Design System Conventions
+## appthere-ui / Blitz UI conventions
 
-### Crate purpose
-
-`appthere-ui` (crate name: `appthere_ui`) is the shared UI component library
-for all AppThere suite applications: Loki Text, Loki Calc, Loki Slides (future),
-Iris Photo, and Iris Draw. It provides design tokens, a theme context, and shell
-components (title bar, tab bar, home tab, status bar; ribbon components are
-added in subsequent passes).
-
-### Suite structure
-
-Each AppThere application is an independent binary. They share `appthere_ui`
-for shell chrome and design tokens, but have entirely separate ribbon content,
-canvas surfaces, and document models. Cross-application file type detection
-is documented in the Loki Text UI specification (v0.4).
-
-### Adding new components
-
-1. Create a new file (or subdirectory) in `appthere-ui/src/components/`.
-   File must stay under 300 lines. Split into a subdirectory proactively.
-2. Define props as a `#[derive(Props, Clone, PartialEq)]` struct.
-3. Re-export from `appthere-ui/src/components/mod.rs` and from `lib.rs`.
-4. Use only token constants from `appthere_ui::tokens::*` — no magic numbers.
-5. All interactive elements: 44×44 px minimum, documented in a doc comment.
-6. Mark Dioxus Native CSS limitations with `// COMPAT(dioxus-native): ...`
+Crate-specific `appthere-ui` conventions (crate purpose, adding components,
+token usage, theme context, what does not belong there) live in
+[`appthere-ui/CLAUDE.md`](appthere-ui/CLAUDE.md), loaded when you work in that
+crate. The rules below are cross-cutting — they apply to `loki-text` and every
+Blitz-based surface — so they stay here.
 
 ### Conditionally-mounted panels are components (ADR-0013)
 
@@ -542,45 +473,6 @@ These work in production code:
 - `position: fixed` — collapses to `absolute` in `stylo_taffy` (not truly
   viewport-fixed); use `position: absolute` in a positioned ancestor instead.
 
-### Token usage
-
-- Colors: `appthere_ui::tokens::colors::*` — `&'static str` CSS values
-- Typography: `appthere_ui::tokens::typography::*` — `&'static str` CSS values
-  for font family and weight; `f32` for font sizes
-- Spacing: `appthere_ui::tokens::spacing::*` — `f32` logical pixel values;
-  convert to strings inline: `format!("{}px", SPACE_4)`
-- Layout: `appthere_ui::tokens::layout::*` — `f32` heights and widths
-
-### Theme context
-
-Inject at the app root component:
-
-```rust
-provide_context(AtThemeContext::default()); // defaults to ThemeVariant::Dark
-```
-
-Read in any descendant component:
-
-```rust
-let theme = use_theme();
-```
-
-Both variants are implemented (4c.4): `ThemePalette::dark()` / `light()` in
-`tokens/palette.rs`; the `COLOR_*` constants remain the dark values, so
-unmigrated components render dark under either variant. Components migrate by
-reading `use_theme().palette()` (Signal-backed — re-colors live on
-`AtThemeContext::toggle`, exposed as the tab-bar theme-toggle button). Shell
-chrome (title/tab/status bars, dialogs) is migrated; deep editor surfaces
-migrate opportunistically.
-
-### What does NOT belong in `appthere_ui`
-
-- Document rendering (Vello, Parley, Loro)
-- Format-specific code (OOXML, ODF, EPUB)
-- Application-specific business logic or routing
-- Ribbon tab content (each application provides its own — `AtRibbon` with
-  a children/slot API is implemented in a future pass)
-
 ---
 
 ## Internationalisation (loki-i18n)
@@ -590,46 +482,7 @@ migrate opportunistically.
 All user-visible strings in `loki-text` and future Loki suite apps must use
 `loki_i18n::fl!()`. No string literals in RSX or prop assignments.
 
-### Adding new strings
-
-1. Add the key and en-US value to the appropriate `.ftl` file in
-   `loki-i18n/i18n/en-US/`. Domain mapping:
-   - `shell.ftl` — persistent shell chrome (tab bar, window)
-   - `home.ftl` — Home screen
-   - `editor.ftl` — document editor chrome (status bar, zoom)
-   - `ribbon.ftl` — ribbon tabs and controls
-   - `errors.ftl` — error messages shown to the user
-   - `document.ftl` — document-level labels (save, export, etc.)
-   - `publish.ftl` — Publish tab: PDF/EPUB export and Dublin Core metadata
-2. Use the string in code via `fl!("your-key")`.
-
-   **Adding a whole new domain** (a new `.ftl` file) requires registering it in
-   the `DOMAINS` array in `loki-i18n/src/loader.rs` — files are not
-   auto-discovered.
-3. For strings with arguments: `fl!("key", arg = value)`.
-   Integer arguments must be `i64`, float arguments `f64`.
-
-### Key naming convention
-
-`{domain}-{component}-{description}` in kebab-case.
-Examples: `shell-home-tab`, `editor-page-label`, `home-no-recent`.
-
-### Adding a new locale
-
-1. Create `loki-i18n/i18n/{locale}/` (e.g. `fr-FR/`).
-2. Copy all `.ftl` files from `en-US/` and translate the values.
-3. Keys must remain identical to `en-US` — only values are translated.
-4. Missing keys fall back to `en-US` automatically at runtime.
-
-### Props that accept translated strings
-
-`appthere_ui` component props that display text use `String` (not
-`&'static str`) so translated strings can be passed. Pass `fl!("key")`
-directly — no intermediate `let` binding needed.
-
-### Macro internals
-
-`fl!()` is defined in `loki-i18n/src/lib.rs`. It expands to a call on the
-global `OnceLock<LokiBundle>` (initialised by `loki_i18n::init()` in
-`main.rs`). Callers do not need `fluent` as a direct dependency — it is
-re-exported as `loki_i18n::fluent` for use inside the macro expansion.
+The mechanics — adding strings and new domains, the key-naming convention,
+adding a locale, translated-string props, and the `fl!()` macro internals — live
+in [`loki-i18n/CLAUDE.md`](loki-i18n/CLAUDE.md), loaded when you work in that
+crate.
