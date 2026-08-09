@@ -21,6 +21,15 @@ pub use ops::{binary_op, unary_op};
 
 use crate::host::ObjectRef;
 
+/// The largest single string a macro may allocate — a per-allocation bound
+/// (not full heap accounting) that turns the "gigabyte string concat" /
+/// `String(2e9, …)` resource-exhaustion attack (macro spec §8 memory caps) into an
+/// "Out of memory" runtime error rather than an OOM-abort. 128 MiB is far beyond
+/// any legitimate macro string and well under the order-256-MiB heap the spec
+/// targets; a doubling `s = s & s` loop trips it (as one over-cap allocation)
+/// long before it can exhaust process memory.
+pub(crate) const MAX_STRING_BYTES: usize = 128 * 1024 * 1024;
+
 /// A dynamically-typed BASIC value (a `Variant`).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum Value {

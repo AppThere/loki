@@ -161,6 +161,21 @@ fn cancel_flag_stops_before_fuel_runs_out() {
     assert_eq!(b.consume_fuel(1), FuelVerdict::Cancelled);
 }
 
+#[test]
+fn wall_clock_watchdog_stops_a_run_when_the_budget_elapses() {
+    use std::time::Duration;
+    // A zero budget is already elapsed: the next fuel request is refused as
+    // Exhausted even though fuel remains (spec §8 watchdog).
+    let mut b = CapabilityBroker::new(GrantSet::new(), 1_000, Arc::new(AtomicBool::new(false)))
+        .with_wall_clock_budget(Duration::from_millis(0));
+    std::thread::sleep(Duration::from_millis(2));
+    assert_eq!(b.consume_fuel(1), FuelVerdict::Exhausted);
+    assert_eq!(b.remaining_fuel(), 0);
+    // A broker with no budget is unaffected (fuel-only).
+    let mut plain = CapabilityBroker::new(GrantSet::new(), 1_000, Arc::new(AtomicBool::new(false)));
+    assert_eq!(plain.consume_fuel(1), FuelVerdict::Continue);
+}
+
 // ── Network capability (ADR-0015 §4.2) ───────────────────────────────────────
 
 use crate::net::NetworkPolicy;

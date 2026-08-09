@@ -24,6 +24,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use loki_basic::{FuelVerdict, Host};
 
@@ -91,6 +92,9 @@ pub struct CapabilityBroker {
     network: NetworkPolicy,
     remaining_fuel: u64,
     cancel: Arc<AtomicBool>,
+    /// Per-run wall-clock deadline (spec §8 watchdog); `None` = fuel + cancel
+    /// only. Enforced cooperatively in `consume_fuel` (a worker can't be killed).
+    deadline: Option<Instant>,
 }
 
 impl CapabilityBroker {
@@ -105,6 +109,7 @@ impl CapabilityBroker {
             network: NetworkPolicy::disabled(),
             remaining_fuel: fuel,
             cancel,
+            deadline: None,
         }
     }
 
@@ -114,6 +119,15 @@ impl CapabilityBroker {
     #[must_use]
     pub fn with_network(mut self, network: NetworkPolicy) -> Self {
         self.network = network;
+        self
+    }
+
+    /// Sets a per-run wall-clock budget (spec §8 watchdog): once it elapses,
+    /// `consume_fuel` stops the run as `Exhausted` at the next step. Bounds a
+    /// runaway *compute* loop; a blocked host call is bounded by its own timeout.
+    #[must_use]
+    pub fn with_wall_clock_budget(mut self, budget: Duration) -> Self {
+        self.deadline = Some(Instant::now() + budget);
         self
     }
 
@@ -129,6 +143,7 @@ impl CapabilityBroker {
             network: NetworkPolicy::disabled(),
             remaining_fuel: fuel,
             cancel: Arc::new(AtomicBool::new(false)),
+            deadline: None,
         }
     }
 
@@ -259,6 +274,13 @@ impl Host for CapabilityBroker {
         // while it still has fuel (spec §8: Stop is always available).
         if self.cancel.load(Ordering::SeqCst) {
             return FuelVerdict::Cancelled;
+        }
+        // Wall-clock watchdog (spec §8): stop a runaway loop even with fuel left.
+        if let Some(deadline) = self.deadline
+            && Instant::now() >= deadline
+        {
+            self.remaining_fuel = 0;
+            return FuelVerdict::Exhausted;
         }
         match self.remaining_fuel.checked_sub(units) {
             Some(rest) => {

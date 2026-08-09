@@ -23,6 +23,19 @@ fn run_err(src: &str, func: &str) -> loki_basic::BasicError {
 }
 
 #[test]
+fn oversized_string_allocation_is_a_runtime_error_not_an_oom() {
+    // `String(n, "A")` past the per-allocation heap cap raises "Out of memory"
+    // (macro spec §8 memory caps) instead of OOM-aborting the process — 300 MB
+    // exceeds the 128 MB cap, and the check runs before the allocation.
+    let err = run_err(
+        "Sub S()\n Dim x\n x = String(300000000, \"A\")\nEnd Sub",
+        "S",
+    );
+    let msg = format!("{err}").to_lowercase();
+    assert!(msg.contains("memory") || msg.contains('7'), "err = {msg}");
+}
+
+#[test]
 fn function_returns_via_name() {
     let v = run("Function F()\n F = 40 + 2\nEnd Function", "F", vec![]);
     assert_eq!(v, Value::Int(42));
