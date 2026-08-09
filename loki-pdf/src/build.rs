@@ -32,6 +32,9 @@ pub fn write_document(
     // ── Pass 1: build content streams, collecting fonts and images. ──────────
     let mut bank = FontBank::new();
     let mut images = ImageBank::new();
+    // PDF/X-1a and X-3 forbid live transparency; flatten alpha over white for
+    // them so the file conforms to the level it stamps. Only X-4 keeps the mask.
+    images.set_flatten_transparency(!options.level.allows_transparency());
     let contents: Vec<Vec<u8>> = layout
         .pages
         .iter()

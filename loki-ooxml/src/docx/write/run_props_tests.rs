@@ -4,13 +4,22 @@
 use loki_doc_model::style::props::char_props::{CharProps, HighlightColor};
 use loki_primitives::units::Points;
 
-use super::emit_char_props;
+use super::{emit_char_props, write_char_props_elem};
 
 /// Renders `cp` through [`emit_char_props`] and returns the UTF-8 XML fragment.
 fn emit(cp: &CharProps) -> String {
     let mut buf = Vec::new();
     let mut w = quick_xml::Writer::new(&mut buf);
     emit_char_props(&mut w, cp);
+    String::from_utf8(buf).expect("XML is valid UTF-8")
+}
+
+/// Renders `cp` through [`write_char_props_elem`] (the styles path, which wraps
+/// the children in `<w:rPr>`).
+fn emit_elem(cp: &CharProps) -> String {
+    let mut buf = Vec::new();
+    let mut w = quick_xml::Writer::new(&mut buf);
+    write_char_props_elem(&mut w, cp);
     String::from_utf8(buf).expect("XML is valid UTF-8")
 }
 
@@ -107,6 +116,59 @@ fn character_border_is_emitted() {
         xml.contains(r#"<w:bdr w:val="single" w:sz="8" w:space="1" w:color="C00000"/>"#),
         "xml = {xml}"
     );
+}
+
+#[test]
+fn numeric_weight_at_least_600_collapses_to_bold() {
+    // DOCX has no numeric weight; a heavy font_weight with no explicit boolean
+    // exports as w:b (the >= 600 => bold rule, at export).
+    let heavy = CharProps {
+        font_weight: Some(700),
+        ..Default::default()
+    };
+    assert!(emit(&heavy).contains("<w:b/>"), "xml = {}", emit(&heavy));
+
+    let light = CharProps {
+        font_weight: Some(400),
+        ..Default::default()
+    };
+    assert!(!emit(&light).contains("<w:b/>"));
+
+    // An explicit bold:Some(false) still suppresses w:b even at a heavy weight.
+    let unbolded = CharProps {
+        font_weight: Some(700),
+        bold: Some(false),
+        ..Default::default()
+    };
+    assert!(!emit(&unbolded).contains("<w:b/>"));
+}
+
+#[test]
+fn styles_rpr_wraps_a_single_previously_ungated_property() {
+    // The styles path (write_char_props_elem) must emit <w:rPr> when the only
+    // property is one the old has_content gate omitted — e.g. all-caps or a
+    // language tag — or the property was silently dropped on export.
+    use loki_doc_model::meta::LanguageTag;
+    let caps_only = CharProps {
+        all_caps: Some(true),
+        ..Default::default()
+    };
+    let xml = emit_elem(&caps_only);
+    assert!(xml.contains("<w:rPr>"), "xml = {xml}");
+    assert!(xml.contains("<w:caps/>"), "xml = {xml}");
+
+    let lang_only = CharProps {
+        language: Some(LanguageTag::new("fr-FR")),
+        ..Default::default()
+    };
+    let xml = emit_elem(&lang_only);
+    assert!(xml.contains("<w:rPr>"), "xml = {xml}");
+    assert!(xml.contains("w:lang"), "xml = {xml}");
+}
+
+#[test]
+fn styles_rpr_is_empty_when_no_property_is_set() {
+    assert_eq!(emit_elem(&CharProps::default()), "");
 }
 
 #[test]

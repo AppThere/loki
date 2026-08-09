@@ -310,3 +310,90 @@ fn docx_reference_round_trip_is_stable() {
         );
     }
 }
+
+/// A table's overall width (`w:tblW`) must survive a DOCX export → re-import.
+/// The writer previously hardcoded `w:tblW w:w="0" w:type="auto"`, silently
+/// dropping `Table.width` — so a fixed- or percent-width table came back auto
+/// (fidelity-status "Column Widths | Export | Yes"). This inverts the writer.
+#[test]
+fn table_width_survives_export_reimport() {
+    use loki_doc_model::content::table::col::TableWidth;
+    use loki_doc_model::content::table::core::Table;
+
+    for want in [TableWidth::Percent(50.0), TableWidth::Fixed(250.0)] {
+        let mut table = Table::grid(1, 1);
+        table.width = Some(want);
+        let d = doc(vec![Block::Table(Box::new(table))]);
+        let re = import(export(&d));
+        let got = re
+            .sections
+            .iter()
+            .flat_map(|s| &s.blocks)
+            .find_map(|b| match b {
+                Block::Table(t) => t.width,
+                _ => None,
+            });
+        assert_eq!(got, Some(want), "table width {want:?} must survive export");
+    }
+}
+
+/// Paragraph borders, shading, and the keep/widow toggles must survive a DOCX
+/// export → re-import. The importer parses w:pBdr/w:shd/w:keepNext/w:widowControl
+/// into ParaProps, but no DOCX writer emitted them — silent data loss on save
+/// (fidelity-status "Borders/Background/keep-*" = Export Yes). This inverts the
+/// writers.
+#[test]
+fn paragraph_borders_shading_and_keep_flags_survive_export_reimport() {
+    use loki_doc_model::content::block::StyledParagraph;
+    use loki_doc_model::content::inline::Inline;
+    use loki_doc_model::style::props::border::{Border, BorderStyle};
+    use loki_doc_model::style::props::para_props::ParaProps;
+    use loki_primitives::color::DocumentColor;
+    use loki_primitives::units::Points;
+
+    let pp = ParaProps {
+        border_top: Some(Border {
+            style: BorderStyle::Solid,
+            width: Points::new(1.0),
+            color: Some(DocumentColor::from_hex("#C00000").expect("valid hex")),
+            spacing: None,
+        }),
+        padding_top: Some(Points::new(4.0)),
+        background_color: Some(DocumentColor::from_hex("#FFF2CC").expect("valid hex")),
+        keep_with_next: Some(true),
+        widow_control: Some(0), // explicit "off"
+        ..Default::default()
+    };
+    let para = Block::StyledPara(StyledParagraph {
+        style_id: None,
+        direct_para_props: Some(Box::new(pp)),
+        direct_char_props: None,
+        inlines: vec![Inline::Str("Bordered.".to_string())],
+        attr: NodeAttr::default(),
+    });
+
+    let re = import(export(&doc(vec![para])));
+    let got = re
+        .sections
+        .iter()
+        .flat_map(|s| &s.blocks)
+        .find_map(|b| match b {
+            Block::StyledPara(sp) => sp.direct_para_props.clone(),
+            _ => None,
+        })
+        .expect("a paragraph with direct props must survive");
+    assert!(
+        got.border_top.is_some(),
+        "paragraph top border must survive DOCX export"
+    );
+    assert_eq!(got.keep_with_next, Some(true), "w:keepNext must survive");
+    assert_eq!(
+        got.widow_control,
+        Some(0),
+        "w:widowControl=off must survive"
+    );
+    assert!(
+        got.background_color.is_some(),
+        "paragraph shading must survive"
+    );
+}

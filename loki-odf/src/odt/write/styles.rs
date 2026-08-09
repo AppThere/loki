@@ -29,7 +29,6 @@ const HEADER: &str = concat!(
     " xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\"",
     " xmlns:xlink=\"http://www.w3.org/1999/xlink\"",
     " xmlns:svg=\"urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0\"",
-    " office:version=\"1.3\">",
 );
 
 /// Renders the whole `styles.xml` for `doc`, collecting any images embedded in
@@ -71,6 +70,10 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
 
     let mut out = String::new();
     out.push_str(HEADER);
+    out.push_str(&format!(
+        " office:version=\"{}\">",
+        super::xml::office_version(doc)
+    ));
 
     // ── Named styles (the catalog) ─────────────────────────────────────────
     // Synthetic internal styles (`__`-prefixed, e.g. `__DocDefault` /

@@ -48,6 +48,16 @@ impl PdfXLevel {
         }
     }
 
+    /// Whether this level permits live (soft-mask / blend) transparency. Only
+    /// PDF/X-4 does; PDF/X-1a and PDF/X-3 require transparency to be flattened,
+    /// so an alpha-bearing image must be composited onto an opaque background
+    /// rather than carried as a soft mask (which would make the file
+    /// non-conformant to the level it stamps).
+    #[must_use]
+    pub fn allows_transparency(self) -> bool {
+        matches!(self, PdfXLevel::X4)
+    }
+
     /// The PDF base version (major, minor) required by this level.
     #[must_use]
     pub fn pdf_version(self) -> (u8, u8) {
@@ -134,6 +144,13 @@ mod tests {
         assert_eq!(PdfXLevel::X1a.version_string(), "PDF/X-1a:2003");
         assert_eq!(PdfXLevel::X4.pdf_version(), (1, 6));
         assert_eq!(PdfXLevel::X3.pdf_version(), (1, 4));
+    }
+
+    #[test]
+    fn only_x4_allows_transparency() {
+        assert!(PdfXLevel::X4.allows_transparency());
+        assert!(!PdfXLevel::X1a.allows_transparency());
+        assert!(!PdfXLevel::X3.allows_transparency());
     }
 
     #[test]

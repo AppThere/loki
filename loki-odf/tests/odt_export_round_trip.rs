@@ -119,6 +119,58 @@ fn round_trip(doc: &Document) -> Document {
 }
 
 #[test]
+fn numeric_font_weight_round_trips_through_odt() {
+    // A numeric fo:font-weight (semibold = 600) must survive ODT export. The
+    // writer previously emitted fo:font-weight only from `bold`, dropping the
+    // numeric weight — import, layout and DOCX export all honour it, so this
+    // closes the ODF-export half.
+    let mut doc = sample_doc();
+    doc.styles.paragraph_styles.insert(
+        StyleId::new("Semibold"),
+        para_style(
+            "Semibold",
+            "Semibold",
+            CharProps {
+                font_weight: Some(600),
+                ..Default::default()
+            },
+            ParaProps::default(),
+        ),
+    );
+    let out = round_trip(&doc);
+    let cp = &out
+        .styles
+        .paragraph_styles
+        .get(&StyleId::new("Semibold"))
+        .expect("Semibold style must survive")
+        .char_props;
+    assert_eq!(
+        cp.font_weight,
+        Some(600),
+        "numeric fo:font-weight must survive ODT export"
+    );
+}
+
+#[test]
+fn odf_version_is_preserved_on_export() {
+    use loki_doc_model::io::source::DocumentSource;
+    // ADR-0002: an ODF 1.1/1.2 file must not be silently upgraded to 1.3 on
+    // export. Every ODT part previously hardcoded office:version="1.3", so a
+    // 1.1 document came back 1.3 — the round-trip breakage the ADR exists to
+    // prevent. (An unknown/non-ODF source still defaults to 1.3.)
+    for ver in ["1.1", "1.2"] {
+        let mut doc = sample_doc();
+        doc.source = Some(DocumentSource::new("odf").with_version(ver));
+        let re = round_trip(&doc);
+        assert_eq!(
+            re.source.and_then(|s| s.version).as_deref(),
+            Some(ver),
+            "office:version {ver} must survive ODT export"
+        );
+    }
+}
+
+#[test]
 fn styles_round_trip() {
     let doc = round_trip(&sample_doc());
 
@@ -187,7 +239,8 @@ fn full_character_and_paragraph_props_round_trip() {
         letter_spacing: Some(Points::new(1.0)),
         word_spacing: Some(Points::new(2.0)),
         kerning: Some(true),
-        scale: Some(90.0),
+        // scale is a FRACTION (0.9 = 90%), the layout + OOXML `w:w` convention.
+        scale: Some(0.9),
         language: Some(LanguageTag::new("en-GB")),
         language_complex: Some(LanguageTag::new("ar-SA")),
         language_east_asian: Some(LanguageTag::new("ja-JP")),
@@ -246,7 +299,7 @@ fn full_character_and_paragraph_props_round_trip() {
     assert_eq!(c.letter_spacing.map(|p| p.value().round()), Some(1.0));
     assert_eq!(c.word_spacing.map(|p| p.value().round()), Some(2.0));
     assert_eq!(c.kerning, Some(true));
-    assert_eq!(c.scale, Some(90.0));
+    assert_eq!(c.scale, Some(0.9));
     assert_eq!(c.language.as_ref().map(|l| l.as_str()), Some("en-GB"));
     assert_eq!(
         c.language_complex.as_ref().map(|l| l.as_str()),
