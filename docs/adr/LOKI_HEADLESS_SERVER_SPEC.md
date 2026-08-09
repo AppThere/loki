@@ -134,7 +134,8 @@ trap.
 through a CUPS server. `loki-print` supports:
 
 - Printer discovery (IPP / DNS-SD) and explicit printer URIs.
-- Job options: copies, duplex, media size, colour/mono, staple/finishing where advertised.
+- Job options: copies, duplex, media size, colour/mono. *(Staple/finishing is not yet
+  supported — `PrintOptions` emits no `finishings` IPP attribute; a later addition.)*
 - Job status polling and completion reporting back to the audit log.
 
 Direct-to-printer PDL (PCL/PostScript) is a documented later option, not v1.
@@ -264,7 +265,9 @@ process Tier-1 jobs.
 **CLI (standalone, no server required):**
 
 ```
-loki-headless convert  --in report.docx --out report.pdf --profile pdf-a2b
+loki-headless convert  --in report.docx --out report.pdf --profile pdf-x4
+# NOTE: --profile pdf-a2b is recognised but not yet emitted — it returns a typed
+#       ProfileUnsupported until the krilla engine migration (ADR-C022).
 loki-headless convert  --in sheet.xlsx   --out sheet.ods
 loki-headless print    --in report.docx  --printer ipp://officeprinter.local/ipp/print \
                         --duplex --copies 3 --media A4

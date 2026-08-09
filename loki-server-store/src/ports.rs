@@ -58,6 +58,11 @@ pub trait DocumentStore: Send + Sync {
     async fn set_snapshot(&self, id: DocumentId, ptr: &str, up_to: i64)
     -> Result<bool, StoreError>;
     /// Changes the confidentiality tier and replaces the wrapped DEK.
+    ///
+    /// `TODO(server-tier-delete)`: RBAC-gated (`Action::ChangeTier`, Owner-only)
+    /// and implemented here, but no `loki-server-api` route calls it yet, so the
+    /// capability is modelled but not exposed. When the route lands it must also
+    /// emit an `AuditAction::TierChange` entry (ADR-C020).
     async fn set_tier(
         &self,
         id: DocumentId,
@@ -65,6 +70,10 @@ pub trait DocumentStore: Send + Sync {
         dek_wrapped: Option<&WrappedDek>,
     ) -> Result<(), StoreError>;
     /// Deletes the document row (cascades members and oplog).
+    ///
+    /// `TODO(server-tier-delete)`: as with `set_tier`, RBAC-gated
+    /// (`Action::Delete`) but not yet reachable from any route; the route must
+    /// emit `AuditAction::Delete` when it lands.
     async fn delete_document(&self, id: DocumentId) -> Result<(), StoreError>;
     /// Crypto-shreds the document: destroys every wrapped DEK copy
     /// (`doc_meta.dek_wrapped` and all `doc_member.dek_wrapped_for_user`),

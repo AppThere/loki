@@ -6,13 +6,13 @@ SPDX-License-Identifier: Apache-2.0
 
 | | |
 |---|---|
-| **Status** | Draft — pending implementation. The "✅ Resolved" B-items below are audit **decisions**, not shipped code. |
+| **Status** | Implemented — the schema + round-trip axes and the `vello_cpu` visual axis (3 committed ODT goldens at a calibrated tolerance) have landed; the DOCX/Office visual goldens are pending manual Word capture. (Some "✅ Resolved" B-items below predate that implementation.) |
 | **Scope** | AppThere Loki (Text), DOCX + ODT; harness designed as shared monorepo infrastructure |
 | **Sequence** | 2 of 6 — establishes model trustworthiness before styling is built on top |
 | **Depends on** | Spec 01 (CI pipeline, the `Viewport`/`LayoutContext` type, enforcement primitives at monorepo root) |
 | **Feeds** | Styling Panel (trusted model), and the schema/round-trip CI gates Spec 01 reserved a slot for |
 
-> **Not-yet-built (verified 2026-07-04, [`deferred-features-audit`](../deferred-features-audit-2026-07-04.md)):** the harness is still unimplemented — the `vello_cpu` candidate render path (no `vello` dep in `appthere-conformance`), the vendored ISO 29500 / ODF schemas (`schemas/` is a README only), zero committed goldens, the uncalibrated SSIM threshold, and the **Gelasio** font bundling (below) are all *decisions awaiting implementation*, not done work.
+> **Implementation status (updated — the 2026-07-04 note below is superseded):** the harness is **built**. The schema axis (`appthere-conformance/src/schema`, xmllint + vendored ODF/OOXML/OPC/MathML schemas with sha256 provenance), the round-trip axis (`roundtrip/`, all three shapes), and the `vello_cpu` visual axis (in `loki-render-cpu`, with three committed ODT goldens at a calibrated SSIM/ΔE tolerance) all exist, and **Gelasio** is bundled. Genuinely pending: the **DOCX/Office visual goldens** (blocked on manual Word capture — `goldens/docx/*/PENDING.txt`) and the Strict-OOXML / Dublin-Core XSD tails.
 
 ---
 
