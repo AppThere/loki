@@ -21,7 +21,7 @@ use crate::odt::model::notes::OdfNoteClass;
 use crate::odt::model::paragraph::{OdfHyperlink, OdfParagraphChild, OdfSpan};
 use crate::xml_util::{local_attr_val, resolve_general_ref, unescape_text};
 
-use super::document::{read_frame_kind, read_note_body, skip_element};
+use super::document::{read_frame_kind, read_note_body, read_text_content, skip_element};
 
 /// Collect all inline children until the first `End` event at depth 0.
 ///
@@ -181,13 +181,20 @@ fn read_inline_start_other(
             children.push(child);
         }
         // ── Text fields ────────────────────────────────────────────────────
-        // Field attributes are extracted before the wrapping element (which
-        // carries only the field's current display text) is skipped.
-        _ => {
-            let field = field_from_element(e, local);
-            skip_element(reader)?;
-            children.push(field);
-        }
+        // Field attributes are extracted first; for a recognised field the
+        // element body — its last-rendered display text — is kept as the field's
+        // current_value (ADR-0005) instead of skipped.
+        _ => match field_from_element(e, local) {
+            OdfParagraphChild::Field(field, _) => {
+                let text = read_text_content(reader)?;
+                let current = (!text.is_empty()).then_some(text);
+                children.push(OdfParagraphChild::Field(field, current));
+            }
+            other => {
+                skip_element(reader)?;
+                children.push(other);
+            }
+        },
     }
     Ok(())
 }
@@ -282,5 +289,7 @@ fn field_from_element(e: &BytesStart<'_>, local: &[u8]) -> OdfParagraphChild {
         },
         _ => return OdfParagraphChild::Other,
     };
-    OdfParagraphChild::Field(field)
+    // The Empty (self-closing) path has no body; the Start path fills in the
+    // display text from the element body via `read_text_content`.
+    OdfParagraphChild::Field(field, None)
 }

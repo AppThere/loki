@@ -130,8 +130,11 @@ fn page_number_field() {
     let para = parse_first_para(xml);
     assert_eq!(para.children.len(), 1);
     match &para.children[0] {
-        OdfParagraphChild::Field(OdfField::PageNumber { select_page }) => {
+        OdfParagraphChild::Field(OdfField::PageNumber { select_page }, current) => {
             assert_eq!(select_page.as_deref(), Some("current"));
+            // The element body ("1") is captured as the field's current_value
+            // (ADR-0005) rather than discarded.
+            assert_eq!(current.as_deref(), Some("1"));
         }
         other => panic!("expected PageNumber field, got {:?}", other),
     }
