@@ -8,7 +8,7 @@ use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::float::FloatWrap;
 
-use super::super::content::{Cx, write_block};
+use super::super::content::Cx;
 use super::super::xml::attr;
 
 /// Writes a floating `wps`/text-box (`Inline::TextBox`) as a
@@ -50,8 +50,6 @@ pub(super) fn write_text_box(
         attr(out, "svg:height", &h);
     }
     out.push_str("><draw:text-box>");
-    for block in blocks {
-        write_block(out, block, cx);
-    }
+    super::super::list_write::write_blocks(out, blocks, cx);
     out.push_str("</draw:text-box></draw:frame>");
 }

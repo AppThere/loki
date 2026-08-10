@@ -12,7 +12,7 @@ use loki_doc_model::style::props::char_props::{
     CharProps, StrikethroughStyle, UnderlineStyle, VerticalAlign,
 };
 
-use super::content::{Cx, write_block};
+use super::content::Cx;
 use super::xml::{attr, escape};
 
 #[path = "inlines_frame.rs"]
@@ -273,8 +273,6 @@ fn note(
         "<text:note text:note-class=\"{class}\"><text:note-citation></text:note-citation>\
          <text:note-body>"
     ));
-    for b in blocks {
-        write_block(out, b, cx);
-    }
+    super::list_write::write_blocks(out, blocks, cx);
     out.push_str("</text:note-body></text:note>");
 }

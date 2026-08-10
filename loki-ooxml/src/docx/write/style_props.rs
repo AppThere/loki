@@ -163,6 +163,14 @@ pub(super) fn write_para_flags_borders_shading<W: std::io::Write>(
     w: &mut Writer<W>,
     pp: &ParaProps,
 ) {
+    write_para_flags(w, pp);
+    write_para_borders_shading(w, pp);
+}
+
+/// The `CT_PPr` toggles that precede `w:numPr` in schema order (keep/break/
+/// widow). Split from the borders half so `write_para_props_inline` can slot
+/// `w:numPr` between them (§10 tier 2).
+pub(super) fn write_para_flags<W: std::io::Write>(w: &mut Writer<W>, pp: &ParaProps) {
     write_on_off(w, "w:keepNext", pp.keep_with_next);
     write_on_off(w, "w:keepLines", pp.keep_together);
     write_on_off(w, "w:pageBreakBefore", pp.page_break_before);
@@ -177,7 +185,10 @@ pub(super) fn write_para_flags_borders_shading<W: std::io::Write>(
         }
         None => {}
     }
+}
 
+/// The paragraph border box and shading (follow `w:numPr` in `CT_PPr` order).
+pub(super) fn write_para_borders_shading<W: std::io::Write>(w: &mut Writer<W>, pp: &ParaProps) {
     if pp.border_top.is_some()
         || pp.border_bottom.is_some()
         || pp.border_left.is_some()

@@ -17,6 +17,11 @@ use crate::docx::write::xml::{
 };
 
 use loki_doc_model::content::block::{ListAttributes, ListNumberStyle};
+use loki_doc_model::style::catalog::StyleCatalog;
+use loki_doc_model::style::list_style::ListStyle;
+
+#[path = "numbering_styles.rs"]
+mod styles;
 
 /// The kind of list represented by a `w:abstractNum`.
 #[derive(Debug, Clone)]
@@ -35,6 +40,18 @@ struct Num {
     abstract_num_id: u32,
 }
 
+/// A catalog list style pre-registered for `StyledPara.list_id` references.
+/// Only entries a paragraph actually referenced (`used`) are serialised, so a
+/// catalog full of list styles does not force a `numbering.xml` into an
+/// export with no list items.
+struct StyledList {
+    list_id: String,
+    num_id: u32,
+    abstract_id: u32,
+    style: ListStyle,
+    used: bool,
+}
+
 /// Accumulated list state built up while serializing `word/document.xml`.
 ///
 /// Each unique list encountered registers itself here and receives a `numId`
@@ -47,6 +64,8 @@ pub(crate) struct NumberingState {
     abstracts: Vec<AbstractNum>,
     /// All concrete nums (numId → abstractNumId).
     nums: Vec<Num>,
+    /// Catalog list styles addressable by `StyledPara.list_id` (§10 tier 2).
+    styled: Vec<StyledList>,
     next_abstract_id: u32,
     next_num_id: u32,
 }
@@ -57,9 +76,52 @@ impl NumberingState {
             bullet_abstract_id: None,
             abstracts: Vec::new(),
             nums: Vec::new(),
+            styled: Vec::new(),
             next_abstract_id: 0,
             next_num_id: 1,
         }
+    }
+
+    /// Pre-registers every catalog list style so paragraph writers can resolve
+    /// a `list_id` to a `numId` without carrying the catalog. Entries stay
+    /// dormant (unserialised) until [`Self::num_id_for_list`] marks them used.
+    pub(super) fn register_catalog(&mut self, catalog: &StyleCatalog) {
+        for (id, style) in &catalog.list_styles {
+            self.push_styled(id.as_str().to_string(), style.clone());
+        }
+    }
+
+    fn push_styled(&mut self, list_id: String, style: ListStyle) -> usize {
+        let abstract_id = self.next_abstract_id;
+        self.next_abstract_id += 1;
+        let num_id = self.next_num_id;
+        self.next_num_id += 1;
+        self.styled.push(StyledList {
+            list_id,
+            num_id,
+            abstract_id,
+            style,
+            used: false,
+        });
+        self.styled.len() - 1
+    }
+
+    /// Resolves a `StyledPara.list_id` to the `numId` its `w:numPr` must
+    /// reference, marking the definition used. A `list_id` the catalog does
+    /// not define (an imported document whose definitions were lost) falls
+    /// back to the built-in default bullet style under the same id — shared
+    /// across the list's paragraphs, so the items stay one list rather than
+    /// degrading to plain paragraphs.
+    pub(super) fn num_id_for_list(&mut self, list_id: &str) -> u32 {
+        let idx = if let Some(i) = self.styled.iter().position(|s| s.list_id == list_id) {
+            i
+        } else {
+            let mut style = loki_doc_model::style::list_defaults::default_bullet_list_style();
+            style.id = loki_doc_model::style::list_style::ListId::new(list_id);
+            self.push_styled(list_id.to_string(), style)
+        };
+        self.styled[idx].used = true;
+        self.styled[idx].num_id
     }
 
     /// Register a bullet list.  Returns the `numId` to use for all
@@ -113,9 +175,10 @@ impl NumberingState {
         num_id
     }
 
-    /// Returns `true` if no lists were registered (no `numbering.xml` needed).
+    /// Returns `true` if no lists were registered or referenced (no
+    /// `numbering.xml` needed). Dormant catalog registrations do not count.
     pub(super) fn is_empty(&self) -> bool {
-        self.abstracts.is_empty()
+        self.abstracts.is_empty() && !self.styled.iter().any(|s| s.used)
     }
 }
 
@@ -162,10 +225,25 @@ pub(super) fn write_numbering_xml(state: &NumberingState) -> Vec<u8> {
         let _ = write_end(&mut w, "w:abstractNum");
     }
 
+    for styled in state.styled.iter().filter(|s| s.used) {
+        let abs_id_s = styled.abstract_id.to_string();
+        let _ = write_start(&mut w, "w:abstractNum", &[("w:abstractNumId", &abs_id_s)]);
+        styles::write_styled_abstract_body(&mut w, &styled.style);
+        let _ = write_end(&mut w, "w:abstractNum");
+    }
+
     for num in &state.nums {
         let num_id_s = num.num_id.to_string();
         let _ = write_start(&mut w, "w:num", &[("w:numId", &num_id_s)]);
         let abs_id_s = num.abstract_num_id.to_string();
+        let _ = write_empty(&mut w, "w:abstractNumId", &wval(&abs_id_s));
+        let _ = write_end(&mut w, "w:num");
+    }
+
+    for styled in state.styled.iter().filter(|s| s.used) {
+        let num_id_s = styled.num_id.to_string();
+        let _ = write_start(&mut w, "w:num", &[("w:numId", &num_id_s)]);
+        let abs_id_s = styled.abstract_id.to_string();
         let _ = write_empty(&mut w, "w:abstractNumId", &wval(&abs_id_s));
         let _ = write_end(&mut w, "w:num");
     }

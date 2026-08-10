@@ -107,6 +107,9 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
     }
     // Named table styles (table-level width / alignment / background).
     super::table_style::write_table_styles(&mut out, &doc.styles);
+    // Catalog list styles (§10 tier 2) — full nine-level definitions, so a
+    // StyledPara.list_id reference resolves in any ODF consumer.
+    super::list_write::write_list_styles(&mut out, &doc.styles);
     out.push_str("</office:styles>");
 
     // ── Automatic styles: page layouts + header/footer styles ──────────────
