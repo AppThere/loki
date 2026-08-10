@@ -80,6 +80,64 @@ impl ParagraphStyle {
     pub fn is_builtin(&self) -> bool {
         self.is_default || !self.is_custom
     }
+
+    /// The application's built-in heading style for `level` (clamped to 1–6):
+    /// id `Heading{N}` — the fallback id the layout resolver uses for heading
+    /// blocks with no stored style name — with the display name, size and
+    /// weight [`crate::Document::new_blank`] seeds.
+    ///
+    /// This is the **single** definition of those defaults: `new_blank` seeds
+    /// from it, and the editor re-seeds from it when a document's catalog lacks
+    /// the style a heading resolves to (so opening the style editor on that
+    /// heading edits the definition the renderer actually consults).
+    #[must_use]
+    pub fn builtin_heading(level: u8) -> ParagraphStyle {
+        let level = level.clamp(1, 6);
+        let (size_pt, bold) = match level {
+            1 => (24.0, true),
+            2 => (18.0, true),
+            3 => (14.0, true),
+            4 => (12.0, true),
+            5 => (10.0, true),
+            _ => (10.0, false),
+        };
+        ParagraphStyle {
+            id: StyleId::new(format!("Heading{level}")),
+            display_name: Some(format!("Heading {level}")),
+            parent: None,
+            linked_char_style: None,
+            next_style_id: None,
+            para_props: ParaProps::default(),
+            char_props: CharProps {
+                bold: Some(bold),
+                font_size: Some(loki_primitives::units::Points::new(size_pt)),
+                ..Default::default()
+            },
+            is_default: false,
+            is_custom: false,
+            extensions: ExtensionBag::default(),
+        }
+    }
+
+    /// The application's built-in default paragraph style: the style unstyled
+    /// (`para`) blocks resolve through once it is installed as the catalog's
+    /// `default_paragraph_style`. All properties inherit from document
+    /// defaults; it exists so the default level has an editable definition.
+    #[must_use]
+    pub fn builtin_default_paragraph() -> ParagraphStyle {
+        ParagraphStyle {
+            id: StyleId::new("DefaultParagraphStyle"),
+            display_name: Some("Default Paragraph Style".into()),
+            parent: None,
+            linked_char_style: None,
+            next_style_id: None,
+            para_props: ParaProps::default(),
+            char_props: CharProps::default(),
+            is_default: true,
+            is_custom: false,
+            extensions: ExtensionBag::default(),
+        }
+    }
 }
 
 #[cfg(test)]

@@ -15,11 +15,8 @@ use crate::io::source::DocumentSource;
 use crate::layout::section::Section;
 use crate::meta::core::DocumentMeta;
 use crate::settings::DocumentSettings;
-use crate::style::catalog::{StyleCatalog, StyleId};
+use crate::style::catalog::StyleCatalog;
 use crate::style::para_style::ParagraphStyle;
-use crate::style::props::char_props::CharProps;
-use crate::style::props::para_props::ParaProps;
-use loki_primitives::units::Points;
 
 /// The root of a Loki document.
 ///
@@ -152,32 +149,9 @@ impl Document {
         };
         let section = Section::with_layout_and_blocks(layout, vec![Block::Para(vec![])]);
         let mut styles = StyleCatalog::default();
-        let heading_defs: &[(&str, &str, f32, bool)] = &[
-            ("Heading1", "Heading 1", 24.0, true),
-            ("Heading2", "Heading 2", 18.0, true),
-            ("Heading3", "Heading 3", 14.0, true),
-            ("Heading4", "Heading 4", 12.0, true),
-            ("Heading5", "Heading 5", 10.0, true),
-            ("Heading6", "Heading 6", 10.0, false),
-        ];
-        for &(id, name, size_pt, bold) in heading_defs {
-            let style = ParagraphStyle {
-                id: StyleId::new(id),
-                display_name: Some(name.to_string()),
-                parent: None,
-                linked_char_style: None,
-                next_style_id: None,
-                para_props: ParaProps::default(),
-                char_props: CharProps {
-                    bold: Some(bold),
-                    font_size: Some(Points::new(f64::from(size_pt))),
-                    ..Default::default()
-                },
-                is_default: false,
-                is_custom: false,
-                extensions: Default::default(),
-            };
-            styles.paragraph_styles.insert(StyleId::new(id), style);
+        for level in 1..=6u8 {
+            let style = ParagraphStyle::builtin_heading(level);
+            styles.paragraph_styles.insert(style.id.clone(), style);
         }
         Self {
             meta: DocumentMeta::default(),

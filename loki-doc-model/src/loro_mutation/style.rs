@@ -101,6 +101,32 @@ pub fn set_block_type_heading(
     Ok(())
 }
 
+/// Returns the named style stored in a heading block's `heading_style` slot.
+///
+/// This is the id the layout resolver prefers when synthesizing the heading's
+/// paragraph (an ODF `text:style-name` such as `"Heading_20_1"`), and the id
+/// [`set_block_style`] writes for heading blocks. `None` when the block is not
+/// a heading, carries no stored style, or is out of range — callers then fall
+/// back to the canonical `"Heading{N}"` ids the resolver uses.
+#[must_use]
+pub fn get_block_heading_style(loro: &LoroDoc, block_index: usize) -> Option<String> {
+    let (_, block_map, _) = get_block_map_and_list(loro, block_index).ok()?;
+    let block_type = block_map
+        .get(KEY_TYPE)
+        .and_then(|v| v.into_value().ok())
+        .and_then(|v| v.into_string().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+    if block_type != BLOCK_TYPE_HEADING {
+        return None;
+    }
+    block_map
+        .get(crate::loro_schema::KEY_HEADING_STYLE)
+        .and_then(|v| v.into_value().ok())
+        .and_then(|v| v.into_string().ok())
+        .map(|s| s.to_string())
+}
+
 /// Applies the named paragraph style `style_id` to the block at `block_index`.
 ///
 /// For `styled_para` and `para` blocks, writes the `style_id` key and

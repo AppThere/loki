@@ -20,6 +20,7 @@ use crate::editing::cursor::CursorState;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
 use super::editor_keydown_ctrl::post_mutation_sync;
+use super::editor_style_target::dialog_style_target;
 
 /// Builds the Write tab ribbon content element.
 ///
@@ -54,9 +55,9 @@ pub(super) fn write_tab_content(
     save_as_template: Callback<()>,
 ) -> Element {
     // One Arc clone per button — cheap reference-count increment.
-    let current_style_name_para = current_style_name.clone();
     let ds_undo = Arc::clone(doc_state);
     let ds_redo = Arc::clone(doc_state);
+    let ds_para = Arc::clone(doc_state);
 
     // The inline-formatting group is extracted to `editor_ribbon_format`
     // (ceiling). It shares these live handles + states.
@@ -190,10 +191,13 @@ pub(super) fn write_tab_content(
         label: Some(fl!("ribbon-group-paragraph")),
         aria_label: fl!("ribbon-group-paragraph"),
         content: rsx! {
-            // Opens the tabbed paragraph style editor on the style at the
-            // cursor. The dialog reads the catalog itself, so this passes an
-            // id rather than a draft — the two surfaces edit the same catalog
-            // but keep separate edit buffers.
+            // Opens the tabbed paragraph style editor on the style the block
+            // at the cursor resolves through. The dialog reads the catalog
+            // itself, so this passes a catalog id rather than a draft — and the
+            // id must be a *catalog* id, not `get_block_style_name`'s display
+            // key, or the dialog's missing-style guard closes it silently
+            // (`dialog_style_target` maps one to the other, seeding the
+            // definition when the catalog lacks it).
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-para-props-aria"),
                 is_active:   paragraph_style_dialog.read().is_some(),
@@ -201,9 +205,30 @@ pub(super) fn write_tab_content(
                 on_click: move |_| {
                     if paragraph_style_dialog.read().is_some() {
                         paragraph_style_dialog.set(None);
-                    } else {
-                        paragraph_style_dialog.set(Some(current_style_name_para.clone()));
+                        return;
                     }
+                    let target = {
+                        let ldoc_guard = loro_doc.read();
+                        let cs = cursor_state.read();
+                        match (ldoc_guard.as_ref(), cs.focus.as_ref()) {
+                            (Some(ldoc), Some(focus)) => {
+                                let target =
+                                    dialog_style_target(&ds_para, ldoc, focus.paragraph_index);
+                                if target.as_ref().is_some_and(|t| t.seeded) {
+                                    apply_mutation_and_relayout(&ds_para, ldoc);
+                                }
+                                target
+                            }
+                            _ => None,
+                        }
+                    };
+                    let Some(target) = target else { return };
+                    if target.seeded {
+                        post_mutation_sync(
+                            &ds_para, loro_doc, cursor_state, undo_manager, can_undo, can_redo,
+                        );
+                    }
+                    paragraph_style_dialog.set(Some(target.id));
                 },
                 AtIcon { path_d: LUCIDE_PILCROW.to_string() }
             }

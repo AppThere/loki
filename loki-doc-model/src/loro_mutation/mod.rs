@@ -73,8 +73,8 @@ pub use self::revision::{
 };
 pub use self::selection::{delete_selection_at, tracked_delete_selection_at};
 pub use self::style::{
-    clear_block_list, get_block_list_id, get_block_style_name, set_block_style,
-    set_block_type_heading, set_block_type_para,
+    clear_block_list, get_block_heading_style, get_block_list_id, get_block_style_name,
+    set_block_style, set_block_type_heading, set_block_type_para,
 };
 #[cfg(feature = "serde")]
 pub use self::table_ops::{
