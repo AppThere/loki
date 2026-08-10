@@ -38,6 +38,11 @@ pub mod theme;
 pub mod tokens;
 pub mod ui_font;
 
+pub use components::dialog::{
+    at_control_style, at_field_label_style, AtCheckRow, AtDialogButton, AtDialogNotice,
+    AtDialogShell, AtDialogTabStrip, AtField, AtNoticeTone, AtProvenanceKind, AtProvenanceLine,
+    AtSegmented, DialogPosture, DialogTabLayout, DialogWidth,
+};
 pub use components::icons::{
     AtIcon, AT_CHANGE_ACCEPT, AT_CHANGE_ACCEPT_ONE, AT_CHANGE_REJECT, AT_CHANGE_REJECT_ONE,
     AT_COLUMNS_ONE, AT_COLUMNS_THREE, AT_COLUMNS_TWO, AT_FONT_GROW, AT_FONT_SHRINK,

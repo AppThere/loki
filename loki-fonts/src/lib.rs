@@ -114,9 +114,120 @@ pub fn fallback_font_blobs() -> &'static [&'static [u8]] {
     FACES
 }
 
+/// A bundled document face and the proprietary family it stands in for.
+///
+/// The font picker sorts these first and badges them, because a bundled face is
+/// the only kind that **renders identically for every reader** — it ships with
+/// Loki, embeds into EPUB, and is the one class of face with no substitution
+/// risk. A device font may look right on the author's machine and reflow on
+/// someone else's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BundledFamily {
+    /// The family name as the layout engine resolves it (e.g. `"Tinos"`).
+    pub name: &'static str,
+    /// The proprietary family it is metric-compatible with (e.g.
+    /// `"Times New Roman"`) — the answer to "which one is Arial?".
+    pub substitutes_for: &'static str,
+}
+
+/// Every bundled document family, sorted by [`BundledFamily::name`].
+///
+/// This is the **naming** counterpart of [`fallback_font_blobs`] and is
+/// deliberately its neighbour: the two describe the same set, and splitting the
+/// list across crates is how they drift. The UI typeface (Atkinson Hyperlegible
+/// Next) is not here — it is chrome, never offered as a document face.
+#[must_use]
+pub fn bundled_families() -> &'static [BundledFamily] {
+    &[
+        BundledFamily {
+            name: "Arimo",
+            substitutes_for: "Arial",
+        },
+        BundledFamily {
+            name: "Caladea",
+            substitutes_for: "Cambria",
+        },
+        BundledFamily {
+            name: "Carlito",
+            substitutes_for: "Calibri",
+        },
+        BundledFamily {
+            name: "Cousine",
+            substitutes_for: "Courier New",
+        },
+        BundledFamily {
+            name: "Gelasio",
+            substitutes_for: "Georgia",
+        },
+        BundledFamily {
+            name: "Tinos",
+            substitutes_for: "Times New Roman",
+        },
+    ]
+}
+
+/// Whether `family` is bundled with Loki (case-insensitive).
+///
+/// Case-insensitive because the name arrives from a document that may have been
+/// written anywhere: ODF and OOXML both carry the family as free text, so
+/// `TINOS` and `tinos` are the same face and must badge as bundled.
+#[must_use]
+pub fn is_bundled_family(family: &str) -> bool {
+    let family = family.trim();
+    bundled_families()
+        .iter()
+        .any(|f| f.name.eq_ignore_ascii_case(family))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The picker renders the list as-is, so the order is part of the contract.
+    #[test]
+    fn bundled_families_are_sorted_by_name() {
+        let names: Vec<&str> = bundled_families().iter().map(|f| f.name).collect();
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        assert_eq!(names, sorted);
+    }
+
+    /// The name list and the blob list describe the same set. A face added to
+    /// one and not the other is exactly the drift this pairing exists to catch,
+    /// so the check is mechanical rather than a comment.
+    #[test]
+    fn every_named_family_has_bundled_faces() {
+        // Two Arimo blobs (variable roman + italic); four for each static face.
+        let expected = 2 + (bundled_families().len() - 1) * 4;
+        assert_eq!(
+            fallback_font_blobs().len(),
+            expected,
+            "bundled_families() and fallback_font_blobs() disagree on the face set"
+        );
+    }
+
+    /// A bundled face stands in for something; an empty string would badge in
+    /// the picker with nothing to say.
+    #[test]
+    fn every_family_names_the_face_it_replaces() {
+        for f in bundled_families() {
+            assert!(!f.name.is_empty());
+            assert!(!f.substitutes_for.is_empty(), "{} names no face", f.name);
+            assert_ne!(f.name, f.substitutes_for);
+        }
+    }
+
+    /// Family names arrive from documents written anywhere, so the check cannot
+    /// be case-sensitive — and must still reject a face that is not bundled.
+    #[test]
+    fn membership_ignores_case_and_padding_but_not_identity() {
+        for cased in ["Tinos", "tinos", "TINOS", "  Tinos  "] {
+            assert!(is_bundled_family(cased), "{cased} is bundled");
+        }
+        for absent in ["Times New Roman", "Helvetica Neue", "Noto Sans", ""] {
+            assert!(!is_bundled_family(absent), "{absent} is not bundled");
+        }
+    }
 
     // Regression guard: the embedded metric-compatible faces must be available on
     // every platform (not gated to Android), so headless/CI/PDF-export builds can

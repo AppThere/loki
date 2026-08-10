@@ -98,3 +98,166 @@ style-table-align-unset = Auto
 style-table-align-left = Left
 style-table-align-center = Center
 style-table-align-right = Right
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Paragraph style editor dialog (Spec 05 M2/M6, design section 1)
+# ─────────────────────────────────────────────────────────────────────────────
+
+style-dialog-title = Paragraph style — { $name }
+style-dialog-close-aria = Close the paragraph style editor
+style-dialog-tabs-more = More
+style-dialog-apply = Apply
+style-dialog-cancel = Cancel
+style-dialog-reset-all = Reset all to inherited
+style-dialog-preview = Preview
+
+# Tab labels
+style-dialog-tab-general = General
+style-dialog-tab-font = Font
+style-dialog-tab-indents = Indents & spacing
+style-dialog-tab-alignment = Alignment
+style-dialog-tab-text-flow = Text flow
+style-dialog-tab-borders = Borders
+style-dialog-tab-tab-stops = Tab stops
+
+# Provenance lines — the line under every control saying where its value
+# comes from. `-bare` variants are used when the value has no display form.
+style-dialog-prov-local = Set on this style
+style-dialog-prov-inherited = Inherited from { $source } · { $value }
+style-dialog-prov-inherited-bare = Inherited from { $source }
+style-dialog-prov-document = Document default · { $value }
+style-dialog-prov-document-bare = Document default
+style-dialog-prov-engine = Engine default · { $value }
+style-dialog-prov-engine-bare = Engine default
+style-dialog-prov-source-unnamed = an unnamed style
+style-dialog-prov-edit-there = Edit there
+style-dialog-prov-reset = Reset
+
+# Units
+style-dialog-unit-pt = { $value } pt
+style-dialog-unit-pt-short = pt
+style-dialog-unit-pt-at-least = at least { $value } pt
+style-dialog-unit-multiple = { $value }×
+style-dialog-unit-multiple-short = ×
+style-dialog-unit-lines = lines
+style-dialog-unit-lines-value = { $value } lines
+
+# General tab
+style-dialog-general-name = Name
+style-dialog-general-inherits-from = Inherits from
+style-dialog-general-next = Next paragraph uses
+style-dialog-general-chain = Inheritance chain
+style-dialog-general-counts = { $local } local · { $inherited } inherited
+style-dialog-general-reresolve = Changing this re-resolves { $count } inherited properties
+style-dialog-general-dependents =
+    { $count ->
+        [0] No other style is based on this one.
+       *[other] { $count } style(s) are based on this one: { $names }
+    }
+style-dialog-general-builtin = This is a built-in style. Its name is part of the mapping used when importing and exporting, so renaming it can change how the document round-trips.
+
+# Font tab
+style-dialog-font-family = Font family
+style-dialog-font-family-inherit = Inherited
+style-dialog-font-bundled-heading = Bundled with Loki · always available
+style-dialog-font-bundled-badge = Bundled
+style-dialog-font-device-heading = Installed on this device · { $count }
+style-dialog-font-no-matches = No font matches that name.
+style-dialog-font-size = Size
+style-dialog-font-posture = Weight & posture
+style-dialog-font-regular = Regular
+style-dialog-font-bold = Bold
+style-dialog-font-italic = Italic
+style-dialog-font-colour = Text colour
+style-dialog-font-colour-automatic = Automatic
+style-dialog-font-language = Language
+style-dialog-font-language-inherit = Follows the document
+style-dialog-font-local-count = { $count } propert{ $count ->
+        [one] y is
+       *[other] ies are
+    } set on this style. Changing an ancestor will not affect { $count ->
+        [one] it
+       *[other] them
+    }.
+
+# Indents & spacing tab
+style-dialog-indents-heading = Indents
+style-dialog-indents-before = Before text
+style-dialog-indents-after = After text
+style-dialog-indents-first-line = First line
+style-dialog-spacing-heading = Spacing
+style-dialog-spacing-above = Above
+style-dialog-spacing-below = Below
+style-dialog-spacing-line-height = Line height
+style-dialog-spacing-collapse = Collapse spacing between paragraphs of the same style
+style-dialog-spacing-collapse-unsupported = Contextual spacing is not stored in the document model yet, so this control is disabled rather than silently doing nothing.
+
+# Alignment tab
+style-dialog-align-horizontal = Horizontal
+style-dialog-align-left = Left
+style-dialog-align-centre = Centre
+style-dialog-align-right = Right
+style-dialog-align-justified = Justified
+style-dialog-align-distributed = Distributed
+style-dialog-align-distributed-note = Distributed stretches the last line of the paragraph as well; Justified leaves it short.
+style-dialog-align-unsupported = Last line of a justified paragraph, text-to-text vertical alignment, snapping to the page text grid, and expanding a single word are not stored in the document model yet, so they are not offered here.
+
+# Text flow tab
+style-dialog-flow-breaks-heading = Breaks
+style-dialog-flow-break-before = Start this paragraph on a new page
+style-dialog-flow-break-after = Start the next paragraph on a new page
+style-dialog-flow-keep-heading = Keeping together
+style-dialog-flow-keep-together = Do not split this paragraph across pages
+style-dialog-flow-keep-with-next = Keep with the next paragraph
+style-dialog-flow-keep-together-note = While this paragraph cannot split, the orphan and widow counts below have no effect — they are kept so they apply again if you allow splitting.
+style-dialog-flow-orphans = Orphan control
+style-dialog-flow-widows = Widow control
+style-dialog-flow-hyphenation-unsupported = Hyphenation is not stored in the document model yet — neither the automatic flag nor the character counts — so it is not offered here.
+
+# Borders tab
+style-dialog-borders-edges = Edges
+style-dialog-borders-none = None
+style-dialog-borders-start-only = Start edge only
+style-dialog-borders-all = All four
+style-dialog-borders-mixed = Mixed
+style-dialog-borders-mixed-note = This style carries a border on a combination of edges the presets cannot name — imported from the document. Choosing a preset replaces it.
+style-dialog-borders-line-style = Line style
+style-dialog-borders-solid = Solid
+style-dialog-borders-dashed = Dashed
+style-dialog-borders-dotted = Dotted
+style-dialog-borders-double = Double
+style-dialog-borders-wave = Wave
+style-dialog-borders-width = Width
+style-dialog-borders-colour = Colour
+style-dialog-borders-colour-automatic = Automatic
+style-dialog-borders-no-edge = No edge is set, so there is no line to style.
+style-dialog-borders-padding-heading = Padding to text
+style-dialog-borders-padding-top = Top
+style-dialog-borders-padding-bottom = Bottom
+style-dialog-borders-padding-left = Left
+style-dialog-borders-padding-right = Right
+
+# Tab stops tab
+style-dialog-stops-position = Position
+style-dialog-stops-alignment = Alignment
+style-dialog-stops-leader = Leader
+style-dialog-stops-empty = No tab stops. The engine's default stops apply.
+style-dialog-stops-count = { $count } stop(s)
+style-dialog-stops-new-at = New stop at
+style-dialog-stops-add = Add stop
+style-dialog-stops-clear = Clear all
+style-dialog-stops-remove-aria = Remove this tab stop
+style-dialog-stops-align-left = Left
+style-dialog-stops-align-right = Right
+style-dialog-stops-align-centre = Centre
+style-dialog-stops-align-decimal = Decimal
+style-dialog-stops-align-clear = Clear
+style-dialog-stops-leader-none = None
+style-dialog-stops-leader-dotted = Dotted
+style-dialog-stops-leader-dashed = Dashed
+style-dialog-stops-leader-underscore = Underscore
+style-dialog-stops-materialise-note = These stops are inherited. Editing them copies the whole list onto this style, which then stops tracking changes to its parent's stops.
+
+# Preview specimen
+style-dialog-preview-body-1 = The afternoon had the particular stillness of a room where someone has just stopped speaking, and the light came in low across the floorboards.
+style-dialog-preview-body-2 = She set the cup down without a sound and waited for the next thing to happen.

@@ -8,6 +8,7 @@
 mod calibrate_dialog;
 pub mod color_picker;
 pub mod confirm_dialog;
+pub mod dialog;
 pub mod document_tab;
 pub mod home_tab;
 pub mod icons;
@@ -30,6 +31,11 @@ pub use color_picker::{
     AtColorPickerLabels, AtColorPickerPanel, AtColorPickerTrigger, AtColorSwatch,
 };
 pub use confirm_dialog::{AtConfirmDialog, AtConfirmDialogProps};
+pub use dialog::{
+    at_control_style, at_field_label_style, AtCheckRow, AtDialogButton, AtDialogNotice,
+    AtDialogShell, AtDialogTabStrip, AtField, AtNoticeTone, AtProvenanceKind, AtProvenanceLine,
+    AtSegmented, DialogPosture, DialogTabLayout, DialogWidth,
+};
 pub use document_tab::{AtDocumentTab, AtDocumentTabProps};
 pub use home_tab::{AtHomeTab, AtHomeTabProps, BuiltinTemplate, RecentDocument};
 pub use infobar::{AtInfobar, AtInfobarProps};

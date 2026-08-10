@@ -123,3 +123,32 @@ pub const BUTTON_WIDTH_DESKTOP_MAX: f32 = 320.0;
 /// Medium/Expanded size classes. At Compact the host fills the available width
 /// (a touch-first sheet) instead. See [`crate::AtPanelHost`].
 pub const PANEL_SIDE_WIDTH_PX: f32 = 360.0;
+
+// ── Tabbed dialogs ────────────────────────────────────────────────────────────
+
+/// Width (CSS px) of a wide tabbed dialog card at the **Expanded** size class —
+/// the paragraph/page/metadata/publish style editors, which carry a form column
+/// beside a preview rail. See [`crate::AtDialogShell`].
+pub const DIALOG_WIDTH_WIDE_PX: f32 = 900.0;
+
+/// Width (CSS px) of a narrow tabbed dialog card at Expanded — the tab-less
+/// dialogs (insert link, insert table) whose body is a single column.
+pub const DIALOG_WIDTH_NARROW_PX: f32 = 640.0;
+
+/// Maximum width (CSS px) a dialog card grows to at the **Medium** size class.
+/// Medium frames are 600–1024 px, so the card takes the available width up to
+/// this cap rather than the Expanded fixed width.
+pub const DIALOG_WIDTH_MEDIUM_MAX_PX: f32 = 700.0;
+
+/// Width (CSS px) of the side-docked preview rail inside a wide dialog at
+/// Expanded. Below 1024 px the rail collapses to a disclosure row in the body
+/// so the form never loses width (design note 05).
+pub const DIALOG_PREVIEW_RAIL_PX: f32 = 300.0;
+
+/// Number of tabs a dialog tab strip keeps inline at the **Medium** size class
+/// before the remainder collapse into the `More ▾` menu.
+///
+/// This is the strip's *default* only. The priority order of a given dialog's
+/// tabs is a per-dialog editorial decision, so `AtDialogTabStrip` takes the
+/// count as a prop — see [`crate::DialogTabLayout::for_breakpoint`].
+pub const DIALOG_TABS_INLINE_MEDIUM: usize = 3;

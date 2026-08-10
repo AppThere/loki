@@ -18,6 +18,10 @@ mod draft_table;
 pub(super) fn table_draft_none() -> Option<draft_table::TableStyleDraft> {
     None
 }
+
+/// The table-draft signal's payload, named so a module that only *threads* the
+/// signal through can write its type without reaching into `draft_table`.
+pub(super) type TableStyleDraftHandle = draft_table::TableStyleDraft;
 mod char_form;
 mod draft;
 mod family_inspector;

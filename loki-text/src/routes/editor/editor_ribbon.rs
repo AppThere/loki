@@ -20,9 +20,6 @@ use crate::editing::cursor::CursorState;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
 use super::editor_keydown_ctrl::post_mutation_sync;
-use super::editor_state::StyleDraft;
-use super::editor_style_catalog::get_catalog_style;
-use super::editor_style_editor::style_to_draft;
 
 /// Builds the Write tab ribbon content element.
 ///
@@ -51,12 +48,12 @@ pub(super) fn write_tab_content(
     mut is_style_picker_open: Signal<bool>,
     mut save_request: Signal<u32>,
     is_dirty: Signal<bool>,
-    mut editing_style_draft: Signal<Option<StyleDraft>>,
+    // The paragraph style open in the tabbed style dialog (Spec 05 M2/M6).
+    mut paragraph_style_dialog: Signal<Option<String>>,
     save_as: Callback<()>,
     save_as_template: Callback<()>,
 ) -> Element {
     // One Arc clone per button — cheap reference-count increment.
-    let ds_para = Arc::clone(doc_state);
     let current_style_name_para = current_style_name.clone();
     let ds_undo = Arc::clone(doc_state);
     let ds_redo = Arc::clone(doc_state);
@@ -193,24 +190,20 @@ pub(super) fn write_tab_content(
         label: Some(fl!("ribbon-group-paragraph")),
         aria_label: fl!("ribbon-group-paragraph"),
         content: rsx! {
+            // Opens the tabbed paragraph style editor on the style at the
+            // cursor. The dialog reads the catalog itself, so this passes an
+            // id rather than a draft — the two surfaces edit the same catalog
+            // but keep separate edit buffers.
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-para-props-aria"),
-                is_active:   editing_style_draft.read().is_some(),
+                is_active:   paragraph_style_dialog.read().is_some(),
                 is_disabled: false,
                 on_click: move |_| {
-                    if editing_style_draft.read().is_some() {
-                        editing_style_draft.set(None);
-                        return;
+                    if paragraph_style_dialog.read().is_some() {
+                        paragraph_style_dialog.set(None);
+                    } else {
+                        paragraph_style_dialog.set(Some(current_style_name_para.clone()));
                     }
-                    let draft = get_catalog_style(&ds_para, &current_style_name_para)
-                        .map(|s| style_to_draft(&s))
-                        .unwrap_or_else(|| StyleDraft {
-                            id: current_style_name_para.clone(),
-                            name: current_style_name_para.clone(),
-                            alignment: "Left".to_string(),
-                            ..StyleDraft::default()
-                        });
-                    editing_style_draft.set(Some(draft));
                 },
                 AtIcon { path_d: LUCIDE_PILCROW.to_string() }
             }

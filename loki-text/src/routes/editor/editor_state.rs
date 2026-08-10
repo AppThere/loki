@@ -169,6 +169,11 @@ pub(super) struct EditorState {
     pub is_style_picker_open: Signal<bool>,
     /// Style catalog editor draft — `Some` when the editor panel is open.
     pub editing_style_draft: Signal<Option<StyleDraft>>,
+    /// Id of the paragraph style open in the tabbed style dialog; `None`
+    /// when it is closed. Separate from `editing_style_draft` because the
+    /// dialog keeps its own draft — the two surfaces edit the same catalog
+    /// but do not share an edit buffer.
+    pub paragraph_style_dialog: Signal<Option<String>>,
     /// Paginated render zoom, in percent (100 = 1:1). Cycled by the status
     /// bar's zoom badge; scales page tiles + paint together (4c.5 / F6d).
     pub zoom_percent: Signal<u32>,
@@ -257,6 +262,7 @@ pub(super) fn use_editor_state() -> EditorState {
         can_redo: use_signal(|| false),
         is_style_picker_open: use_signal(|| false),
         editing_style_draft: use_signal(|| None),
+        paragraph_style_dialog: use_signal(|| None),
         zoom_percent: use_signal(|| 100_u32),
         is_dirty: use_signal(|| false),
         save_message: use_signal(|| None),

@@ -15,7 +15,12 @@ use crate::editing::cursor::CursorState;
 /// Signals the style editor needs to persist edits through Loro and refresh the
 /// undo/redo state. Grouped to keep the function signature manageable (mirrors
 /// `editor_metadata_panel::MetaPanelSync`).
-#[derive(Clone, Copy)]
+///
+/// `PartialEq` compares the [`Signal`] handles, not the values behind them, so
+/// it means "the same signals" rather than "the same document" — which is what a
+/// props comparison wants (the same trade `SpellSync` makes). The paragraph
+/// style dialog is a real component and needs its props to compare.
+#[derive(Clone, Copy, PartialEq)]
 pub(in crate::routes::editor) struct StyleEditorSync {
     /// The document's Loro CRDT handle.
     pub loro_doc: Signal<Option<loro::LoroDoc>>,

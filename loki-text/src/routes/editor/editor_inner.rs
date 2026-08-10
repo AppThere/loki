@@ -48,8 +48,6 @@ use super::editor_save_banner::save_banner;
 use super::editor_seed_publish::{SeedTargets, publish_seed_and_mirror};
 use super::editor_spell::SpellMenu;
 use super::editor_state::{EditorState, StyleDraft, use_editor_state};
-use super::editor_style::style_picker_panel;
-use super::editor_style_editor::style_editor_panel;
 use crate::error::LoadError;
 use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
@@ -122,6 +120,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         is_publish_panel_open,
         pdf_level,
         editing_metadata,
+        paragraph_style_dialog,
     } = use_editor_state();
 
     // ── Tab/recents context for Save As and the unsaved-changes indicator ────
@@ -252,6 +251,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_docked = Arc::clone(&doc_state);
     let doc_state_style_picker = Arc::clone(&doc_state);
     let doc_state_style_editor = Arc::clone(&doc_state);
+    let doc_state_modals = Arc::clone(&doc_state);
     let doc_state_zoom = Arc::clone(&doc_state);
     let doc_state_cap = Arc::clone(&doc_state);
     let doc_state_spell_ctx = Arc::clone(&doc_state);
@@ -547,6 +547,30 @@ pub(super) fn EditorInner(path: String) -> Element {
     let font_substitutions = super::editor_fonts::font_substitutions(&doc_state);
     let font_sub_count = font_substitutions.len() as i64;
 
+    // Built once: the inline style panel and the paragraph style dialog write
+    // through the same handles, and two copies of this literal is two chances
+    // for them to disagree about which signals a style edit updates.
+    let style_sync = super::editor_style_editor::StyleEditorSync {
+        loro_doc,
+        cursor_state,
+        undo_manager,
+        can_undo,
+        can_redo,
+        save_message,
+        settings_generation,
+    };
+    let style_panel_state = super::editor_style_panels::StylePanelState {
+        is_style_picker_open,
+        style_search_query,
+        editing_style_draft,
+        editing_char_style,
+        editing_char_draft,
+        editing_table_style,
+        editing_list_style,
+        editing_page_style,
+        style_panel_inspect,
+    };
+
     rsx! {
         div {
             style: format!(
@@ -620,51 +644,19 @@ pub(super) fn EditorInner(path: String) -> Element {
                 )}
             }
 
-            // ── Paragraph style picker panel (inline, above ribbon) ───────────
-            // Rendered between canvas and ribbon in the flex column — an in-flow
-            // choice (block-level position: absolute is now confirmed in Blitz;
-            // see editor_style.rs for the layout rationale).
-            if *is_style_picker_open.read() {
-                {style_picker_panel(
-                    doc_state_style_picker,
-                    loro_doc,
-                    cursor_state,
-                    undo_manager,
-                    can_undo,
-                    can_redo,
-                    current_style_name.clone(),
-                    is_style_picker_open,
-                    style_search_query,
-                )}
-            }
-
-            // ── Style catalog editor panel (inline, above ribbon) ─────────────
-            // Rendered inline in the flex column, above the ribbon (an in-flow
-            // choice; block-level position: absolute is now confirmed in Blitz).
-            if editing_style_draft.read().is_some() {
-                {style_editor_panel(
-                    doc_state_style_editor,
-                    editing_style_draft,
-                    editing_char_style,
-                    editing_char_draft,
-                    editing_table_style,
-                    editing_table_draft,
-                    editing_list_style,
-                    editing_page_style,
-                    style_panel_inspect,
-                    use_breakpoint(),
-                    font_families(),
-                    super::editor_style_editor::StyleEditorSync {
-                        loro_doc,
-                        cursor_state,
-                        undo_manager,
-                        can_undo,
-                        can_redo,
-                        save_message,
-                        settings_generation,
-                    },
-                )}
-            }
+            // ── Style surfaces (inline, above ribbon) ─────────────────────────
+            // Their position in this column is load-bearing — see
+            // `editor_style_panels` for why they are in flow rather than overlaid.
+            {super::editor_style_panels::style_panels(
+                doc_state_style_picker,
+                doc_state_style_editor,
+                style_panel_state,
+                editing_table_draft,
+                current_style_name.clone(),
+                use_breakpoint(),
+                font_families(),
+                style_sync,
+            )}
 
             // ── Docked panels: spelling menu, language picker, Insert link ────
             // Each self-gates on its trigger signal. Docked above the ribbon
@@ -761,7 +753,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     is_style_picker_open,
                     save_request,
                     is_dirty,
-                    editing_style_draft,
+                    paragraph_style_dialog,
                     save_as,
                     save_as_template,
                 ),
@@ -787,12 +779,15 @@ pub(super) fn EditorInner(path: String) -> Element {
                 calibrating:        calibrating,
             }
 
-            // Display calibration (Spec 08 T5.5 / D-04). Mounted at a boundary
-            // as a component, per ADR-0013 — it owns hook scope of its own and
-            // must not be a function called inside an `if`.
-            {calibrating().then(|| rsx! {
-                super::editor_calibrate::EditorCalibrate { open: calibrating, zoom: zoom_command }
-            })}
+            // Modal overlays — see `editor_modals` for the mounting contract.
+            {super::editor_modals::editor_modals(
+                doc_state_modals,
+                calibrating,
+                zoom_command,
+                paragraph_style_dialog,
+                font_families(),
+                style_sync,
+            )}
         }
     }
 }

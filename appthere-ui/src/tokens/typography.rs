@@ -20,11 +20,20 @@ pub const FONT_SIZE_XS: f32 = 11.0;
 /// Label / caption — metadata, timestamps, and secondary info.
 pub const FONT_SIZE_LABEL: f32 = 12.0;
 
+/// Meta — provenance lines, unit suffixes, and dialog footer notes. Sits
+/// between [`FONT_SIZE_LABEL`] and [`FONT_SIZE_BODY`] so a secondary line under
+/// a control reads as subordinate to it without dropping to caption size.
+pub const FONT_SIZE_META: f32 = 13.0;
+
 /// Body text — paragraph copy and list content.
 pub const FONT_SIZE_BODY: f32 = 14.0;
 
 /// Medium — slightly larger body text, e.g. card titles.
 pub const FONT_SIZE_MD: f32 = 15.0;
+
+/// Subheading — dialog titles at the Compact size class, where the full
+/// [`FONT_SIZE_HEADING`] would crowd the close button off a phone header.
+pub const FONT_SIZE_SUBHEADING: f32 = 18.0;
 
 /// Heading — section titles within a screen.
 pub const FONT_SIZE_HEADING: f32 = 20.0;
