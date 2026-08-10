@@ -212,3 +212,38 @@ fn table_and_image_checks_are_omitted_when_there_are_none() {
         );
     }
 }
+
+/// The Insert table dialog promotes the first row into `table.head.rows`, so a
+/// walk that visited only `bodies` could not see the one structure this feature
+/// set creates by default: an undescribed image in a header cell made the
+/// preflight report that every image had alternative text.
+#[test]
+fn an_image_in_a_table_header_is_audited() {
+    let mut table = Table::grid(1, 1);
+    if let Some(body) = table.bodies.first_mut()
+        && let Some(row) = body.body_rows.first_mut()
+        && let Some(cell) = row.cells.first_mut()
+    {
+        cell.blocks = vec![Block::Para(vec![Inline::Image(
+            NodeAttr::default(),
+            Vec::new(),
+            LinkTarget::new("cover.png"),
+        )])];
+    }
+    // Promote it into the head, exactly as `build_table` does.
+    if let Some(body) = table.bodies.first_mut()
+        && !body.body_rows.is_empty()
+    {
+        let head = body.body_rows.remove(0);
+        table.head.rows.push(head);
+    }
+
+    assert_eq!(
+        image_audit(&doc(vec![Block::Table(Box::new(table))])),
+        ImageAudit {
+            total: 1,
+            described: 0
+        },
+        "the header cell's image is counted, and counted as undescribed"
+    );
+}

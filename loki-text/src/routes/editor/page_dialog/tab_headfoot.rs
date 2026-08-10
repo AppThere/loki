@@ -17,6 +17,7 @@ use loki_i18n::fl;
 
 use super::super::editor_defaults::PanelSettings;
 use super::body::{PageDraft, grid_style, measure_field, section_heading, span_all};
+use super::tabs::{Variant, band_differs, set_band_variant};
 
 /// The numbering schemes the footer offers, in display order.
 const SCHEMES: [NumberingScheme; 5] = [
@@ -54,16 +55,8 @@ pub(super) fn body(
     } else {
         l.footer.is_some()
     };
-    let differs_first = if header {
-        l.header_first.is_some()
-    } else {
-        l.footer_first.is_some()
-    };
-    let differs_even = if header {
-        l.header_even.is_some()
-    } else {
-        l.footer_even.is_some()
-    };
+    let differs_first = band_differs(l, header, Variant::First);
+    let differs_even = band_differs(l, header, Variant::Even);
     let scheme = l.page_number_format.unwrap_or(NumberingScheme::Decimal);
     let start = l.page_number_start.unwrap_or(1);
 
@@ -116,21 +109,24 @@ pub(super) fn body(
 
             div {
                 style: span_all(posture),
+                // Ticked means the distinct band exists, which is what the
+                // labels say. Both the state and the toggle read straight
+                // through — no negation on either side.
                 AtCheckRow {
-                    checked: !differs_first,
+                    checked: differs_first,
                     disabled: !enabled,
                     min_touch_px: posture.min_touch_px,
                     aria_label: fl!("page-dialog-same-first"),
                     label: rsx! { { fl!("page-dialog-same-first") } },
-                    on_toggle: move |v: bool| set_variant(draft, header, Variant::First, !v),
+                    on_toggle: move |v: bool| set_variant(draft, header, Variant::First, v),
                 }
                 AtCheckRow {
-                    checked: !differs_even,
+                    checked: differs_even,
                     disabled: !enabled,
                     min_touch_px: posture.min_touch_px,
                     aria_label: fl!("page-dialog-same-even"),
                     label: rsx! { { fl!("page-dialog-same-even") } },
-                    on_toggle: move |v: bool| set_variant(draft, header, Variant::Even, !v),
+                    on_toggle: move |v: bool| set_variant(draft, header, Variant::Even, v),
                 }
             }
 
@@ -207,15 +203,6 @@ pub(super) fn body(
     }
 }
 
-/// Which alternate band a toggle addresses.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Variant {
-    /// The first page of the style.
-    First,
-    /// Even (verso) pages.
-    Even,
-}
-
 /// Turns the header or footer band on or off.
 fn set_band(mut draft: PageDraft, header: bool, on: bool) {
     let mut next = draft.read().clone();
@@ -234,18 +221,7 @@ fn set_band(mut draft: PageDraft, header: bool, on: bool) {
 fn set_variant(mut draft: PageDraft, header: bool, variant: Variant, differs: bool) {
     let mut next = draft.read().clone();
     if let Some(d) = next.as_mut() {
-        let band = differs.then(|| {
-            HeaderFooter::new(match variant {
-                Variant::First => HeaderFooterKind::First,
-                Variant::Even => HeaderFooterKind::Even,
-            })
-        });
-        match (header, variant) {
-            (true, Variant::First) => d.layout.header_first = band,
-            (true, Variant::Even) => d.layout.header_even = band,
-            (false, Variant::First) => d.layout.footer_first = band,
-            (false, Variant::Even) => d.layout.footer_even = band,
-        }
+        set_band_variant(&mut d.layout, header, variant, differs);
     }
     draft.set(next);
 }

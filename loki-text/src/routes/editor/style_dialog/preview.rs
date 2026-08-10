@@ -24,6 +24,7 @@ use loki_doc_model::style::{ParagraphStyle, StyleCatalog, StyleId};
 use loki_i18n::fl;
 
 use super::fields::DraftSignal;
+use super::rows::resolve_inherited;
 use super::tabs::ParaTab;
 
 /// The docked preview rail: heading plus the paper specimen.
@@ -76,7 +77,7 @@ pub(super) fn specimen(
     let Some(style) = style else {
         return rsx! {};
     };
-    let resolved = resolve_preview(catalog, id, &style);
+    let resolved = resolve_preview(catalog, &style);
     let heading = style
         .display_name
         .clone()
@@ -152,21 +153,21 @@ struct PreviewProps {
 
 /// Resolves the preview's properties, preferring the staged draft's local
 /// values and falling back through the committed chain.
-fn resolve_preview(catalog: &StyleCatalog, id: &StyleId, staged: &ParagraphStyle) -> PreviewProps {
+fn resolve_preview(catalog: &StyleCatalog, staged: &ParagraphStyle) -> PreviewProps {
     let pp = &staged.para_props;
     let points =
         |local: Option<loki_doc_model::loki_primitives::units::Points>,
          get: fn(&ParagraphStyle) -> Option<loki_doc_model::loki_primitives::units::Points>|
          -> f64 {
             local
-                .or_else(|| catalog.resolve_para_chain(id, get).and_then(|r| r.value))
+                .or_else(|| resolve_inherited(catalog, staged, get))
                 .map(|p| p.value())
                 .unwrap_or(0.0)
         };
     let spacing = |local: Option<&Spacing>, get: fn(&ParagraphStyle) -> Option<Spacing>| -> f64 {
         let resolved = local
             .cloned()
-            .or_else(|| catalog.resolve_para_chain(id, get).and_then(|r| r.value));
+            .or_else(|| resolve_inherited(catalog, staged, get));
         match resolved {
             Some(Spacing::Exact(pt)) => pt.value(),
             _ => 0.0,
@@ -176,11 +177,7 @@ fn resolve_preview(catalog: &StyleCatalog, id: &StyleId, staged: &ParagraphStyle
     PreviewProps {
         alignment: pp
             .alignment
-            .or_else(|| {
-                catalog
-                    .resolve_para_chain(id, |s| s.para_props.alignment)
-                    .and_then(|r| r.value)
-            })
+            .or_else(|| resolve_inherited(catalog, staged, |s| s.para_props.alignment))
             .unwrap_or(ParagraphAlignment::Left),
         indent_start_pt: points(pp.indent_start, |s| s.para_props.indent_start),
         indent_end_pt: points(pp.indent_end, |s| s.para_props.indent_end),
@@ -189,11 +186,7 @@ fn resolve_preview(catalog: &StyleCatalog, id: &StyleId, staged: &ParagraphStyle
         space_after_pt: spacing(pp.space_after.as_ref(), |s| s.para_props.space_after),
         line_height: pp
             .line_height
-            .or_else(|| {
-                catalog
-                    .resolve_para_chain(id, |s| s.para_props.line_height)
-                    .and_then(|r| r.value)
-            })
+            .or_else(|| resolve_inherited(catalog, staged, |s| s.para_props.line_height))
             .and_then(|lh| match lh {
                 LineHeight::Multiple(m) => Some(m),
                 _ => None,

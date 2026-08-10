@@ -12,7 +12,6 @@ use loki_i18n::fl;
 use super::super::editor_insert_sync::InsertLinkSync;
 use super::SpanDraft;
 use super::tabs::{SpanLevel, SpanTab, level_of};
-use crate::editing::cursor::CursorState;
 use crate::editing::state::DocumentState;
 
 /// The draft signal every span control writes through.
@@ -26,15 +25,6 @@ pub(super) struct StyleContext {
     pub char_style: Option<String>,
     /// The enclosing paragraph's style.
     pub para_style: Option<String>,
-}
-
-/// How many characters the selection covers.
-#[must_use]
-pub(super) fn selection_len(cursor: &CursorState) -> usize {
-    let (Some(anchor), Some(focus)) = (cursor.anchor.as_ref(), cursor.focus.as_ref()) else {
-        return 0;
-    };
-    focus.byte_offset.abs_diff(anchor.byte_offset)
 }
 
 /// The character and paragraph styles under the selection.

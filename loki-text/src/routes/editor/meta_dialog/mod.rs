@@ -30,6 +30,7 @@ use loki_i18n::fl;
 
 use super::editor_keydown_ctrl::post_mutation_sync;
 use super::editor_metadata::{MetaDraft, apply_meta_draft, meta_to_draft};
+use super::editor_state::SaveStatus;
 use super::editor_style_editor::StyleEditorSync;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 use tabs::{MetaTab, missing_required};
@@ -150,6 +151,7 @@ pub(super) fn MetadataDialog(props: MetadataDialogProps) -> Element {
 
 /// Persists `draft` through Loro, returning whether it landed.
 fn save(doc_state: &Arc<Mutex<DocumentState>>, sync: &StyleEditorSync, draft: &MetaDraft) -> bool {
+    let mut save_message = sync.save_message;
     let guard = sync.loro_doc.read();
     let Some(ldoc) = guard.as_ref() else {
         return false;
@@ -165,5 +167,8 @@ fn save(doc_state: &Arc<Mutex<DocumentState>>, sync: &StyleEditorSync, draft: &M
         sync.can_undo,
         sync.can_redo,
     );
+    // The retired Dublin Core panel confirmed a successful write; a dialog that
+    // closes in silence leaves the user unsure whether it took.
+    save_message.set(Some(SaveStatus::ok(fl!("meta-dialog-saved"))));
     true
 }

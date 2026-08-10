@@ -96,6 +96,9 @@ page-dialog-tab-footer = Footer
 page-dialog-tab-borders = Borders
 
 page-dialog-paper = Paper
+# The way out of a preset: without this chip the width and height boxes stay
+# read-only forever, because they only unlock once the size stops matching.
+page-dialog-paper-custom = Custom
 page-dialog-width = Width
 page-dialog-height = Height
 page-dialog-orientation = Orientation
@@ -176,10 +179,14 @@ page-dialog-text-area = Text area { $width } × { $height } { $unit }
 ## ─────────────────────────────────────────────────────────────────────────
 
 meta-dialog-title = Document properties
-meta-dialog-subtitle = Title, language and an identifier are required to publish an EPUB.
+# Title and language are what the preflight raises as errors; the identifier is
+# generated on first save, and creator and publisher are store conventions
+# rather than specification requirements.
+meta-dialog-subtitle = Title and language are required to publish an EPUB. An identifier is generated when you first save.
 meta-dialog-close-aria = Close document properties
 meta-dialog-tabs-more = More
 meta-dialog-save = Save
+meta-dialog-saved = Document properties saved
 meta-dialog-cancel = Cancel
 
 meta-dialog-tab-general = General
@@ -249,12 +256,15 @@ link-dialog-target = Target
 link-dialog-target-heading = Heading { $level }
 link-dialog-target-bookmark = Bookmark
 link-dialog-no-targets = This document has no headings or bookmarks to link to yet.
+link-dialog-no-matches = Nothing matches "{ $filter }".
 
 link-dialog-display-text = Display text
 link-dialog-display-text-placeholder = The text the link will show
-link-dialog-display-from-selection = Taken from the selection.
 link-dialog-description = Description
 link-dialog-description-placeholder = Read out in place of the link text
+# Both fields are shown disabled: the link mark stores a URL and nothing else,
+# and inserting does not rewrite the selected text.
+link-dialog-text-unsupported = Display text and description are not stored by the document model yet. The link keeps the text you selected.
 
 # Inline, non-blocking validation (design note 22).
 link-dialog-valid-web = Will open over { $scheme }.

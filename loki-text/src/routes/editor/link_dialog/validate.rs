@@ -68,8 +68,23 @@ pub(super) fn to_url(kind: LinkKind, input: &str) -> String {
     let t = input.trim();
     match kind {
         LinkKind::Web if !has_scheme(t) => format!("https://{t}"),
-        LinkKind::Email if !t.starts_with("mailto:") => format!("mailto:{t}"),
+        LinkKind::Email if strip_mailto(t).len() == t.len() => format!("mailto:{t}"),
         _ => t.to_string(),
+    }
+}
+
+/// Strips a `mailto:` prefix in any case, the way a reader would read it.
+///
+/// URI schemes are case-insensitive (RFC 3986 §3.1). Matching only the
+/// lowercase spelling let `MAILTO:m@example.org` validate as a bare address —
+/// splitting into local `MAILTO:m` and domain `example.org` — and then be
+/// prefixed a second time into `mailto:MAILTO:m@example.org`.
+#[must_use]
+fn strip_mailto(s: &str) -> &str {
+    if s.len() >= 7 && s[..7].eq_ignore_ascii_case("mailto:") {
+        &s[7..]
+    } else {
+        s
     }
 }
 
@@ -125,7 +140,7 @@ fn validate_web(t: &str) -> AddressState {
 
 /// Email addresses: one `@`, something either side, and a dotted domain.
 fn validate_email(t: &str) -> AddressState {
-    let body = t.strip_prefix("mailto:").unwrap_or(t);
+    let body = strip_mailto(t);
     if body.contains(char::is_whitespace) {
         return AddressState::Invalid(fl!("link-dialog-invalid-whitespace"));
     }

@@ -193,3 +193,66 @@ fn setting_a_property_moves_exactly_one_from_inherited_to_local() {
     style.char_props.font_size = Some(Points::new(10.0));
     assert_eq!(local_property_count(&style), 2);
 }
+
+/// The whole point of resolving from the parent: a draft that has cleared its
+/// local override must fall back onto what it *inherits*, not onto the value
+/// still sitting in the catalog for this style. Resolving from `id` returned
+/// the cleared value, so Reset appeared to do nothing and re-picking that value
+/// silently un-dirtied the draft.
+#[test]
+fn a_cleared_override_falls_back_to_the_parent_not_to_itself() {
+    let cat = catalog();
+    let mut staged = cat
+        .paragraph_styles
+        .get(&StyleId::new("body-indent"))
+        .expect("seeded above")
+        .clone();
+
+    // Committed: body-indent sets bold = false, its parent Body sets true.
+    assert_eq!(staged.char_props.bold, Some(false));
+
+    // The user clicks Reset on the row: the draft clears the local value.
+    staged.char_props.bold = None;
+
+    assert_eq!(
+        resolve_inherited(&cat, &staged, |s| s.char_props.bold),
+        Some(true),
+        "falls through to Body's true, not back onto the cleared false"
+    );
+}
+
+/// A re-parent staged on the General tab has to move what the other tabs show,
+/// so resolution reads `parent` off the draft rather than off the catalog.
+#[test]
+fn resolution_follows_a_reparent_staged_in_the_draft() {
+    let cat = catalog();
+    let mut staged = cat
+        .paragraph_styles
+        .get(&StyleId::new("body-indent"))
+        .expect("seeded above")
+        .clone();
+    staged.char_props.bold = None;
+
+    // Re-parented onto the root, which sets no bold at all.
+    staged.parent = Some(StyleId::new("default"));
+
+    assert_eq!(
+        resolve_inherited(&cat, &staged, |s| s.char_props.bold),
+        None,
+        "the new parent sets no bold, so nothing is inherited"
+    );
+}
+
+/// A style with no parent inherits nothing — the caller's `unwrap_or` supplies
+/// the engine default rather than this function inventing one.
+#[test]
+fn a_parentless_style_inherits_nothing() {
+    let cat = catalog();
+    let root = cat
+        .paragraph_styles
+        .get(&StyleId::new("default"))
+        .expect("seeded above")
+        .clone();
+
+    assert_eq!(resolve_inherited(&cat, &root, |s| s.char_props.bold), None);
+}

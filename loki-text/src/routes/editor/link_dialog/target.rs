@@ -8,6 +8,8 @@ use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::{BookmarkKind, Inline};
 use loki_i18n::fl;
 
+use super::super::dialog_walk::{block_inlines, visit_doc_blocks};
+
 /// The four kinds of thing a link can point at.
 ///
 /// A segmented control rather than tabs: the kinds are **mutually exclusive
@@ -111,24 +113,16 @@ impl OutlineTarget {
 /// and nothing in the UI would show it had.
 #[must_use]
 pub(super) fn document_targets(doc: &Document) -> Vec<OutlineTarget> {
+    // The shared walk (`dialog_walk`), so an anchor in a table's header row is
+    // offered like any other. Note 20 forbids typing an anchor by hand, so a
+    // target this list omits cannot be linked to at all.
     let mut out = Vec::new();
-    for section in &doc.sections {
-        collect_blocks(&section.blocks, &mut out);
-    }
-    out
-}
-
-/// Walks a block list, collecting headings and bookmark starts.
-fn collect_blocks(blocks: &[Block], out: &mut Vec<OutlineTarget>) {
-    for block in blocks {
-        match block {
-            Block::Heading(level, attr, inlines) => {
-                let label = plain_text(inlines);
-                // A heading with no text cannot be told from its neighbours in
-                // the list, so it is not offered as a target.
-                if label.trim().is_empty() {
-                    continue;
-                }
+    visit_doc_blocks(doc, &mut |block| {
+        if let Block::Heading(level, attr, inlines) = block {
+            let label = plain_text(inlines);
+            // A heading with no text cannot be told from its neighbours in the
+            // list, so it is not offered as a target.
+            if !label.trim().is_empty() {
                 let anchor = attr
                     .id
                     .clone()
@@ -138,27 +132,13 @@ fn collect_blocks(blocks: &[Block], out: &mut Vec<OutlineTarget>) {
                     label,
                     kind: TargetKind::Heading((*level).clamp(1, 6)),
                 });
-                collect_inlines(inlines, out);
             }
-            Block::Para(inlines) | Block::Plain(inlines) => collect_inlines(inlines, out),
-            Block::BlockQuote(inner) => collect_blocks(inner, out),
-            Block::OrderedList(_, items) | Block::BulletList(items) => {
-                for item in items {
-                    collect_blocks(item, out);
-                }
-            }
-            Block::Table(table) => {
-                for body in &table.bodies {
-                    for row in body.head_rows.iter().chain(&body.body_rows) {
-                        for cell in &row.cells {
-                            collect_blocks(&cell.blocks, out);
-                        }
-                    }
-                }
-            }
-            _ => {}
         }
-    }
+        for inlines in block_inlines(block) {
+            collect_inlines(inlines, &mut out);
+        }
+    });
+    out
 }
 
 /// Collects bookmark starts from an inline sequence.
@@ -192,6 +172,27 @@ fn collect_inlines(inlines: &[Inline], out: &mut Vec<OutlineTarget>) {
 }
 
 /// The concatenated plain text of an inline sequence.
+/// Collapses runs of separators down to one.
+///
+/// `replace("--", "-")` is a single non-overlapping pass, so three or more in a
+/// row survived it: "One \u{b7} The harbour" slugged to `one--the-harbour`.
+fn collapse_dashes(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut last_dash = false;
+    for c in s.chars() {
+        if c == '-' {
+            if !last_dash {
+                out.push(c);
+            }
+            last_dash = true;
+        } else {
+            out.push(c);
+            last_dash = false;
+        }
+    }
+    out
+}
+
 fn plain_text(inlines: &[Inline]) -> String {
     let mut s = String::new();
     push_plain(inlines, &mut s);
@@ -233,7 +234,7 @@ fn slugify(label: &str, ordinal: usize) -> String {
             }
         })
         .collect();
-    let base = base.trim_matches('-').replace("--", "-");
+    let base = collapse_dashes(base.trim_matches('-'));
     if base.is_empty() {
         format!("heading-{ordinal}")
     } else {

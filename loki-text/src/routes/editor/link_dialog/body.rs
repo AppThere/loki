@@ -5,7 +5,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use appthere_ui::{AtField, AtSegmented, DialogPosture, at_control_style, tokens};
+use appthere_ui::{
+    AtDialogNotice, AtField, AtNoticeTone, AtSegmented, DialogPosture, at_control_style, tokens,
+};
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
@@ -53,6 +55,12 @@ pub(super) fn form(
             }
 
             // ── Shared fields ─────────────────────────────────────────────────
+            // Both are disabled rather than live. `set_hyperlink` marks the
+            // selected range with a URL; it does not replace the text, and the
+            // link mark carries no description at all. Accepting typing into
+            // either and dropping it on Insert is the silent discard this
+            // dialog set out not to do — so they state the reason instead.
+            // TODO(link): replace the selected text and carry a description.
             { text_field(
                 fl!("link-dialog-display-text"),
                 current.display_text.clone(),
@@ -60,7 +68,7 @@ pub(super) fn form(
                 draft,
                 posture,
                 |d, v| d.display_text = v,
-                Some(fl!("link-dialog-display-from-selection")),
+                true,
             ) }
 
             { text_field(
@@ -70,8 +78,13 @@ pub(super) fn form(
                 draft,
                 posture,
                 |d, v| d.description = v,
-                None,
+                true,
             ) }
+
+            AtDialogNotice {
+                tone: AtNoticeTone::Info,
+                message: rsx! { { fl!("link-dialog-text-unsupported") } },
+            }
         }
     }
 }
@@ -160,11 +173,12 @@ fn text_field(
     mut draft: Signal<Option<LinkDraft>>,
     posture: DialogPosture,
     set: impl Fn(&mut LinkDraft, String) + 'static,
-    hint: Option<String>,
+    disabled: bool,
 ) -> Element {
     rsx! {
         AtField {
             label,
+            disabled,
             control: rsx! {
                 div {
                     style: at_control_style(posture.min_touch_px, "width: 100%;"),
@@ -172,6 +186,7 @@ fn text_field(
                         r#type: "text",
                         value: "{value}",
                         placeholder: "{placeholder}",
+                        readonly: disabled,
                         style: format!(
                             "flex: 1; min-width: 0; background: transparent; border: none; \
                              font-size: {fs}px; color: {fg};",
@@ -187,22 +202,6 @@ fn text_field(
                         },
                     }
                 }
-            },
-            footnote: match hint {
-                Some(text) => rsx! {
-                    div {
-                        style: format!(
-                            "display: flex; align-items: center; gap: {gap}px; \
-                             font-size: {fs}px; color: {fg};",
-                            gap = tokens::SPACE_1,
-                            fs = tokens::FONT_SIZE_LABEL,
-                            fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
-                        ),
-                        span { "\u{21B3}" }
-                        span { {text} }
-                    }
-                },
-                None => rsx! {},
             },
         }
     }

@@ -6,7 +6,7 @@ use appthere_ui::{
     AtCheckRow, AtDialogNotice, AtField, AtNoticeTone, AtSegmented, DialogPosture, tokens,
 };
 use dioxus::prelude::*;
-use loki_doc_model::layout::page::SectionColumns;
+use loki_doc_model::layout::page::{PageLayout, SectionColumns};
 use loki_doc_model::loki_primitives::units::MeasurementUnit;
 use loki_doc_model::loki_primitives::units::Points;
 use loki_i18n::fl;
@@ -133,9 +133,20 @@ pub(super) fn body(draft: PageDraft, posture: DialogPosture, settings: &PanelSet
 /// One column is the *absence* of columns in the model, not a `SectionColumns`
 /// with `count: 1` — writing the latter would export a single-column section
 /// as an explicit one-column layout, which is a different document.
+/// The column count `layout` currently describes; one when it has no columns.
+fn current_count(layout: &PageLayout) -> u8 {
+    layout.columns.as_ref().map_or(1, |c| c.count)
+}
+
 fn set_count(mut draft: PageDraft, count: u8, unit: MeasurementUnit) {
     let mut next = draft.read().clone();
     if let Some(d) = next.as_mut() {
+        // A no-op click must stay a no-op. The rebuild below drops `widths`,
+        // so re-picking the count a document was imported with would discard
+        // its unequal columns without the user changing anything.
+        if current_count(&d.layout) == count {
+            return;
+        }
         if count <= 1 {
             d.layout.columns = None;
         } else {

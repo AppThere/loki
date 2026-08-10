@@ -5,7 +5,8 @@
 //! [`publish_tab_content`] builds the Publish tab's groups as
 //! [`RibbonGroupSpec`]s wrapped in [`AtRibbonGroups`], so the width-driven
 //! collapse cascade + overflow menu drive them like every other tab. The export
-//! actions themselves ([`run_export`]) and the PDF/X level panel live in
+//! actions themselves ([`super::editor_publish::run_export`]) and the PDF/X
+//! level panel live in
 //! [`super::editor_publish`].
 
 use appthere_ui::{
@@ -18,7 +19,8 @@ use loki_i18n::fl;
 ///
 /// `dialogs` carries the two tabbed dialogs this tab opens: the EPUB button now
 /// opens the **Publish EPUB 3** dialog (design section 7) rather than exporting
-/// straight away — the export itself still runs through [`run_export`], from
+/// straight away — the export itself still runs through
+/// [`super::editor_publish::run_export`], from
 /// the dialog's Publish button, once the standing preflight has been seen.
 /// Takes no document handle: all three buttons now open a surface that reads the
 /// document itself — the PDF/X level panel, the EPUB dialog, the properties

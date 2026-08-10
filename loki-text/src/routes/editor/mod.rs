@@ -9,6 +9,7 @@
 //!
 //! All editing logic lives in [`editor_inner::EditorInner`].
 
+mod dialog_walk;
 pub mod dom_reflow;
 mod editor_calibrate;
 mod editor_canvas;

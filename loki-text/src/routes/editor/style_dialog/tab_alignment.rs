@@ -9,7 +9,7 @@ use loki_doc_model::style::{StyleCatalog, StyleId};
 use loki_i18n::fl;
 
 use super::fields::{DraftSignal, OpenSignal, body_grid_style, full_width, provenance_line};
-use super::rows::resolve_row;
+use super::rows::{resolve_inherited, resolve_row};
 
 /// The alignments offered, in display order.
 const ALIGNMENTS: [ParagraphAlignment; 5] = [
@@ -45,15 +45,13 @@ pub(super) fn body(
     // The control highlights the **resolved** alignment, not just the local
     // one: a style that inherits `Left` must show Left selected, or the tab
     // reads as though the paragraph has no alignment at all.
+    // Falls back through the **parent**, not through `id`: see
+    // `rows::resolve_inherited`. Resolving from `id` would make Reset a no-op.
     let resolved = current
         .style
         .para_props
         .alignment
-        .or_else(|| {
-            catalog
-                .resolve_para_chain(id, |s| s.para_props.alignment)
-                .and_then(|r| r.value)
-        })
+        .or_else(|| resolve_inherited(catalog, &current.style, |s| s.para_props.alignment))
         .unwrap_or(ParagraphAlignment::Left);
     let selected = ALIGNMENTS
         .iter()

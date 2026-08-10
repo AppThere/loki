@@ -126,7 +126,11 @@ pub(super) fn body(
                 draft,
                 posture,
                 move |d, v| {
-                    d.style.next_style_id = if v.trim().is_empty() { None } else { Some(v) };
+                    // Trimmed like the parent field above: an id pasted with
+                    // surrounding whitespace otherwise never resolves.
+                    let v = v.trim();
+                    d.style.next_style_id =
+                        if v.is_empty() { None } else { Some(v.to_string()) };
                 },
                 String::new(),
             ) }

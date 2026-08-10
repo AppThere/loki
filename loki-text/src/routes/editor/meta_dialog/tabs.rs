@@ -34,9 +34,10 @@ impl MetaTab {
 
     /// How many tabs keep an inline slot at Medium.
     ///
-    /// Three: General and Dublin Core are where the writing happens, and
-    /// Accessibility earns the third slot over Identifiers because it is the
-    /// one a publisher is legally answerable for.
+    /// Three, taken from the front of the strip: General, Dublin Core and
+    /// Identifiers. Accessibility and Statistics fall into the overflow menu —
+    /// both are read-only reports, so losing their inline slot costs a click on
+    /// something nobody types into.
     pub const INLINE_AT_MEDIUM: usize = 3;
 
     /// The tab's position in the strip.
@@ -126,12 +127,7 @@ impl MetaTab {
 /// requirements; `dc:publisher` is not required by the specification but is by
 /// every store that ingests one, which is the distinction the dialog's warning
 /// draws rather than eliding.
-pub(super) const EPUB_REQUIRED: [MetaField; 4] = [
-    MetaField::Title,
-    MetaField::Creator,
-    MetaField::Language,
-    MetaField::Publisher,
-];
+pub(super) const EPUB_REQUIRED: [MetaField; 2] = [MetaField::Title, MetaField::Language];
 
 /// Whether `field` is needed before this document can be published as EPUB.
 #[must_use]

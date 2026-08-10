@@ -8,6 +8,13 @@ use appthere_ui::{AtDialogNotice, AtField, AtNoticeTone, DialogPosture, tokens};
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
+/// How many device families the chip row offers.
+///
+/// The row is a chip grid, not a searchable list: past a screenful it stops
+/// being quicker than the ribbon's font picker, which is where a full
+/// enumeration belongs.
+const DEVICE_FAMILY_LIMIT: usize = 60;
+
 use super::body::{
     SpanDraftSignal, StyleContext, chip_style, edit, grid, line, number_field, span_all, tri_toggle,
 };
@@ -24,12 +31,23 @@ pub(super) fn font(
         return rsx! {};
     };
     let m = current.marks.clone();
-    let families: Vec<String> = font_families.iter().take(60).cloned().collect();
-    let selected_family = m
+    // Whether the face travels with the file. Keyed off the bundled list, not
+    // off `families` — that is a truncated slice of whatever this device has
+    // installed, so it raised the substitution caution for the six faces that
+    // ship inside Loki (the one class with no substitution risk) and stayed
+    // quiet for a device face that happened to sort into the first sixty.
+    let substitutes = m
         .font_family
-        .as_ref()
-        .and_then(|f| families.iter().position(|c| c == f))
-        .unwrap_or(usize::MAX);
+        .as_deref()
+        .is_some_and(|f| !loki_fonts::is_bundled_family(f));
+    // Device families offered after the bundled ones, minus any the bundle
+    // already covers, so the same face never appears twice under two spellings.
+    let device: Vec<String> = font_families
+        .iter()
+        .filter(|f| !loki_fonts::is_bundled_family(f))
+        .take(DEVICE_FAMILY_LIMIT)
+        .cloned()
+        .collect();
 
     rsx! {
         div {
@@ -61,6 +79,26 @@ pub(super) fn font(
                                     });
                                 },
                                 {f.name}
+                            }
+                        }
+                        for name in device.iter().cloned() {
+                            button {
+                                key: "{name}",
+                                style: chip_style(
+                                    m.font_family.as_deref() == Some(name.as_str()),
+                                    posture,
+                                ),
+                                onclick: {
+                                    let name = name.clone();
+                                    move |evt: Event<MouseData>| {
+                                        evt.stop_propagation();
+                                        let name = name.clone();
+                                        edit(draft, move |d| {
+                                            d.marks.font_family = Some(name.clone());
+                                        });
+                                    }
+                                },
+                                {name.clone()}
                             }
                         }
                     }
@@ -154,7 +192,7 @@ pub(super) fn font(
                 ),
             ) }
 
-            if selected_family == usize::MAX && m.font_family.is_some() {
+            if substitutes {
                 AtDialogNotice {
                     tone: AtNoticeTone::Caution,
                     extra_style: span_all(posture),

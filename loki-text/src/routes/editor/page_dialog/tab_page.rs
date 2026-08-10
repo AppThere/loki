@@ -28,7 +28,12 @@ pub(super) fn body(
     let Some(current) = draft.read().clone() else {
         return rsx! {};
     };
-    let origin = PaperOrigin::of(&current.layout);
+    // An explicit Custom choice wins over a size that still matches a paper.
+    let origin = if current.custom_paper {
+        PaperOrigin::Custom
+    } else {
+        PaperOrigin::of(&current.layout)
+    };
     let is_landscape =
         current.layout.page_size.width.value() > current.layout.page_size.height.value();
     let origin_line = origin.line(&current.layout, settings.unit);
@@ -60,6 +65,18 @@ pub(super) fn body(
                                 },
                                 {paper.display_name}
                             }
+                        }
+                        // Without this chip the size boxes were unreachable: a
+                        // catalogued size locked them, and the only documented
+                        // way out was to edit them.
+                        button {
+                            key: "custom",
+                            style: paper_button_style(!origin.is_preset(), posture),
+                            onclick: move |evt| {
+                                evt.stop_propagation();
+                                set_custom(draft);
+                            },
+                            { fl!("page-dialog-paper-custom") }
                         }
                     }
                 },
@@ -169,7 +186,20 @@ fn set_paper(mut draft: PageDraft, paper: &'static Paper, unit: MeasurementUnit)
     let mut next = draft.read().clone();
     if let Some(d) = next.as_mut() {
         d.layout.page_size = paper.oriented_like(&d.layout.page_size);
+        d.custom_paper = false;
         d.buffers = PageDialogDraft::buffers_for(&d.layout, unit);
+    }
+    draft.set(next);
+}
+
+/// Unlocks the width and height boxes by declaring the size custom.
+///
+/// The size itself is untouched — the user is saying "let me change this", not
+/// "change it for me" — so the boxes open on the numbers already there.
+fn set_custom(mut draft: PageDraft) {
+    let mut next = draft.read().clone();
+    if let Some(d) = next.as_mut() {
+        d.custom_paper = true;
     }
     draft.set(next);
 }

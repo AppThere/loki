@@ -25,6 +25,7 @@ use super::draft::{fmt_points, parse_points};
 use super::fields::{DraftSignal, OpenSignal, full_width, provenance_line};
 use super::rows::resolve_row;
 use super::tab_stops_cells::{alignment_label, body_cell, header_cell, leader_label};
+use super::tab_stops_edit::{add_stop, edit_stops};
 
 /// Renders the Tab stops tab body.
 pub(super) fn body(
@@ -46,6 +47,10 @@ pub(super) fn body(
             .and_then(|r| r.value)
     });
     let stops = stops.unwrap_or_default();
+    // Cloned per handler: `stops` is borrowed by the table's `for` loop below,
+    // and the handlers outlive this render.
+    let shown_for_edit = std::rc::Rc::new(stops.clone());
+    let shown_for_add = stops.clone();
     let is_local = local.is_some();
     let new_stop = current.buffers.new_tab_stop.clone();
 
@@ -123,13 +128,18 @@ pub(super) fn body(
                                 fs = tokens::FONT_SIZE_BODY,
                                 fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                             ),
-                            onclick: move |evt| {
-                                evt.stop_propagation();
-                                edit_stops(draft, move |list| {
-                                    if i < list.len() {
-                                        list.remove(i);
-                                    }
-                                });
+                            onclick: {
+                                // One handler per row, each needing the same
+                                // base list, so it is shared rather than moved.
+                                let shown = std::rc::Rc::clone(&shown_for_edit);
+                                move |evt: Event<MouseData>| {
+                                    evt.stop_propagation();
+                                    edit_stops(draft, &shown, move |list| {
+                                        if i < list.len() {
+                                            list.remove(i);
+                                        }
+                                    });
+                                }
                             },
                             "\u{2715}"
                         }
@@ -203,13 +213,13 @@ pub(super) fn body(
                     // A stop with no position is not a stop; the button stays
                     // inert rather than adding one at zero.
                     disabled: !matches!(parse_points(&new_stop), Ok(Some(_))),
-                    on_click: move |_| add_stop(draft),
+                    on_click: move |_| add_stop(draft, &shown_for_add),
                 }
                 AtDialogButton {
                     label: fl!("style-dialog-stops-clear"),
                     min_touch_px: posture.min_touch_px,
                     disabled: stops.is_empty(),
-                    on_click: move |_| edit_stops(draft, |list| list.clear()),
+                    on_click: move |_| edit_stops(draft, &[], |list| list.clear()),
                 }
             }
 
@@ -223,55 +233,4 @@ pub(super) fn body(
             }
         }
     }
-}
-
-/// Applies an edit to the style's tab-stop list.
-///
-/// Materialises the **resolved** list locally first when the style has none of
-/// its own, so an edit to an inherited set is confined to this style instead of
-/// reaching every sibling through the parent.
-fn edit_stops(mut draft: DraftSignal, edit: impl Fn(&mut Vec<TabStop>)) {
-    let mut next = draft.read().clone();
-    if let Some(d) = next.as_mut() {
-        let mut list = d.style.para_props.tab_stops.clone().unwrap_or_default();
-        edit(&mut list);
-        // Stops are positional, and the layout engine walks them in order.
-        list.sort_by(|a, b| {
-            a.position
-                .value()
-                .partial_cmp(&b.position.value())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        d.style.para_props.tab_stops = Some(list);
-    }
-    draft.set(next);
-}
-
-/// Adds the stop in the "new stop at" buffer, then clears the buffer.
-fn add_stop(mut draft: DraftSignal) {
-    let buffer = draft
-        .read()
-        .as_ref()
-        .map(|d| d.buffers.new_tab_stop.clone())
-        .unwrap_or_default();
-    let Ok(Some(position)) = parse_points(&buffer) else {
-        return;
-    };
-    edit_stops(draft, move |list| {
-        // A second stop at the same position is unreachable — the first one
-        // consumes the tab — so replace rather than accumulate.
-        if let Some(existing) = list
-            .iter_mut()
-            .find(|s| (s.position.value() - position.value()).abs() < f64::EPSILON)
-        {
-            existing.position = position;
-        } else {
-            list.push(TabStop::left(position));
-        }
-    });
-    let mut next = draft.read().clone();
-    if let Some(d) = next.as_mut() {
-        d.buffers.new_tab_stop = String::new();
-    }
-    draft.set(next);
 }

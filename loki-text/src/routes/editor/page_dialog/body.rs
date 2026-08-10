@@ -15,7 +15,7 @@ use loki_doc_model::style::catalog::StyleId;
 use super::super::editor_defaults::PanelSettings;
 use super::super::editor_keydown_ctrl::post_mutation_sync;
 use super::super::editor_style_editor::StyleEditorSync;
-use super::tabs::{PageTab, unit_label};
+use super::tabs::{PageTab, orientation_of, unit_label};
 use super::{
     PageDialogDraft, preview, tab_borders, tab_columns, tab_headfoot, tab_margins, tab_page,
 };
@@ -178,6 +178,10 @@ pub(super) fn measure_field(
                                 let text = evt.value();
                                 if let Some(points) = unit.parse(&text) {
                                     commit_value(d, points);
+                                    // Keep the stored orientation in step with
+                                    // the numbers: it is a separate field, and
+                                    // it is the one the exporters read.
+                                    d.layout.orientation = orientation_of(&d.layout.page_size);
                                 }
                                 set_buffer(d, text);
                             }

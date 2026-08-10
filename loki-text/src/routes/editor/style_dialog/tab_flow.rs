@@ -10,6 +10,7 @@ use loki_i18n::fl;
 
 use super::draft::{ParaDialogDraft, parse_lines};
 use super::fields::{DraftSignal, OpenSignal, body_grid_style, full_width, numeric_field};
+use super::rows::resolve_inherited;
 
 /// Renders the Text flow tab body.
 pub(super) fn body(
@@ -26,9 +27,11 @@ pub(super) fn body(
 
     // Each flag shows its **resolved** state, so an inherited "keep together"
     // reads as on rather than as unset.
+    // Falls back through the **parent**, not through `id`: see
+    // `rows::resolve_inherited`. Resolving from `id` would make Reset a no-op.
     let resolved = |local: Option<bool>, get: fn(&ParagraphStyle) -> Option<bool>| -> bool {
         local
-            .or_else(|| catalog.resolve_para_chain(id, get).and_then(|r| r.value))
+            .or_else(|| resolve_inherited(catalog, &current.style, get))
             .unwrap_or(false)
     };
     let keep_together = resolved(pp.keep_together, |s| s.para_props.keep_together);

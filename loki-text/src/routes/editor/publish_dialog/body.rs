@@ -160,6 +160,16 @@ fn metadata(doc_state: &Arc<Mutex<DocumentState>>, posture: DialogPosture) -> El
         ("dc:rights".to_string(), dc.rights.clone()),
     ];
 
+    // "Set" has to mean what the preflight means by it, or a title of three
+    // spaces gets a green tick here and blocks Publish there.
+    let rows: Vec<(String, Option<String>)> = rows
+        .into_iter()
+        .map(|(key, value)| {
+            let value = value.filter(|v| !v.trim().is_empty());
+            (key, value)
+        })
+        .collect();
+
     rsx! {
         div {
             style: grid(posture),
@@ -242,6 +252,9 @@ fn accessibility(doc_state: &Arc<Mutex<DocumentState>>, posture: DialogPosture) 
         .and_then(|s| s.document.as_ref().map(|d| super::preflight::run(d)))
         .unwrap_or_default();
     let clean = report.warnings() == 0 && report.errors() == 0;
+    // Everything the banner is cautioning about, not just the warnings — an
+    // errors-only document used to read "0 accessibility warning(s)".
+    let issues = report.warnings() + report.errors();
 
     rsx! {
         div {
@@ -253,7 +266,7 @@ fn accessibility(doc_state: &Arc<Mutex<DocumentState>>, posture: DialogPosture) 
                     if clean {
                         { fl!("publish-dialog-a11y-ok") }
                     } else {
-                        { fl!("publish-dialog-a11y-issues", count = report.warnings() as i64) }
+                        { fl!("publish-dialog-a11y-issues", count = issues as i64) }
                     }
                 },
             }

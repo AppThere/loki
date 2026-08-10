@@ -9,6 +9,8 @@ use loki_doc_model::Document;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::Inline;
 
+use super::super::dialog_walk::{visit_doc_blocks, visit_doc_inlines};
+
 /// What the document's headings look like.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct HeadingStructure {
@@ -26,9 +28,11 @@ pub(super) struct HeadingStructure {
 #[must_use]
 pub(super) fn heading_structure(doc: &Document) -> HeadingStructure {
     let mut levels = Vec::new();
-    for section in &doc.sections {
-        collect_levels(&section.blocks, &mut levels);
-    }
+    visit_doc_blocks(doc, &mut |block| {
+        if let Block::Heading(level, _, _) = block {
+            levels.push((*level).clamp(1, 6));
+        }
+    });
     let mut well_nested = true;
     let mut previous: Option<u8> = None;
     for level in &levels {
@@ -45,22 +49,6 @@ pub(super) fn heading_structure(doc: &Document) -> HeadingStructure {
     }
 }
 
-/// Collects heading levels in document order.
-fn collect_levels(blocks: &[Block], out: &mut Vec<u8>) {
-    for block in blocks {
-        match block {
-            Block::Heading(level, _, _) => out.push((*level).clamp(1, 6)),
-            Block::BlockQuote(inner) => collect_levels(inner, out),
-            Block::OrderedList(_, items) | Block::BulletList(items) => {
-                for item in items {
-                    collect_levels(item, out);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
 /// How many tables carry what a reader needs.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct TableAudit {
@@ -74,40 +62,18 @@ pub(super) struct TableAudit {
 #[must_use]
 pub(super) fn table_audit(doc: &Document) -> TableAudit {
     let mut audit = TableAudit::default();
-    for section in &doc.sections {
-        walk_tables(&section.blocks, &mut audit);
-    }
-    audit
-}
-
-fn walk_tables(blocks: &[Block], audit: &mut TableAudit) {
-    for block in blocks {
-        match block {
-            Block::Table(table) => {
-                audit.total += 1;
-                let has_caption = !table.caption.full.is_empty();
-                let has_header = !table.head.rows.is_empty()
-                    || table.bodies.iter().any(|b| !b.head_rows.is_empty());
-                if has_caption && has_header {
-                    audit.accessible += 1;
-                }
-                for body in &table.bodies {
-                    for row in body.head_rows.iter().chain(&body.body_rows) {
-                        for cell in &row.cells {
-                            walk_tables(&cell.blocks, audit);
-                        }
-                    }
-                }
+    visit_doc_blocks(doc, &mut |block| {
+        if let Block::Table(table) = block {
+            audit.total += 1;
+            let has_caption = !table.caption.full.is_empty();
+            let has_header =
+                !table.head.rows.is_empty() || table.bodies.iter().any(|b| !b.head_rows.is_empty());
+            if has_caption && has_header {
+                audit.accessible += 1;
             }
-            Block::BlockQuote(inner) => walk_tables(inner, audit),
-            Block::OrderedList(_, items) | Block::BulletList(items) => {
-                for item in items {
-                    walk_tables(item, audit);
-                }
-            }
-            _ => {}
         }
-    }
+    });
+    audit
 }
 
 /// How many images carry alternative text.
@@ -123,56 +89,15 @@ pub(super) struct ImageAudit {
 #[must_use]
 pub(super) fn image_audit(doc: &Document) -> ImageAudit {
     let mut audit = ImageAudit::default();
-    for section in &doc.sections {
-        walk_images(&section.blocks, &mut audit);
-    }
+    visit_doc_inlines(doc, &mut |inline| {
+        if let Inline::Image(_, alt, _) = inline {
+            audit.total += 1;
+            // The alt text is the image's inline content — empty means the
+            // reader is told nothing.
+            if !alt.is_empty() {
+                audit.described += 1;
+            }
+        }
+    });
     audit
-}
-
-fn walk_images(blocks: &[Block], audit: &mut ImageAudit) {
-    for block in blocks {
-        match block {
-            Block::Para(inlines) | Block::Plain(inlines) | Block::Heading(_, _, inlines) => {
-                walk_image_inlines(inlines, audit);
-            }
-            Block::BlockQuote(inner) => walk_images(inner, audit),
-            Block::OrderedList(_, items) | Block::BulletList(items) => {
-                for item in items {
-                    walk_images(item, audit);
-                }
-            }
-            Block::Table(table) => {
-                for body in &table.bodies {
-                    for row in body.head_rows.iter().chain(&body.body_rows) {
-                        for cell in &row.cells {
-                            walk_images(&cell.blocks, audit);
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn walk_image_inlines(inlines: &[Inline], audit: &mut ImageAudit) {
-    for inline in inlines {
-        match inline {
-            Inline::Image(_, alt, _) => {
-                audit.total += 1;
-                // The alt text is the image's inline content — empty means the
-                // reader is told nothing.
-                if !alt.is_empty() {
-                    audit.described += 1;
-                }
-            }
-            Inline::StyledRun(run) => walk_image_inlines(&run.content, audit),
-            Inline::Span(_, inner)
-            | Inline::Emph(inner)
-            | Inline::Strong(inner)
-            | Inline::Link(_, inner, _) => walk_image_inlines(inner, audit),
-            Inline::Note(_, blocks) => walk_images(blocks, audit),
-            _ => {}
-        }
-    }
 }

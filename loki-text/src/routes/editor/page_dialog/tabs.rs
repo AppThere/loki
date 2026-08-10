@@ -3,7 +3,8 @@
 //! The page style dialog's tab set, and the origin line that replaces
 //! provenance for a non-inheriting family (design notes 11–14).
 
-use loki_doc_model::layout::page::PageLayout;
+use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
+use loki_doc_model::layout::page::{PageLayout, PageOrientation, PageSize};
 use loki_doc_model::layout::paper_catalog;
 use loki_doc_model::loki_primitives::units::MeasurementUnit;
 use loki_i18n::fl;
@@ -195,6 +196,68 @@ pub(super) fn margins_are_equal(layout: &PageLayout) -> bool {
     [m.bottom.value(), m.left.value(), m.right.value()]
         .iter()
         .all(|v| (v - first).abs() < f64::EPSILON)
+}
+
+/// The orientation a page size describes.
+///
+/// `PageLayout` stores the orientation *and* the size, so typing a landscape
+/// width into the size boxes while the field still said Portrait left the two
+/// disagreeing — and the field is the one the ODF and OOXML writers read.
+#[must_use]
+pub(super) fn orientation_of(size: &PageSize) -> PageOrientation {
+    if size.width.value() > size.height.value() {
+        PageOrientation::Landscape
+    } else {
+        PageOrientation::Portrait
+    }
+}
+
+/// Which alternate band a header/footer toggle addresses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Variant {
+    /// The first page of the style.
+    First,
+    /// Even (verso) pages.
+    Even,
+}
+
+/// Whether `layout` carries a distinct band for `variant`.
+///
+/// This is the checkbox's `checked` state, and the checkbox is labelled
+/// "Different first page" / "Different odd and even pages" — so `true` means a
+/// separate band **exists**. It once meant the opposite, matching a "Same as…"
+/// label that was never shipped, which inverted the control against its own
+/// caption in both directions.
+#[must_use]
+pub(super) fn band_differs(layout: &PageLayout, header: bool, variant: Variant) -> bool {
+    match (header, variant) {
+        (true, Variant::First) => layout.header_first.is_some(),
+        (true, Variant::Even) => layout.header_even.is_some(),
+        (false, Variant::First) => layout.footer_first.is_some(),
+        (false, Variant::Even) => layout.footer_even.is_some(),
+    }
+}
+
+/// Adds or removes the distinct band for `variant`, so that afterwards
+/// [`band_differs`] returns `differs`.
+pub(super) fn set_band_variant(
+    layout: &mut PageLayout,
+    header: bool,
+    variant: Variant,
+    differs: bool,
+) {
+    let band = differs.then(|| {
+        HeaderFooter::new(match variant {
+            Variant::First => HeaderFooterKind::First,
+            Variant::Even => HeaderFooterKind::Even,
+        })
+    });
+    match (header, variant) {
+        (true, Variant::First) => layout.header_first = band,
+        (true, Variant::Even) => layout.header_even = band,
+        (false, Variant::First) => layout.footer_first = band,
+        (false, Variant::Even) => layout.footer_even = band,
+    }
 }
 
 #[cfg(test)]

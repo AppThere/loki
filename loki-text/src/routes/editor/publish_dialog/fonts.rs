@@ -11,12 +11,14 @@
 //! substitutes, and there is nothing the export can do about that — so the
 //! table says so per face rather than in a footnote.
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
 use loki_doc_model::Document;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::Inline;
 use loki_fonts::is_bundled_family;
+
+use super::super::dialog_walk::{block_inlines, visit_doc_blocks, visit_inlines};
 
 /// One face the document asks for.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -34,7 +36,7 @@ pub(super) struct UsedFace {
 /// direct formatting alone would under-report what the export must carry.
 #[must_use]
 pub(super) fn used_faces(doc: &Document) -> Vec<UsedFace> {
-    let mut names: BTreeSet<String> = BTreeSet::new();
+    let mut names: BTreeMap<String, String> = BTreeMap::new();
 
     for style in doc.styles.paragraph_styles.values() {
         if let Some(name) = style.char_props.font_name.as_ref() {
@@ -46,12 +48,29 @@ pub(super) fn used_faces(doc: &Document) -> Vec<UsedFace> {
             insert_name(&mut names, name);
         }
     }
-    for section in &doc.sections {
-        walk_blocks(&section.blocks, &mut names);
-    }
+    // One shared walk (`dialog_walk`), so table head/foot cells and styled
+    // paragraphs are covered here the same way they are everywhere else.
+    visit_doc_blocks(doc, &mut |block| {
+        if let Block::StyledPara(para) = block
+            && let Some(props) = para.direct_char_props.as_ref()
+            && let Some(name) = props.font_name.as_ref()
+        {
+            insert_name(&mut names, name);
+        }
+        for inlines in block_inlines(block) {
+            visit_inlines(inlines, &mut |inline| {
+                if let Inline::StyledRun(run) = inline
+                    && let Some(props) = run.direct_props.as_ref()
+                    && let Some(name) = props.font_name.as_ref()
+                {
+                    insert_name(&mut names, name);
+                }
+            });
+        }
+    });
 
     names
-        .into_iter()
+        .into_values()
         .map(|name| UsedFace {
             bundled: is_bundled_family(&name),
             name,
@@ -60,66 +79,18 @@ pub(super) fn used_faces(doc: &Document) -> Vec<UsedFace> {
 }
 
 /// Adds a family name, ignoring blanks.
-fn insert_name(names: &mut BTreeSet<String>, name: &str) {
+///
+/// Keyed on the **lowercased** name, because family names arrive as free text
+/// from ODF and OOXML and `is_bundled_family` already treats `TINOS` and
+/// `tinos` as one face. Keying on the raw name listed a case-varied import
+/// twice and inflated the "will be substituted" count with it. The first
+/// spelling seen is the one displayed.
+fn insert_name(names: &mut BTreeMap<String, String>, name: &str) {
     let trimmed = name.trim();
     if !trimmed.is_empty() {
-        names.insert(trimmed.to_string());
-    }
-}
-
-fn walk_blocks(blocks: &[Block], names: &mut BTreeSet<String>) {
-    for block in blocks {
-        match block {
-            Block::Para(inlines) | Block::Plain(inlines) | Block::Heading(_, _, inlines) => {
-                walk_inlines(inlines, names);
-            }
-            Block::StyledPara(para) => {
-                if let Some(props) = para.direct_char_props.as_ref()
-                    && let Some(name) = props.font_name.as_ref()
-                {
-                    insert_name(names, name);
-                }
-                walk_inlines(&para.inlines, names);
-            }
-            Block::BlockQuote(inner) => walk_blocks(inner, names),
-            Block::OrderedList(_, items) | Block::BulletList(items) => {
-                for item in items {
-                    walk_blocks(item, names);
-                }
-            }
-            Block::Table(table) => {
-                for body in &table.bodies {
-                    for row in body.head_rows.iter().chain(&body.body_rows) {
-                        for cell in &row.cells {
-                            walk_blocks(&cell.blocks, names);
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn walk_inlines(inlines: &[Inline], names: &mut BTreeSet<String>) {
-    for inline in inlines {
-        match inline {
-            Inline::StyledRun(run) => {
-                if let Some(props) = run.direct_props.as_ref()
-                    && let Some(name) = props.font_name.as_ref()
-                {
-                    insert_name(names, name);
-                }
-                walk_inlines(&run.content, names);
-            }
-            Inline::Span(_, inner)
-            | Inline::Emph(inner)
-            | Inline::Strong(inner)
-            | Inline::Underline(inner)
-            | Inline::Link(_, inner, _) => walk_inlines(inner, names),
-            Inline::Note(_, blocks) => walk_blocks(blocks, names),
-            _ => {}
-        }
+        names
+            .entry(trimmed.to_lowercase())
+            .or_insert_with(|| trimmed.to_string());
     }
 }
 

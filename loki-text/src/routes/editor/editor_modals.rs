@@ -7,7 +7,15 @@
 //! Every modal here is mounted **at a component boundary** — `{cond.then(|| rsx!
 //! { Modal { .. } })}` — because only a component owns a hook scope, so only a
 //! component can read the breakpoint and adapt without a `compact` flag threaded
-//! down from the parent (ADR-0013). Each is a few lines at the mount site and
+//! down from the parent (ADR-0013).
+//!
+//! **The rsx syntax is the boundary; a call is not.** `Modal(ModalProps { .. })`
+//! compiles and renders, but it is a plain function call: its `use_signal` and
+//! `use_breakpoint` register against *this* function's caller — `EditorInner` —
+//! and every mount here is conditional, so the hook indices shift as dialogs
+//! open and close. Closing one dialog and opening another then downcasts one
+//! dialog's draft signal as another's and panics. Use `Modal { ..ModalProps }`,
+//! which builds a `VComponent` and gives the dialog a scope of its own. Each is a few lines at the mount site and
 //! grows whenever a modal gains a prop, and `editor_inner` is baselined over the
 //! 300-line ceiling and may not grow — so the cluster lives here and
 //! `editor_inner` calls it once (CLAUDE.md technique 3).
@@ -82,71 +90,91 @@ pub(super) fn editor_modals(
 
         // Paragraph style editor (Spec 05 M2/M6, design section 1).
         {open_style.map(|style_id| rsx! {
-            {ParagraphStyleDialog(ParagraphStyleDialogProps {
-                doc_state: Arc::clone(&doc_state),
-                open_style: paragraph_style_dialog,
-                style_id,
-                font_families: Rc::clone(&font_families),
-                sync,
-            })}
+            ParagraphStyleDialog {
+                ..ParagraphStyleDialogProps {
+                    doc_state: Arc::clone(&doc_state),
+                    open_style: paragraph_style_dialog,
+                    style_id,
+                    font_families: Rc::clone(&font_families),
+                    sync,
+                }
+            }
         })}
 
         // Span-level formatting (design section 2).
         {dialogs.span_format.cloned().then(|| rsx! {
-            {SpanFormatDialog(SpanFormatDialogProps {
-                doc_state: Arc::clone(&doc_state),
-                open: dialogs.span_format,
-                font_families: Rc::clone(&font_families),
-                sync: insert_sync,
-            })}
+            SpanFormatDialog {
+                ..SpanFormatDialogProps {
+                    doc_state: Arc::clone(&doc_state),
+                    open: dialogs.span_format,
+                    font_families: Rc::clone(&font_families),
+                    sync: insert_sync,
+                }
+            }
         })}
 
         // Page style editor (design section 3).
-        {open_page.map(|_| rsx! {
-            {PageStyleDialog(PageStyleDialogProps {
-                doc_state: Arc::clone(&doc_state),
-                open: dialogs.page_style,
-                sync,
-            })}
+        {open_page.map(|name| rsx! {
+            PageStyleDialog {
+                // Keyed on the style being edited: the draft is seeded once per
+                // mount, so without this, opening the dialog on a second style
+                // would keep the first one's geometry while the title and the
+                // commit target named the second.
+                key: "{name}",
+                ..PageStyleDialogProps {
+                    doc_state: Arc::clone(&doc_state),
+                    open: dialogs.page_style,
+                    style_name: name.clone(),
+                    sync,
+                }
+            }
         })}
 
         // Document properties (design section 4).
         {dialogs.metadata.cloned().then(|| rsx! {
-            {MetadataDialog(MetadataDialogProps {
-                doc_state: Arc::clone(&doc_state),
-                open: dialogs.metadata,
-                sync,
-            })}
+            MetadataDialog {
+                ..MetadataDialogProps {
+                    doc_state: Arc::clone(&doc_state),
+                    open: dialogs.metadata,
+                    sync,
+                }
+            }
         })}
 
         // Insert link (design section 5).
         {link_open.then(|| rsx! {
-            {InsertLinkDialog(InsertLinkDialogProps {
-                doc_state: Arc::clone(&doc_state),
-                open: dialogs.insert_link,
-                sync: insert_sync,
-            })}
+            InsertLinkDialog {
+                ..InsertLinkDialogProps {
+                    doc_state: Arc::clone(&doc_state),
+                    open: dialogs.insert_link,
+                    sync: insert_sync,
+                }
+            }
         })}
 
         // Insert table (design section 6).
         {table_open.then(|| rsx! {
-            {InsertTableDialog(InsertTableDialogProps {
-                doc_state: Arc::clone(&doc_state),
-                open: dialogs.insert_table,
-                sync: insert_sync,
-            })}
+            InsertTableDialog {
+                ..InsertTableDialogProps {
+                    doc_state: Arc::clone(&doc_state),
+                    open: dialogs.insert_table,
+                    sync: insert_sync,
+                }
+            }
         })}
 
         // Publish EPUB 3 (design section 7). Its preflight links to the
         // properties dialog above, so it carries that dialog's open signal.
         {dialogs.publish_epub.cloned().then(|| rsx! {
-            {PublishEpubDialog(PublishEpubDialogProps {
-                doc_state: Arc::clone(&doc_state),
-                open: dialogs.publish_epub,
-                path,
-                save_message: sync.save_message,
-                open_metadata: dialogs.metadata,
-            })}
+            PublishEpubDialog {
+                ..PublishEpubDialogProps {
+                    doc_state: Arc::clone(&doc_state),
+                    open: dialogs.publish_epub,
+                    path,
+                    save_message: sync.save_message,
+                    open_metadata: dialogs.metadata,
+                }
+            }
         })}
     }
 }

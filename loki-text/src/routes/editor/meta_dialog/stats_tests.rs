@@ -4,6 +4,7 @@
 
 use super::*;
 use loki_doc_model::content::attr::NodeAttr;
+use loki_doc_model::content::block::StyledParagraph;
 use loki_doc_model::content::inline::{LinkTarget, NoteKind};
 use loki_doc_model::content::table::core::Table;
 use loki_doc_model::layout::section::Section;
@@ -152,4 +153,22 @@ fn styled_and_linked_text_is_counted() {
         ),
     ])]));
     assert_eq!(stats.words, 4);
+}
+
+/// A styled paragraph counts like a plain one. It did not, so the tab showed a
+/// real word count next to "0 paragraphs" for any styled document.
+#[test]
+fn styled_paragraphs_are_counted() {
+    let styled = Block::StyledPara(StyledParagraph {
+        style_id: None,
+        direct_para_props: None,
+        direct_char_props: None,
+        inlines: vec![Inline::Str("five chars".to_string())],
+        attr: NodeAttr::default(),
+    });
+
+    let stats = collect(&doc(vec![styled]));
+
+    assert_eq!(stats.paragraphs, 1);
+    assert_eq!(stats.characters, "five chars".chars().count());
 }

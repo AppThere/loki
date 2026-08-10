@@ -17,7 +17,7 @@ use super::fields::{
     DraftSignal, OpenSignal, body_grid_style, full_width, numeric_field, provenance_line,
 };
 use super::font_picker;
-use super::rows::{local_property_count, resolve_row};
+use super::rows::{local_property_count, resolve_inherited, resolve_row};
 
 /// The three weight/posture presets the segmented control offers.
 ///
@@ -44,10 +44,19 @@ pub(super) fn body(
     // Which posture preset the style is in. A weight off the preset axis (say
     // 300) matches none of them, so nothing is highlighted rather than the
     // nearest one being claimed as exact.
+    // Resolved, not local: reading `cp` alone highlighted Regular on a style
+    // that inherits Bold, directly contradicting the provenance line under it.
+    let bold = cp
+        .bold
+        .or_else(|| resolve_inherited(catalog, &style, |s| s.char_props.bold));
     let weight = cp
         .font_weight
-        .unwrap_or(if cp.bold == Some(true) { 700 } else { 400 });
-    let italic = cp.italic.unwrap_or(false);
+        .or_else(|| resolve_inherited(catalog, &style, |s| s.char_props.font_weight))
+        .unwrap_or(if bold == Some(true) { 700 } else { 400 });
+    let italic = cp
+        .italic
+        .or_else(|| resolve_inherited(catalog, &style, |s| s.char_props.italic))
+        .unwrap_or(false);
     let selected_posture = POSTURES
         .iter()
         .position(|(w, i)| *w == weight && *i == italic)

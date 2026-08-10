@@ -158,3 +158,48 @@ fn every_unit_has_a_distinct_suffix() {
         }
     }
 }
+
+/// The checkbox is labelled "Different first page", so ticked must mean the
+/// distinct band **exists**. This was inverted end to end — the box showed
+/// ticked when there was no variant, and ticking it deleted one — so the
+/// predicate and the mutation are pinned against each other here.
+#[test]
+fn a_ticked_variant_box_means_the_band_exists() {
+    for header in [true, false] {
+        for variant in [Variant::First, Variant::Even] {
+            let mut l = layout();
+            assert!(
+                !band_differs(&l, header, variant),
+                "a fresh layout has no {variant:?} band (header={header})"
+            );
+
+            set_band_variant(&mut l, header, variant, true);
+            assert!(
+                band_differs(&l, header, variant),
+                "asking for a distinct {variant:?} band creates one (header={header})"
+            );
+
+            set_band_variant(&mut l, header, variant, false);
+            assert!(
+                !band_differs(&l, header, variant),
+                "clearing it removes it again (header={header})"
+            );
+        }
+    }
+}
+
+/// Each toggle addresses exactly one of the four bands: the header tab must not
+/// reach the footer's variants, and First must not reach Even.
+#[test]
+fn each_variant_toggle_touches_only_its_own_band() {
+    let mut l = layout();
+    set_band_variant(&mut l, true, Variant::First, true);
+
+    assert!(band_differs(&l, true, Variant::First));
+    assert!(
+        !band_differs(&l, true, Variant::Even),
+        "not the even header"
+    );
+    assert!(!band_differs(&l, false, Variant::First), "not the footer");
+    assert!(!band_differs(&l, false, Variant::Even));
+}

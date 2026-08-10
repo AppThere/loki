@@ -9,6 +9,7 @@
 
 mod body;
 mod marks;
+mod selection;
 mod tab_effects;
 mod tab_font;
 mod tab_highlight;
@@ -119,9 +120,12 @@ pub(super) fn SpanFormatDialog(props: SpanFormatDialogProps) -> Element {
     let mut draft = use_signal(|| {
         let guard = sync.loro_doc.read();
         let cursor = sync.cursor_state.read().clone();
-        guard
-            .as_ref()
-            .map(|ldoc| SpanDraft::new(read_marks(ldoc, &cursor), body::selection_len(&cursor)))
+        guard.as_ref().map(|ldoc| {
+            SpanDraft::new(
+                read_marks(ldoc, &cursor),
+                selection::selection_len(&doc_state, &sync),
+            )
+        })
     });
     let mut active_tab = use_signal(|| SpanTab::Font);
     let menu_open = use_signal(|| false);
@@ -185,7 +189,7 @@ pub(super) fn SpanFormatDialog(props: SpanFormatDialogProps) -> Element {
                             let guard = sync.loro_doc.read();
                             let cursor = sync.cursor_state.read().clone();
                             let refreshed = guard.as_ref().map(|ldoc| {
-                                SpanDraft::new(read_marks(ldoc, &cursor), body::selection_len(&cursor))
+                                SpanDraft::new(read_marks(ldoc, &cursor), selection::selection_len(&doc_state, &sync))
                             });
                             drop(guard);
                             draft.set(refreshed);

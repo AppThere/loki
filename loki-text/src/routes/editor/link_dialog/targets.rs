@@ -34,6 +34,10 @@ pub(super) fn target_picker(
         .and_then(|s| s.document.as_ref().map(|d| document_targets(d)))
         .unwrap_or_default();
     let query = current.filter.to_lowercase();
+    // Kept apart deliberately: an unmatched filter is not an empty document,
+    // and telling the user to go add a heading when they have thirty is worse
+    // than telling them nothing.
+    let has_targets = !targets.is_empty();
     let matches: Vec<OutlineTarget> = targets
         .into_iter()
         .filter(|t| query.is_empty() || t.label.to_lowercase().contains(&query))
@@ -95,7 +99,13 @@ pub(super) fn target_picker(
                             fs = tokens::FONT_SIZE_BODY,
                             fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                         ),
-                        { fl!("link-dialog-no-targets") }
+                        {
+                            if has_targets {
+                                fl!("link-dialog-no-matches", filter = filter.clone())
+                            } else {
+                                fl!("link-dialog-no-targets")
+                            }
+                        }
                     }
                 }
 

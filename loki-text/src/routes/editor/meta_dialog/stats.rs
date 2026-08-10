@@ -58,6 +58,14 @@ fn walk_blocks(blocks: &[Block], stats: &mut DocStats) {
                 stats.paragraphs += 1;
                 walk_inlines(inlines, stats);
             }
+            // A styled paragraph is still a paragraph. Omitting it reported a
+            // real word count beside zero paragraphs and zero characters for
+            // any document whose body carries a style — which, in an app with a
+            // paragraph style dialog, is most of them.
+            Block::StyledPara(para) => {
+                stats.paragraphs += 1;
+                walk_inlines(&para.inlines, stats);
+            }
             Block::LineBlock(lines) => {
                 stats.paragraphs += 1;
                 for line in lines {
@@ -68,7 +76,7 @@ fn walk_blocks(blocks: &[Block], stats: &mut DocStats) {
                 stats.paragraphs += 1;
                 stats.characters += text.chars().count();
             }
-            Block::BlockQuote(inner) => walk_blocks(inner, stats),
+            Block::BlockQuote(inner) | Block::Figure(_, _, inner) => walk_blocks(inner, stats),
             Block::OrderedList(_, items) | Block::BulletList(items) => {
                 for item in items {
                     walk_blocks(item, stats);

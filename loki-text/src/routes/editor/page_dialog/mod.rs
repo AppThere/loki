@@ -47,6 +47,12 @@ pub(super) struct PageDialogDraft {
     pub original: PageLayout,
     /// Buffers for the numeric inputs, keyed the way [`body`] reads them.
     pub buffers: PageBuffers,
+    /// The user has asked for a custom size, so the width and height boxes stay
+    /// editable even while the numbers still match a catalogued paper.
+    ///
+    /// Without this there is no way out of a preset: the boxes are read-only
+    /// whenever the size matches, so the size can never stop matching.
+    pub custom_paper: bool,
 }
 
 /// Text buffers for the dialog's measurement inputs.
@@ -84,6 +90,7 @@ impl PageDialogDraft {
             original: layout.clone(),
             layout,
             buffers,
+            custom_paper: false,
         }
     }
 
@@ -128,6 +135,11 @@ pub(super) struct PageStyleDialogProps {
     pub(super) doc_state: Arc<Mutex<DocumentState>>,
     /// The page style being edited; `None` closes the dialog.
     pub(super) open: Signal<Option<String>>,
+    /// The style this mount is editing, read out of `open` by the caller.
+    ///
+    /// A prop rather than a read of `open` inside the body, so the draft can be
+    /// seeded before any early return and the mount can be keyed on it.
+    pub(super) style_name: String,
     /// Loro / undo plumbing.
     pub(super) sync: StyleEditorSync,
 }
@@ -136,6 +148,7 @@ impl PartialEq for PageStyleDialogProps {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.doc_state, &other.doc_state)
             && self.open == other.open
+            && self.style_name == other.style_name
             && self.sync == other.sync
     }
 }
@@ -147,6 +160,7 @@ pub(super) fn PageStyleDialog(props: PageStyleDialogProps) -> Element {
     let PageStyleDialogProps {
         doc_state,
         mut open,
+        style_name,
         sync,
     } = props;
     let posture = DialogPosture::for_breakpoint(use_breakpoint());
@@ -155,9 +169,8 @@ pub(super) fn PageStyleDialog(props: PageStyleDialogProps) -> Element {
     // borrowing the whole (heap-carrying) settings snapshot.
     let unit = settings.unit;
 
-    let Some(style_name) = open.read().clone() else {
-        return rsx! {};
-    };
+    // Every hook runs before the first early return below: a `use_signal` that
+    // some renders reach and others do not shifts every later hook's index.
     let mut draft = use_signal(|| {
         body::layout_for(&doc_state, &style_name)
             .map(|l| PageDialogDraft::new(style_name.clone(), l, unit))

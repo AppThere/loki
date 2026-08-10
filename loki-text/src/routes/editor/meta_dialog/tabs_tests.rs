@@ -71,6 +71,12 @@ fn only_the_export_required_fields_are_required() {
         MetaField::Keywords,
         MetaField::Coverage,
         MetaField::Citation,
+        // Warnings in the preflight, not errors: stores ask for these, the
+        // specification does not, so the dialog must not badge them required.
+        MetaField::Creator,
+        MetaField::Publisher,
+        // Generated on first save, which is what its own hint says.
+        MetaField::Identifier,
     ] {
         assert!(!is_epub_required(field), "{}", field.label());
     }
@@ -90,8 +96,10 @@ fn the_missing_count_tracks_the_required_fields() {
     ]);
     assert_eq!(missing_required(&all_set), 0);
 
+    // Blanked on a field that is *still* required — Publisher is a store
+    // convention, not a specification requirement, so it no longer counts.
     let mut one_blank = all_set.clone();
-    one_blank[3].1 = "   ".to_string();
+    one_blank[0].1 = "   ".to_string();
     assert_eq!(
         missing_required(&one_blank),
         1,

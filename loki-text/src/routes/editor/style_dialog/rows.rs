@@ -12,6 +12,7 @@
 //! would leave the user having read a lie.
 
 use appthere_ui::AtProvenanceKind;
+use loki_doc_model::style::ParagraphStyle;
 use loki_doc_model::style::{Provenance, StyleCatalog, StyleId};
 use loki_i18n::fl;
 
@@ -187,3 +188,26 @@ pub(super) const PROPERTY_COUNT: usize = 18;
 #[cfg(test)]
 #[path = "rows_tests.rs"]
 mod tests;
+
+/// What `style` would resolve this property to if it set nothing itself.
+///
+/// **Resolution starts at the draft's parent, not at the style.**
+/// `StyleCatalog::resolve_para_chain` checks the style it is given first and
+/// returns that style's own committed value as `Local`. Feeding it the style's
+/// own id therefore makes a cleared override fall back onto the value that was
+/// just cleared: Reset would leave the control showing the old value, and
+/// clicking that value "again" would quietly un-dirty the draft.
+///
+/// Reading `parent` off the **draft** rather than the catalog matters too — a
+/// re-parent staged on the General tab has to move what the other tabs inherit.
+#[must_use]
+pub(super) fn resolve_inherited<T: Clone>(
+    catalog: &StyleCatalog,
+    style: &ParagraphStyle,
+    get: impl Fn(&ParagraphStyle) -> Option<T>,
+) -> Option<T> {
+    let parent = style.parent.as_ref()?;
+    catalog
+        .resolve_para_chain(parent, get)
+        .and_then(|r| r.value)
+}

@@ -55,6 +55,7 @@ mod tab_general;
 mod tab_indents;
 mod tab_stops;
 mod tab_stops_cells;
+mod tab_stops_edit;
 mod tabs;
 
 use std::rc::Rc;
