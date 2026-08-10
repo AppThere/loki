@@ -6,6 +6,7 @@ use std::io::Cursor;
 
 use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentExport;
+use loki_doc_model::io::DocumentImport;
 use loki_doc_model::io::macros::{MacroPayload, MacroPayloadKind};
 use loki_epub::{EpubExport, EpubOptions};
 use loki_odf::odt::import::OdtImporter;
@@ -59,11 +60,12 @@ pub fn convert(
         return Err(ConvertError::ProfileWithoutPdfTarget);
     }
     match source {
-        Format::Docx | Format::Odt => {
-            let text_source = if source == Format::Docx {
-                TextSource::Docx
-            } else {
-                TextSource::Odt
+        Format::Docx | Format::Odt | Format::Markdown | Format::Fountain => {
+            let text_source = match source {
+                Format::Docx => TextSource::Docx,
+                Format::Markdown => TextSource::Markdown,
+                Format::Fountain => TextSource::Fountain,
+                _ => TextSource::Odt,
             };
             let (mut doc, mut warnings) = import_text(text_source, input)?;
             if let Some(title) = &options.title {
@@ -108,6 +110,8 @@ pub fn convert(
 enum TextSource {
     Docx,
     Odt,
+    Markdown,
+    Fountain,
 }
 
 fn import_text(source: TextSource, input: &[u8]) -> Result<(Document, Vec<String>), ConvertError> {
@@ -122,6 +126,20 @@ fn import_text(source: TextSource, input: &[u8]) -> Result<(Document, Vec<String
             let result = OdtImporter::new(OdtImportOptions::default()).run(cursor)?;
             let warnings = result.warnings.iter().map(|w| format!("{w:?}")).collect();
             Ok((result.document, warnings))
+        }
+        // §12: the importers emit style references; the bundled template's
+        // catalog gives them geometry (importer-defined styles win).
+        TextSource::Markdown => {
+            let mut doc = loki_markdown::MarkdownImport::import(cursor, ())
+                .map_err(|e| ConvertError::TextImport(e.to_string()))?;
+            loki_templates::merge_template_styles(&mut doc, "markdown");
+            Ok((doc, Vec::new()))
+        }
+        TextSource::Fountain => {
+            let mut doc = loki_fountain::FountainImport::import(cursor, ())
+                .map_err(|e| ConvertError::TextImport(e.to_string()))?;
+            loki_templates::merge_template_styles(&mut doc, "screenplay");
+            Ok((doc, Vec::new()))
         }
     }
 }

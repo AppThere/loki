@@ -58,6 +58,14 @@ pub enum LoadError {
     #[error("ODT import failed: {0}")]
     Odt(loki_odf::OdfError),
 
+    /// Markdown import failed (I/O or non-UTF-8 input).
+    #[error("Markdown import failed: {0}")]
+    Markdown(loki_markdown::MarkdownError),
+
+    /// Fountain import failed (I/O or non-UTF-8 input).
+    #[error("Fountain import failed: {0}")]
+    Fountain(loki_fountain::FountainError),
+
     /// The file extension is not a supported document format.
     ///
     /// The inner string is the raw extension (without the leading dot) so that

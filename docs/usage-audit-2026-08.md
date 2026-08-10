@@ -296,15 +296,22 @@ element grammar** (SceneHeading/Character/Parenthetical/Dialogue/Transition),
 making the "into their respective templates" requirement unusually clean; the
 same holds for markdown→Heading/Blockquote/CodeBlock.
 
-**Plan.** Two new leaf crates per the one-crate-per-family rule
-(`loki-markdown` with pulldown-cmark, `loki-fountain` hand-rolled — the
-grammar is small), each implementing `DocumentImport`, emitting blocks against
-the corresponding template's catalog (decide: importer depends on
-loki-templates, or caller merges the catalog — the latter matches how
-ooxml/odf behave). Wire into `detect_format` + MIME table (subset-invariant
-test constrains where) + `loki-convert` matrix as import-only sources (the
-existing EPUB/PDF export-only shape, inverted). Fountain title-page mapping
-depends on §7's title-page capability. No export, per the notes.
+**Plan.** — **landed 2026-08-10.** Two new leaf crates: `loki-markdown`
+(pulldown-cmark; headings, lists on the modern `StyledPara`+`list_id`
+representation with the §10 default styles seeded, blockquote/code styles,
+tables, task-list glyphs, nested inline wrappers) and `loki-fountain`
+(hand-rolled; title page → `TitlePageTitle`/`TitlePageLine` + first-element
+page break, scene/action/cue/parenthetical/dialogue/transition context rules,
+forced markers, boneyard/notes stripping, emphasis). Catalog policy went to
+**caller-merges**: `loki_templates::merge_template_styles` (styles + page
+geometry, importer definitions win) is shared by the editor and
+`loki-convert`. Wired into `detect_format` + the MIME table
+(`text/markdown`, `text/x-fountain`) + the convert matrix as import-only
+sources (16 text pairs now). Because saving in place would write DOCX bytes
+over a text source, the open flows ask a new `opens_as_detached_copy`
+predicate (templates + import-only formats) and the save path rejects both
+formats as defense in depth. End-to-end tested: md→docx keeps its lists;
+fountain→pdf emits a real PDF.
 
 ## §13 Open from file manager / intents / single instance
 

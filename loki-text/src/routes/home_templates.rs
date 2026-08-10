@@ -27,6 +27,12 @@ pub(super) const MIME_TYPES: &[&str] = &[
     "application/vnd.openxmlformats-officedocument.wordprocessingml.template", // .dotx
     "application/vnd.ms-word.template.macroEnabled.12",                        // .dotm
     "application/vnd.oasis.opendocument.text-template",                        // .ott
+    // Import-only text formats (§12) — also opened as detached documents.
+    // Fountain has no IANA registration; `text/x-fountain` is what
+    // shared-mime-info ships, so portal pickers can offer the files. A
+    // platform that does not know the type simply never matches it.
+    "text/markdown",   // .md
+    "text/x-fountain", // .fountain
 ];
 
 /// MIME types the **Browse templates** picker accepts — the template subset of

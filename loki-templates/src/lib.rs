@@ -85,3 +85,39 @@ pub fn build_document(id: &str) -> Option<Document> {
 pub fn document(id: &str) -> Option<Document> {
     assets::document_from_asset(id)
 }
+
+/// Merges template `id`'s style catalog into `doc` — **only styles `doc`
+/// does not already define**, so an importer's own definitions (e.g. seeded
+/// list styles) always win. This is how the Markdown/Fountain importers'
+/// bare style references (usage audit §12) get their geometry: the importer
+/// emits ids, the caller merges the matching template's catalog. Also adopts
+/// the template's page geometry when the document carries none of its own
+/// (plain-text sources have no page setup). No-op for an unknown id.
+pub fn merge_template_styles(doc: &mut Document, id: &str) {
+    let Some(template) = build_document(id) else {
+        return;
+    };
+    let t = template.styles;
+    for (k, v) in t.paragraph_styles {
+        doc.styles.paragraph_styles.entry(k).or_insert(v);
+    }
+    for (k, v) in t.character_styles {
+        doc.styles.character_styles.entry(k).or_insert(v);
+    }
+    for (k, v) in t.list_styles {
+        doc.styles.list_styles.entry(k).or_insert(v);
+    }
+    for (k, v) in t.page_styles {
+        doc.styles.page_styles.entry(k).or_insert(v);
+    }
+    for (k, v) in t.table_styles {
+        doc.styles.table_styles.entry(k).or_insert(v);
+    }
+    // Page geometry: a plain-text import carries `Document::new`'s default
+    // layout; adopting the template's makes the import lay out like the
+    // template (a screenplay's 1.5in text margin, say).
+    if let (Some(dst), Some(src)) = (doc.sections.first_mut(), template.sections.first()) {
+        dst.layout = src.layout.clone();
+        dst.page_style = src.page_style.clone();
+    }
+}

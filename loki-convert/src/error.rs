@@ -34,6 +34,9 @@ pub enum ConvertError {
     /// A PDF profile was supplied for a non-PDF target.
     #[error("a PDF profile applies only when the target format is pdf")]
     ProfileWithoutPdfTarget,
+    /// Markdown/Fountain text import failed (I/O or non-UTF-8 input).
+    #[error("text import error: {0}")]
+    TextImport(String),
     /// OOXML import/export failed.
     #[error("ooxml error: {0}")]
     Ooxml(#[from] loki_ooxml::error::OoxmlError),

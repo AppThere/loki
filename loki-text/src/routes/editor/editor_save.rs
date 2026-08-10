@@ -83,6 +83,15 @@ pub(super) fn export_document_to_token(
             OdtExport::export(&arc_doc, &mut buf, OdtExportOptions::default())
                 .map_err(|e| SaveError::Export(e.to_string()))?;
         }
+        // Import-only text formats (§12): a titled save reaching here would
+        // write DOCX bytes over a Markdown/Fountain source. The open flows
+        // prevent it (`opens_as_detached_copy`), and this arm keeps the
+        // corruption impossible even if a path slips through them.
+        DocumentFormat::Markdown | DocumentFormat::Fountain => {
+            return Err(SaveError::UnsupportedFormat(
+                "Markdown/Fountain are import-only; use Save As".to_string(),
+            ));
+        }
         DocumentFormat::Unsupported(ext) => {
             return Err(SaveError::UnsupportedFormat(format!(
                 "unknown format: {ext}"
@@ -109,6 +118,11 @@ pub(super) fn export_template_to_token(
         DocumentFormat::Odt => {
             return Err(SaveError::UnsupportedFormat(
                 "OTT template export is not yet supported".to_string(),
+            ));
+        }
+        DocumentFormat::Markdown | DocumentFormat::Fountain => {
+            return Err(SaveError::UnsupportedFormat(
+                "Markdown/Fountain are import-only".to_string(),
             ));
         }
         DocumentFormat::Unsupported(ext) => {

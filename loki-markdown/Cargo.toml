@@ -1,0 +1,14 @@
+[package]
+name = "loki-markdown"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Markdown (CommonMark + GFM tables/strikethrough) import for the Loki document suite"
+repository = "https://github.com/appthere/loki"
+keywords = ["markdown", "commonmark", "import", "loki"]
+categories = ["encoding", "text-processing"]
+
+[dependencies]
+loki-doc-model = { path = "../loki-doc-model" }
+pulldown-cmark = { version = "0.13", default-features = false }
+thiserror = "2"

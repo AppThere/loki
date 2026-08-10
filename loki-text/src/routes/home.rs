@@ -15,7 +15,8 @@ use loki_file_access::{FileAccessToken, FilePicker, PickOptions, PickerError, Sa
 use loki_i18n::fl;
 
 use super::home_util::{
-    close_tab_for_path, is_template_name, push_new_tab, push_or_switch_tab, suggested_copy_name,
+    close_tab_for_path, opens_as_detached_copy, push_new_tab, push_or_switch_tab,
+    suggested_copy_name,
 };
 use crate::new_document::{new_blank_tab, new_import_tab, new_template_tab};
 use crate::recent_documents::RecentDocuments;
@@ -85,10 +86,11 @@ pub fn Home() -> Element {
                 multi: false,
             };
             match picker.pick_file_to_open(opts).await {
-                Ok(Some(token)) if is_template_name(token.display_name()) => {
-                    // A template (.dotx/.dotm/.ott/.ots): open it as a fresh,
-                    // detached document so saving prompts Save As rather than
-                    // overwriting the template, and it is not added to recents.
+                Ok(Some(token)) if opens_as_detached_copy(token.display_name()) => {
+                    // A template (.dotx/.dotm/.ott/.ots) or an import-only
+                    // text file (.md/.fountain): open as a fresh, detached
+                    // document so saving prompts Save As rather than
+                    // overwriting the source, and it is not added to recents.
                     let serialized = token.serialize();
                     let title = display_title_from_path(&serialized);
                     let path = push_new_tab(tabs, active_tab, new_import_tab(&serialized, title));

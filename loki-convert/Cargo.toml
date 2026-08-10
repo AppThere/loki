@@ -13,4 +13,7 @@ loki-sheet-model = { path = "../loki-sheet-model" }
 loki-ooxml = { path = "../loki-ooxml", features = ["docx", "xlsx"] }
 loki-odf = { path = "../loki-odf" }
 loki-epub = { path = "../loki-epub" }
+loki-fountain = { path = "../loki-fountain" }
+loki-markdown = { path = "../loki-markdown" }
+loki-templates = { path = "../loki-templates" }
 loki-pdf = { path = "../loki-pdf" }

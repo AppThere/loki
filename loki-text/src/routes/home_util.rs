@@ -63,6 +63,21 @@ pub(crate) fn is_template_name(name: &str) -> bool {
         .is_some_and(|e| matches!(e.as_str(), "dotx" | "dotm" | "ott" | "ots"))
 }
 
+/// Whether opening `name` must produce a **detached** document (a fresh
+/// untitled tab whose save routes to Save As) rather than an editable-in-place
+/// tab. True for templates (saving would overwrite the template) and for the
+/// import-only text formats (§12 — saving would write DOCX bytes over a
+/// Markdown/Fountain file). The open flows must ask *this* question, not
+/// `is_template_name`: the two lists agree today only by construction.
+pub(crate) fn opens_as_detached_copy(name: &str) -> bool {
+    is_template_name(name)
+        || name
+            .rsplit('.')
+            .next()
+            .map(|e| e.to_ascii_lowercase())
+            .is_some_and(|e| matches!(e.as_str(), "md" | "markdown" | "fountain"))
+}
+
 /// Push `tab` as a new open tab (last position) and return its path so the
 /// caller can navigate to the editor.
 pub(super) fn push_new_tab(

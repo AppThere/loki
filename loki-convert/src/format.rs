@@ -19,6 +19,11 @@ pub enum Format {
     Odp,
     /// OpenDocument graphics — gated alongside PPTX.
     Odg,
+    /// Markdown (import only, §12) — styled through the markdown template.
+    Markdown,
+    /// Fountain screenplay (import only, §12) — styled through the
+    /// screenplay template.
+    Fountain,
     /// EPUB 3.3 (export only).
     Epub,
     /// PDF (export only; profile selected via [`crate::PdfProfile`]).
@@ -27,7 +32,7 @@ pub enum Format {
 
 impl Format {
     /// All formats, for capability-table iteration.
-    pub const ALL: [Format; 9] = [
+    pub const ALL: [Format; 11] = [
         Format::Docx,
         Format::Odt,
         Format::Xlsx,
@@ -35,6 +40,8 @@ impl Format {
         Format::Pptx,
         Format::Odp,
         Format::Odg,
+        Format::Markdown,
+        Format::Fountain,
         Format::Epub,
         Format::Pdf,
     ];
@@ -50,6 +57,8 @@ impl Format {
             "pptx" => Some(Format::Pptx),
             "odp" => Some(Format::Odp),
             "odg" => Some(Format::Odg),
+            "md" | "markdown" => Some(Format::Markdown),
+            "fountain" => Some(Format::Fountain),
             "epub" => Some(Format::Epub),
             "pdf" => Some(Format::Pdf),
             _ => None,
@@ -67,6 +76,8 @@ impl Format {
             Format::Pptx => "pptx",
             Format::Odp => "odp",
             Format::Odg => "odg",
+            Format::Markdown => "md",
+            Format::Fountain => "fountain",
             Format::Epub => "epub",
             Format::Pdf => "pdf",
         }

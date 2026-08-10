@@ -23,7 +23,7 @@ use crate::new_document::{new_blank_tab, new_import_tab, new_template_tab};
 use crate::recent_documents::RecentDocuments;
 use crate::routes::Route;
 use crate::routes::home_templates::{MIME_TYPES, template_display_name};
-use crate::routes::home_util::{is_template_name, push_new_tab, push_or_switch_tab};
+use crate::routes::home_util::{opens_as_detached_copy, push_new_tab, push_or_switch_tab};
 use crate::tabs::OpenTab;
 use crate::utils::display_title_from_path;
 
@@ -106,7 +106,7 @@ pub(super) fn use_open_callback(save_message: Signal<Option<SaveStatus>>) -> Cal
                 multi: false,
             };
             match picker.pick_file_to_open(opts).await {
-                Ok(Some(token)) if is_template_name(token.display_name()) => {
+                Ok(Some(token)) if opens_as_detached_copy(token.display_name()) => {
                     let serialized = token.serialize();
                     let title = display_title_from_path(&serialized);
                     let path = push_new_tab(tabs, active_tab, new_import_tab(&serialized, title));

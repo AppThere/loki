@@ -39,6 +39,7 @@ loki-doc-model  = { path = "../loki-doc-model" }
 # DOCX/OOXML import — converts file bytes to loki_doc_model::Document.
 loki-ooxml      = { path = "../loki-ooxml" }
 # ODT/ODF import — converts OpenDocument Text files to loki_doc_model::Document.
+loki-markdown    = { path = "../loki-markdown" }
 loki-odf        = { path = "../loki-odf" }
 # VBA source extraction (source only, never p-code) for the read-only macro viewer.
 loki-vba        = { path = "../loki-vba" }
@@ -61,6 +62,7 @@ appthere-ui     = { path = "../appthere-ui" }
 appthere-canvas = { workspace = true }
 loki-app-shell  = { path = "../loki-app-shell" }
 # Cross-platform file picker (crates.io).
+loki-fountain    = { path = "../loki-fountain" }
 loki-file-access.workspace = true
 # Cross-platform URL opener for Ctrl/Cmd+click on hyperlinks (feature 5.11).
 webbrowser       = "1"

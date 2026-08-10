@@ -1,0 +1,13 @@
+[package]
+name = "loki-fountain"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Fountain screenplay import for the Loki document suite"
+repository = "https://github.com/appthere/loki"
+keywords = ["fountain", "screenplay", "import", "loki"]
+categories = ["encoding", "text-processing"]
+
+[dependencies]
+loki-doc-model = { path = "../loki-doc-model" }
+thiserror = "2"

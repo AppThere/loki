@@ -23,6 +23,8 @@ use crate::new_document;
 pub(super) enum DocumentFormat {
     Docx,
     Odt,
+    Markdown,
+    Fountain,
     Unsupported(String),
 }
 
@@ -42,6 +44,11 @@ pub(super) fn detect_format(token: &FileAccessToken) -> DocumentFormat {
         // `.ott` is a LibreOffice text *template*: structurally ODT (only the
         // package `mimetype` differs, which the importer now accepts).
         Some("odt" | "ott") => DocumentFormat::Odt,
+        // Plain-text imports (§12): styled through the matching bundled
+        // template's catalog after parse; import-only, so they open as
+        // detached documents (see `home_util::opens_as_detached_copy`).
+        Some("md" | "markdown") => DocumentFormat::Markdown,
+        Some("fountain") => DocumentFormat::Fountain,
         Some(ext) => DocumentFormat::Unsupported(ext.to_string()),
         None => DocumentFormat::Unsupported(String::new()),
     }
@@ -109,6 +116,20 @@ fn import_token(serialized: &str) -> Result<Document, LoadError> {
             OdtImport::import(reader, OdtImportOptions::default()).map_err(LoadError::Odt)?
             // TODO(odt-fidelity): ODT rendering gaps — paragraph styles, list indents,
             // and image placement may not render correctly yet.
+        }
+        DocumentFormat::Markdown => {
+            let mut doc =
+                loki_markdown::MarkdownImport::import(reader, ()).map_err(LoadError::Markdown)?;
+            // The importer emits style ids; the bundled template's catalog
+            // gives them geometry (importer-defined styles win the merge).
+            loki_templates::merge_template_styles(&mut doc, "markdown");
+            doc
+        }
+        DocumentFormat::Fountain => {
+            let mut doc =
+                loki_fountain::FountainImport::import(reader, ()).map_err(LoadError::Fountain)?;
+            loki_templates::merge_template_styles(&mut doc, "screenplay");
+            doc
         }
         DocumentFormat::Unsupported(ext) => {
             return Err(LoadError::UnsupportedFormat(ext));
