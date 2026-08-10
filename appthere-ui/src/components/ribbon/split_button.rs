@@ -36,9 +36,7 @@ use crate::components::popover::{
     use_popover_anchor, Align, DismissCause, KeyAction, OverlayKind, PlacementRequest, PopoverId,
     PopoverRequest, Rect, Role, Side, MIN_ANCHORED_MENU_PX,
 };
-use crate::tokens::colors::{COLOR_SURFACE_PAGE, COLOR_TEXT_PRIMARY};
-use crate::tokens::spacing::{RADIUS_SM, SPACE_2, SPACE_3, TOUCH_MIN};
-use crate::tokens::typography::FONT_SIZE_BODY;
+use crate::tokens::spacing::{SPACE_2, TOUCH_MIN};
 use crate::{use_safe_area, use_window_size};
 
 /// Menu width in CSS pixels — matches the Recent Documents menu, for the same
@@ -259,45 +257,10 @@ pub fn AtRibbonSplitButton(props: AtRibbonSplitButtonProps) -> Element {
     }
 }
 
-/// The menu's rows — one table for the pointer and the keyboard (see the
-/// Recent menu's module docs for why that is load-bearing).
-fn menu_rows(
-    items: &[SplitMenuItem],
-    on_item: EventHandler<String>,
-    dismiss: &Rc<dyn Fn()>,
-    active: Option<usize>,
-) -> Element {
-    rsx! {
-        div {
-            style: format!(
-                "display: flex; flex-direction: column; padding: {SPACE_2}px; \
-                 background: {COLOR_SURFACE_PAGE}; border-radius: {RADIUS_SM}px;"
-            ),
-            for (row, item) in items.iter().enumerate() {
-                button {
-                    key: "{item.id}",
-                    style: format!(
-                        "display: flex; align-items: center; min-height: {TOUCH_MIN}px; \
-                         padding: 0 {SPACE_3}px; border: none; text-align: left; \
-                         border-radius: {RADIUS_SM}px; cursor: pointer; \
-                         font-size: {FONT_SIZE_BODY}px; color: {COLOR_TEXT_PRIMARY}; \
-                         background: {bg};",
-                        bg = if active == Some(row) { ACTIVE_ROW_BG } else { "transparent" },
-                    ),
-                    onclick: {
-                        let id = item.id.clone();
-                        let dismiss = Rc::clone(dismiss);
-                        move |_| {
-                            dismiss();
-                            on_item.call(id.clone());
-                        }
-                    },
-                    "{item.label}"
-                }
-            }
-        }
-    }
-}
+// The row renderer, split for the 300-line ceiling.
+#[path = "split_button_rows.rs"]
+mod rows;
+use rows::menu_rows;
 
 #[cfg(test)]
 #[path = "split_button_tests.rs"]

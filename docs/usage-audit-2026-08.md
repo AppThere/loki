@@ -410,11 +410,25 @@ loki-spreadsheet inherits it) · 4. §8 per-document substitution reporting
 (per-run recording on `FontResources`, accumulated on `DocumentState`,
 cleared on load/switch) · 5. §B3, §B4, §B6, §B5 sweep.
 
-**Next (small features / stale-observation completions):**
-6. §3(a) restore the style-manager opener + §B2 · 7. §7 template pass
-(Courier Prime bundling, bundled-fonts-only rename, Dialogue→Action,
-blank-from-template, title-page capability) · 8. §4 Document group split
-buttons · 9. §15 Phase 1 instrumentation (unblocks the memory decisions).
+**Next (small features / stale-observation completions):** — **all four landed
+2026-08-10** (same branch).
+6. §3(a) Manage styles… opener on the Layout tab + §B2 (the document-wide
+page mutations now re-mirror referenced catalog copies —
+`sync_catalog_geometry`) · 7. §7 template pass (Courier Prime bundled and
+substituting for bare "Courier"; every template renamed to bundled faces with
+a mechanical test; Dialogue→Action; blank-from-template via a `blank`
+builder; screenplay title page via direct `page_break_before` — which
+surfaced and fixed a general DOCX defect: heading promotion dropped the named
+style ref and direct page break, now carried through NodeAttr.kv end to end;
+docDefaults no longer hardcodes Times New Roman) · 8. §4 Document group split
+buttons (`AtRibbonSplitButton`; New/Open/Save with template, recents, and
+save menus; Ctrl+N/O; template id list single-sourced from
+`loki_templates::TEMPLATES`) · 9. §15 Phase 1 instrumentation: the
+`loki_text::mem` line now reports `para_cache_entries`/`para_cache_bytes`
+(A1 — bytes are a documented floor), `loro_history_cache` (A2),
+`texture_resident`/`texture_peak` (A3), plus
+`scripts/heaptrack-typing-scenario.sh` (A4, with the `MALLOC_ARENA_MAX=2`
+falsification run). Phase 2 acts on what the on-device numbers say.
 
 **Then (medium tracks):**
 10. §10 lists tiers 0–3 **with** the export writers · 11. §6 Print

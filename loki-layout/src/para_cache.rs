@@ -21,6 +21,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+use crate::items::{GlyphEntry, PositionedItem};
 use crate::para::{ParagraphLayout, ResolvedParaProps, StyleSpan};
 
 /// Maximum live entries before the cache rotates (evicting the older
@@ -97,6 +98,47 @@ impl ParaCache {
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.current.len() + self.previous.len()
+    }
+
+    /// `(entries, approximate heap bytes)` currently resident, both
+    /// generations — the usage-audit §15/A1 instrumentation. The byte figure
+    /// is a **floor**: it walks the glyph vectors, line boundaries, and index
+    /// maps (the dominant owned allocations) but not the opaque retained
+    /// Parley `Layout` or shared `Arc` payloads (font bytes, images), which
+    /// would be multiply counted. Entries shared with the page editing index
+    /// via `Arc` are counted once, here, as cache residency.
+    pub(crate) fn stats(&self) -> (usize, usize) {
+        let bytes = self
+            .current
+            .values()
+            .chain(self.previous.values())
+            .map(|l| layout_bytes(l))
+            .sum();
+        (self.current.len() + self.previous.len(), bytes)
+    }
+}
+
+/// Approximate owned heap bytes of one cached [`ParagraphLayout`] — see
+/// [`ParaCache::stats`] for what is (and deliberately is not) counted.
+fn layout_bytes(l: &ParagraphLayout) -> usize {
+    let items: usize = l.items.capacity() * std::mem::size_of::<PositionedItem>()
+        + l.items.iter().map(item_bytes).sum::<usize>();
+    items
+        + l.line_boundaries.capacity() * std::mem::size_of::<(f32, f32)>()
+        + l.orig_to_clean.approx_heap_bytes()
+        + l.clean_to_orig.approx_heap_bytes()
+}
+
+/// The glyph-vector bytes of one item (nested groups walked); fixed-size
+/// rect/rule items own no counted heap.
+fn item_bytes(item: &PositionedItem) -> usize {
+    match item {
+        PositionedItem::GlyphRun(r) => r.glyphs.capacity() * std::mem::size_of::<GlyphEntry>(),
+        PositionedItem::ClippedGroup { items, .. } | PositionedItem::RotatedGroup { items, .. } => {
+            items.capacity() * std::mem::size_of::<PositionedItem>()
+                + items.iter().map(item_bytes).sum::<usize>()
+        }
+        _ => 0,
     }
 }
 

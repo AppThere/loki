@@ -121,6 +121,16 @@ impl FontResources {
         self.para_cache.clear();
     }
 
+    /// `(entries, approximate heap bytes)` resident in the paragraph shaping
+    /// cache — the usage-audit §15/A1 instrumentation (the cache lives on the
+    /// app-root shared resources, so it is the candidate for "memory stays
+    /// high after closing every tab"). The byte figure is a floor; see
+    /// `ParaCache::stats`.
+    #[must_use]
+    pub fn para_cache_stats(&self) -> (usize, usize) {
+        self.para_cache.stats()
+    }
+
     /// Returns the names of every font family available for layout — the
     /// scanned system fonts plus any bundled or document-embedded faces — sorted
     /// alphabetically (case-insensitive) and de-duplicated.

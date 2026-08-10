@@ -45,6 +45,15 @@ pub enum ByteIndexMap {
 }
 
 impl ByteIndexMap {
+    /// Heap bytes this map owns (`Identity` owns none). For the paragraph-cache
+    /// residency estimate.
+    pub(crate) fn approx_heap_bytes(&self) -> usize {
+        match self {
+            Self::Identity { .. } => 0,
+            Self::Mapped(map) => map.len() * std::mem::size_of::<u32>(),
+        }
+    }
+
     /// Compacts a freshly-built index vector.
     ///
     /// Detects the identity case in one pass — cheap next to shaping, and paid

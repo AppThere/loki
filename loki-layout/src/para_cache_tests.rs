@@ -163,3 +163,27 @@ fn preserve_flag_is_part_of_key() {
         "preserve_for_editing must distinguish cache entries"
     );
 }
+
+/// The §15/A1 instrumentation: entries and the byte floor must track the
+/// cache's real residency — grow on distinct layouts, report non-zero bytes
+/// for glyph-bearing entries, and drop to zero on clear (the inversion: a
+/// stats() that always reported zero would satisfy a growth-only assertion).
+#[test]
+fn stats_track_entries_and_drop_to_zero_on_clear() {
+    let mut r = resources();
+    assert_eq!(r.para_cache_stats(), (0, 0), "empty cache reports zero");
+
+    lay(
+        &mut r,
+        "some text to shape",
+        &[span("some text to shape")],
+        400.0,
+    );
+    lay(&mut r, "other text", &[span("other text")], 400.0);
+    let (entries, bytes) = r.para_cache_stats();
+    assert_eq!(entries, 2);
+    assert!(bytes > 0, "glyph-bearing entries must report bytes");
+
+    r.clear_paragraph_cache();
+    assert_eq!(r.para_cache_stats(), (0, 0), "clear zeroes the stats");
+}

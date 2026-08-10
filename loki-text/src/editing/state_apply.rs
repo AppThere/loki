@@ -103,7 +103,7 @@ pub fn apply_mutation_and_relayout(
     state.generation = state.generation.wrapping_add(1);
     drop(state);
 
-    log_memory_counters(loro_doc, page_count, block_count);
+    log_memory_counters(loro_doc, &fr_arc, page_count, block_count);
     true
 }
 
@@ -120,20 +120,49 @@ pub fn apply_mutation_and_relayout(
 /// RUST_LOG=loki_text::mem=info cargo run -p loki-text --release
 /// ```
 ///
-/// `loro_ops` climbing without bound while `pages`/`blocks` stay flat confirms
-/// the history is the leak. Throttled to one log per 64 mutations to stay cheap.
-fn log_memory_counters(loro_doc: &loro::LoroDoc, page_count: usize, block_count: usize) {
+/// One log line answers the usage audit's §15 Phase-1 questions (each field
+/// names the ranked mechanism it discriminates):
+///
+/// - `loro_ops`/`loro_changes` climbing while `pages`/`blocks` stay flat →
+///   history growth (Finding 6).
+/// - `para_cache_entries`/`para_cache_bytes` (A1): one new entry per keystroke
+///   is the cache's text-keyed growth; the bytes are a floor (glyph vectors +
+///   index maps; the retained Parley layouts are opaque and uncounted).
+/// - `loro_history_cache` (A2): `true` between the first post-load mutation
+///   and the next save (`free_history_cache` runs on the save path only) —
+///   an RSS step-down at save while this flips to `false` confirms A2.
+/// - `texture_resident`/`texture_peak` (A3): the residency counter's live and
+///   peak bytes beside RSS; RSS growth these do **not** show is off-budget
+///   (the Vello atlas ratchet is the candidate).
+///
+/// Throttled to one log per 64 mutations to stay cheap.
+fn log_memory_counters(
+    loro_doc: &loro::LoroDoc,
+    fonts: &loki_layout::SharedFontResources,
+    page_count: usize,
+    block_count: usize,
+) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static MUTATIONS: AtomicU64 = AtomicU64::new(0);
     let n = MUTATIONS.fetch_add(1, Ordering::Relaxed);
     if !n.is_multiple_of(64) {
         return;
     }
+    if !tracing::enabled!(target: "loki_text::mem", tracing::Level::INFO) {
+        return; // the cache walk below is not free — skip it when nobody listens
+    }
+    let (para_cache_entries, para_cache_bytes) = fonts.lock().para_cache_stats();
+    let textures = appthere_canvas::TextureResidency::snapshot();
     tracing::info!(
         target: "loki_text::mem",
         mutations = n,
         loro_ops = loro_doc.len_ops(),
         loro_changes = loro_doc.len_changes(),
+        loro_history_cache = loro_doc.has_history_cache(),
+        para_cache_entries,
+        para_cache_bytes,
+        texture_resident = textures.resident,
+        texture_peak = textures.peak,
         pages = page_count,
         blocks = block_count,
         "edit-session memory counters",
