@@ -204,6 +204,9 @@ pub(super) struct EditorState {
     pub pdf_level: Signal<super::editor_publish::PdfXLevelChoice>,
     /// Metadata editor draft — `Some` when the Dublin Core panel is open.
     pub editing_metadata: Signal<Option<super::editor_metadata::MetaDraft>>,
+    /// Open state for the six tabbed dialogs (design sections 2–7), bundled so
+    /// this struct stays under the ceiling. See `editor_dialog_state`.
+    pub dialogs: super::editor_dialog_state::DialogSignals,
 }
 
 /// Initialises and returns all per-document editing signals.
@@ -274,5 +277,6 @@ pub(super) fn use_editor_state() -> EditorState {
         is_publish_panel_open: use_signal(|| false),
         pdf_level: use_signal(super::editor_publish::PdfXLevelChoice::default),
         editing_metadata: use_signal(|| None),
+        dialogs: super::editor_dialog_state::use_dialog_signals(),
     }
 }

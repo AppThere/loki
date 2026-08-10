@@ -143,6 +143,8 @@ pub(super) fn layout_tab_content(
     undo_manager: Signal<Option<loro::UndoManager>>,
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
+    // The page style open in the tabbed page dialog (design section 3).
+    page_style_dialog: Signal<Option<String>>,
 ) -> Element {
     let (landscape, margins, page_size, columns) = loro_doc
         .read()
@@ -266,7 +268,20 @@ pub(super) fn layout_tab_content(
 
     rsx! {
         AtRibbonGroups {
-            groups: vec![orientation, margins_group, size_group, columns_group],
+            groups: vec![
+                orientation,
+                margins_group,
+                size_group,
+                columns_group,
+                // Last and lowest priority: the presets above cover the common
+                // changes, and this is the door to everything else.
+                super::editor_ribbon_page_style::page_style_group(
+                    doc_state,
+                    cursor_state,
+                    page_style_dialog,
+                    0,
+                ),
+            ],
             overflow_aria_label: fl!("ribbon-overflow-aria"),
         }
     }

@@ -35,3 +35,17 @@ loki-spreadsheet/src/routes/editor/editor_inner.rs | serif
 loki-text/src/routes/editor/dom_reflow/style.rs | '{}'
 # A code block is monospace by definition, matching the canvas path.
 loki-text/src/routes/editor/dom_reflow/content.rs | monospace
+
+# ── Dialog specimens: the document's face, deliberately not the UI's ─────────
+# The font picker renders each family's name *in that family*, which is the
+# whole point of the row — a list of names all set in the UI face tells the
+# reader nothing about what they are choosing.
+loki-text/src/routes/editor/style_dialog/font_picker.rs | {}
+# The paragraph and table previews are specimens of the document, not chrome:
+# they show what the style will look like on the page. The `{serif}` line is the
+# specimen body; the `{ui}` lines are the ruler and column labels drawn around
+# it, which must stay in the UI face so the specimen reads as the odd one out.
+loki-text/src/routes/editor/style_dialog/preview.rs | {serif}
+loki-text/src/routes/editor/style_dialog/preview.rs | {ui}
+loki-text/src/routes/editor/table_dialog/preview.rs | {serif}
+loki-text/src/routes/editor/table_dialog/preview.rs | {ui}

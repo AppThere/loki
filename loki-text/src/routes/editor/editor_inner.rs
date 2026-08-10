@@ -121,6 +121,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         pdf_level,
         editing_metadata,
         paragraph_style_dialog,
+        dialogs,
     } = use_editor_state();
 
     // ── Tab/recents context for Save As and the unsaved-changes indicator ────
@@ -723,18 +724,17 @@ pub(super) fn EditorInner(path: String) -> Element {
                 },
                 tab_content: match active_ribbon_tab() {
                     1 => super::editor_ribbon_span::format_tab_content(
-                        loro_doc, cursor_state, open_color_picker,
+                        loro_doc, cursor_state, open_color_picker, dialogs.span_format,
                     ),
-                    2 => insert_tab_content(link_draft, insert_ctx.clone()),
+                    2 => insert_tab_content(link_draft, dialogs, insert_ctx.clone()),
                     7 if table_selected => super::editor_ribbon_table::table_tab_content(
                         &doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo,
                     ),
-                    3 => super::editor_ribbon_layout::layout_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
+                    3 => super::editor_ribbon_layout::layout_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo, dialogs.page_style),
                     4 => super::editor_ribbon_references::references_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
                     5 => super::editor_ribbon_review::review_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
                     6 => publish_tab_content(
-                        &doc_state_publish, path_signal, save_message,
-                        is_publish_panel_open, editing_metadata,
+                        &doc_state_publish, is_publish_panel_open, editing_metadata, dialogs,
                     ),
                     _ => write_tab_content(
                     &doc_state_ribbon,
@@ -785,7 +785,9 @@ pub(super) fn EditorInner(path: String) -> Element {
                 calibrating,
                 zoom_command,
                 paragraph_style_dialog,
+                dialogs,
                 font_families(),
+                path_signal,
                 style_sync,
             )}
         }

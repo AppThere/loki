@@ -21,10 +21,14 @@ use crate::editing::cursor::CursorState;
 /// `open_color_picker` is the docked panel's open state, owned by
 /// `EditorState`; the triggers toggle it and the panel itself is mounted by
 /// `EditorInner` above the ribbon.
+/// `span_format_dialog` opens the full span formatting dialog (design section
+/// 2), which covers the same two colours plus everything else a run carries —
+/// the pickers stay because a colour is a one-click change and a dialog is not.
 pub(super) fn format_tab_content(
     loro_doc: Signal<Option<LoroDoc>>,
     cursor_state: Signal<CursorState>,
     open_color_picker: Signal<Option<ColorPickerTarget>>,
+    span_format_dialog: Signal<bool>,
 ) -> Element {
     // Direct text colour / highlight at the caret — drives each trigger's
     // indicator bar (and the active swatch once the panel opens).
@@ -40,6 +44,8 @@ pub(super) fn format_tab_content(
         AtRibbonGroups {
             overflow_aria_label: fl!("ribbon-overflow-aria"),
             groups: vec![
+                // Kept full the longest: it is the whole tab in one button.
+                super::editor_ribbon_dialogs::character_group(span_format_dialog, 2),
                 font_color_group(current_color, open_color_picker, 1),
                 highlight_group(current_highlight, open_color_picker, 0),
             ],

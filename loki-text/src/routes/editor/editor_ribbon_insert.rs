@@ -57,8 +57,14 @@ pub(super) struct InsertCtx {
 /// `link_draft` is the shared hyperlink-panel signal (setting it to `Some("")`
 /// opens the URL panel); `ctx` carries the handles the Image button needs to
 /// pick a file and insert it at the cursor.
+///
+/// `dialogs` carries the configured counterparts of the Table and Link
+/// buttons — the tabbed dialogs of design sections 5 and 6. Both sit *beside*
+/// the one-click actions rather than replacing them: a 2×2 table and a bare URL
+/// are still one press away, and the "…" buttons are the path that asks first.
 pub(super) fn insert_tab_content(
     mut link_draft: Signal<Option<String>>,
+    dialogs: super::editor_dialog_state::DialogSignals,
     ctx: InsertCtx,
 ) -> Element {
     // Priorities (higher = kept full longer): Media/Tables over References/Links.
@@ -81,7 +87,7 @@ pub(super) fn insert_tab_content(
     };
 
     let tables = RibbonGroupSpec {
-        metrics: estimate_group_metrics(2, 1, true),
+        metrics: estimate_group_metrics(2, 2, true),
         label: Some(fl!("ribbon-group-tables")),
         aria_label: fl!("ribbon-group-tables"),
         content: rsx! {
@@ -105,6 +111,7 @@ pub(super) fn insert_tab_content(
                 },
                 AtIcon { path_d: LUCIDE_TABLE.to_string() }
             }
+            {super::editor_ribbon_dialogs::table_button(dialogs.insert_table)}
         },
     };
 
@@ -139,7 +146,7 @@ pub(super) fn insert_tab_content(
     };
 
     let links = RibbonGroupSpec {
-        metrics: estimate_group_metrics(0, 1, true),
+        metrics: estimate_group_metrics(0, 2, true),
         label: Some(fl!("ribbon-group-links")),
         aria_label: fl!("ribbon-group-links"),
         content: rsx! {
@@ -156,6 +163,7 @@ pub(super) fn insert_tab_content(
                 },
                 AtIcon { path_d: LUCIDE_LINK.to_string() }
             }
+            {super::editor_ribbon_dialogs::link_button(dialogs.insert_link)}
         },
     };
 

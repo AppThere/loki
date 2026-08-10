@@ -22,7 +22,12 @@ pub(super) const LINK_PANEL_HEIGHT_PX: f32 = 96.0;
 
 /// Signals the link panel needs to persist the link through Loro and refresh
 /// the undo/dirty state. Grouped to keep the function signature manageable.
-#[derive(Clone, Copy)]
+///
+/// `PartialEq` compares the [`Signal`] handles rather than the values behind
+/// them — "the same signals", which is what a props comparison wants (the same
+/// trade `SpellSync` makes). The link and table dialogs are components and need
+/// their props to compare.
+#[derive(Clone, Copy, PartialEq)]
 pub(super) struct InsertLinkSync {
     /// The document's Loro CRDT handle.
     pub loro_doc: Signal<Option<loro::LoroDoc>>,

@@ -10,7 +10,6 @@
 
 use std::sync::{Arc, Mutex};
 
-use super::editor_state::SaveStatus;
 use appthere_ui::{
     AtRibbonGroups, AtRibbonIconButton, RibbonGroupSpec, estimate_group_metrics, tokens,
 };
@@ -18,19 +17,22 @@ use dioxus::prelude::*;
 use loki_i18n::fl;
 
 use super::editor_metadata::{MetaDraft, meta_to_draft};
-use super::editor_publish::{PublishFormat, run_export};
 use crate::editing::state::DocumentState;
 
 /// Builds the Publish tab ribbon content (Export + Metadata groups).
+///
+/// `dialogs` carries the two tabbed dialogs this tab opens: the EPUB button now
+/// opens the **Publish EPUB 3** dialog (design section 7) rather than exporting
+/// straight away — the export itself still runs through [`run_export`], from
+/// the dialog's Publish button, once the standing preflight has been seen.
 pub(super) fn publish_tab_content(
     doc_state: &Arc<Mutex<DocumentState>>,
-    path_signal: Signal<String>,
-    save_message: Signal<Option<SaveStatus>>,
     mut is_publish_panel_open: Signal<bool>,
     mut editing_metadata: Signal<Option<MetaDraft>>,
+    dialogs: super::editor_dialog_state::DialogSignals,
 ) -> Element {
-    let ds_epub = Arc::clone(doc_state);
     let ds_meta = Arc::clone(doc_state);
+    let mut publish_epub = dialogs.publish_epub;
 
     // Export (PDF/X + EPUB) is kept full longer than the single Metadata button.
     let export = RibbonGroupSpec {
@@ -50,10 +52,11 @@ pub(super) fn publish_tab_content(
             }
             AtRibbonIconButton {
                 aria_label: fl!("publish-export-epub-aria"),
-                is_active: false,
+                is_active: publish_epub(),
                 is_disabled: false,
                 on_click: move |_| {
-                    run_export(&ds_epub, PublishFormat::Epub, &path_signal.peek(), save_message);
+                    let is_open = publish_epub();
+                    publish_epub.set(!is_open);
                 },
                 {label_node(&fl!("publish-export-epub-label"))}
             }
@@ -61,7 +64,7 @@ pub(super) fn publish_tab_content(
     };
 
     let metadata = RibbonGroupSpec {
-        metrics: estimate_group_metrics(0, 1, true),
+        metrics: estimate_group_metrics(0, 2, true),
         label: Some(fl!("publish-group-metadata")),
         aria_label: fl!("publish-group-metadata"),
         content: rsx! {
@@ -78,6 +81,11 @@ pub(super) fn publish_tab_content(
                 },
                 {label_node(&fl!("publish-metadata-label"))}
             }
+            // The tabbed document properties dialog (design section 4): the
+            // same Dublin Core fields, plus identifiers, an accessibility
+            // review and live statistics. The quick panel above stays — it is
+            // the two-field edit this is not.
+            {super::editor_ribbon_dialogs::properties_button(dialogs.metadata)}
         },
     };
 
