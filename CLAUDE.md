@@ -233,6 +233,13 @@ lines). The full list and a proposed split strategy live in
 offenders are below. This is a dedicated split-pass backlog, not a per-change
 blocker — but do not *grow* these files or add new ones over the ceiling.
 
+| File | Lines (when baselined) |
+|---|---|
+| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1013 |
+| `loki-text/src/routes/editor/editor_inner.rs` | 798 |
+| `loki-layout/src/para.rs` | 752 |
+| `loki-text/src/routes/editor/editor_canvas.rs` | 336 |
+
 **The ceiling is now mechanically enforced** (Spec 01 audit A-2):
 `scripts/check-file-ceiling.py` (CI) ratchets against
 `scripts/file-ceiling-baseline.txt` — new files must be ≤300, baselined files
