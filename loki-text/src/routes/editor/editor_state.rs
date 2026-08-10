@@ -167,6 +167,8 @@ pub(super) struct EditorState {
     pub can_redo: Signal<bool>,
     /// Whether the style picker panel is currently open above the ribbon.
     pub is_style_picker_open: Signal<bool>,
+    /// Whether the character style picker panel (Format tab) is open.
+    pub is_char_style_picker_open: Signal<bool>,
     /// Style catalog editor draft — `Some` when the editor panel is open.
     pub editing_style_draft: Signal<Option<StyleDraft>>,
     /// Id of the paragraph style open in the tabbed style dialog; `None`
@@ -262,6 +264,7 @@ pub(super) fn use_editor_state() -> EditorState {
         can_undo: use_signal(|| false),
         can_redo: use_signal(|| false),
         is_style_picker_open: use_signal(|| false),
+        is_char_style_picker_open: use_signal(|| false),
         editing_style_draft: use_signal(|| None),
         paragraph_style_dialog: use_signal(|| None),
         zoom_percent: use_signal(|| 100_u32),

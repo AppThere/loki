@@ -107,6 +107,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         can_undo,
         can_redo,
         is_style_picker_open,
+        is_char_style_picker_open,
         editing_style_draft,
         zoom_percent,
         is_dirty,
@@ -556,6 +557,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     };
     let style_panel_state = super::editor_style_panels::StylePanelState {
         is_style_picker_open,
+        is_char_style_picker_open,
         style_search_query,
         editing_style_draft,
         editing_char_style,
@@ -701,7 +703,8 @@ pub(super) fn EditorInner(path: String) -> Element {
                 },
                 tab_content: match active_ribbon_tab() {
                     1 => super::editor_ribbon_span::format_tab_content(
-                        loro_doc, cursor_state, open_color_picker, dialogs.span_format,
+                        &doc_state_ribbon, loro_doc, cursor_state, open_color_picker,
+                        dialogs.span_format, is_char_style_picker_open,
                     ),
                     2 => insert_tab_content(dialogs, insert_ctx.clone()),
                     7 if table_selected => super::editor_ribbon_table::table_tab_content(

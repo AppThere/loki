@@ -37,6 +37,8 @@ use crate::editing::state::DocumentState;
 pub(super) struct StylePanelState {
     /// Whether the paragraph style picker is open.
     pub is_style_picker_open: Signal<bool>,
+    /// Whether the character style picker (Format tab) is open.
+    pub is_char_style_picker_open: Signal<bool>,
     /// The picker's filter text.
     pub style_search_query: Signal<String>,
     /// Catalog editor draft — `Some` when the editor panel is open.
@@ -73,6 +75,7 @@ pub(super) fn style_panels(
     // Loro / undo plumbing.
     sync: StyleEditorSync,
 ) -> Element {
+    let doc_state_picker_char = Arc::clone(&doc_state_picker);
     rsx! {
         if *state.is_style_picker_open.read() {
             {style_picker_panel(
@@ -85,6 +88,18 @@ pub(super) fn style_panels(
                 current_style_name,
                 state.is_style_picker_open,
                 state.style_search_query,
+            )}
+        }
+
+        if *state.is_char_style_picker_open.read() {
+            {super::editor_char_style_picker::char_style_picker_panel(
+                Arc::clone(&doc_state_picker_char),
+                sync.loro_doc,
+                sync.cursor_state,
+                sync.undo_manager,
+                sync.can_undo,
+                sync.can_redo,
+                state.is_char_style_picker_open,
             )}
         }
 

@@ -48,24 +48,13 @@ pub(super) fn style_context(
     let Some(focus) = cursor.focus.as_ref() else {
         return StyleContext::default();
     };
+    let char_styles = super::super::editor_style_catalog::char_style_entries(doc_state);
     let Ok(state) = doc_state.lock() else {
         return StyleContext::default();
     };
     let Some(doc) = state.document.as_ref() else {
         return StyleContext::default();
     };
-    let char_styles: Vec<(String, String)> = doc
-        .styles
-        .character_styles
-        .iter()
-        .map(|(id, s)| {
-            let display = s
-                .display_name
-                .clone()
-                .unwrap_or_else(|| id.as_str().to_string());
-            (id.as_str().to_string(), display)
-        })
-        .collect();
     // The provenance lines name the style by its display name.
     let char_style = char_style_id.map(|id| {
         char_styles

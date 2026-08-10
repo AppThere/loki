@@ -20,6 +20,7 @@ mod editor_canvas_metrics;
 mod editor_canvas_spell;
 mod editor_caret_follow;
 mod editor_caret_follow_geom;
+mod editor_char_style_picker;
 mod editor_color_panel;
 mod editor_compact;
 mod editor_defaults;

@@ -20,7 +20,10 @@ use crate::editing::cursor::CursorState;
 /// The character-style id at the start of the selection — the same
 /// head-of-range convention [`super::marks::read_marks`] documents.
 #[must_use]
-pub(super) fn read_char_style(loro: &LoroDoc, cursor: &CursorState) -> Option<String> {
+pub(in crate::routes::editor) fn read_char_style(
+    loro: &LoroDoc,
+    cursor: &CursorState,
+) -> Option<String> {
     let ranges = resolve_format_ranges(loro, cursor);
     let (path, start, _) = ranges.first()?;
     match get_mark_at_path(loro, path, *start, MARK_CHAR_STYLE_ID)
@@ -34,7 +37,7 @@ pub(super) fn read_char_style(loro: &LoroDoc, cursor: &CursorState) -> Option<St
 
 /// Writes the staged character style over the selection when it changed.
 /// `None` removes the reference — the run falls back to the paragraph level.
-pub(super) fn apply_char_style(
+pub(in crate::routes::editor) fn apply_char_style(
     loro: &LoroDoc,
     cursor: &CursorState,
     before: &Option<String>,

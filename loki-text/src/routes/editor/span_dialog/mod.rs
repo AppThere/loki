@@ -8,7 +8,7 @@
 //! "Clear direct formatting" removes (design note 09).
 
 mod body;
-mod char_style;
+pub(in crate::routes::editor) mod char_style;
 mod marks;
 mod selection;
 mod tab_effects;

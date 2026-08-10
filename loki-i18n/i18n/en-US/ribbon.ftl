@@ -34,6 +34,18 @@ ribbon-style-picker-heading = Paragraph Styles
 ribbon-style-search-placeholder = Search styles…
 ribbon-style-apply-aria = Apply style: { $name }
 
+# Character style group (Format tab)
+ribbon-group-char-style = Character style
+ribbon-char-style-select-aria = Character style
+ribbon-char-style-picker-heading = Character Styles
+ribbon-char-style-apply-aria = Apply character style: { $name }
+ribbon-char-style-clear-aria = Remove the character style from the selection
+# Shown on the select when the selection carries no character style, and on
+# the chip that removes the reference.
+ribbon-char-style-none = None
+ribbon-char-style-picker-close-aria = Close character style picker
+ribbon-char-style-empty = No character styles in this document yet — create them in the style panel.
+
 # Paragraph group (Home tab)
 ribbon-group-paragraph = Paragraph
 ribbon-para-props-aria = Edit paragraph style

@@ -197,6 +197,29 @@ pub(super) fn get_catalog_style(
         .cloned()
 }
 
+/// The catalog's character styles as `(id, display name)` pairs — what the
+/// span dialog's Character style field and the Format tab's picker both list,
+/// so the two surfaces cannot disagree about what exists.
+pub(super) fn char_style_entries(doc_state: &Arc<Mutex<DocumentState>>) -> Vec<(String, String)> {
+    let Ok(state) = doc_state.lock() else {
+        return Vec::new();
+    };
+    let Some(doc) = state.document.as_ref() else {
+        return Vec::new();
+    };
+    doc.styles
+        .character_styles
+        .iter()
+        .map(|(id, s)| {
+            let display = s
+                .display_name
+                .clone()
+                .unwrap_or_else(|| id.as_str().to_string());
+            (id.as_str().to_string(), display)
+        })
+        .collect()
+}
+
 /// Returns the font families available for layout (system + bundled +
 /// document-embedded), sorted, for the style editor's font picker.
 ///
