@@ -15,7 +15,6 @@
 //! | [`draft`] | the edit buffer, with local-vs-inherited preserved |
 //! | [`rows`] | resolving one property's provenance and phrasing it |
 //! | [`borders`] | edge presets for the Borders tab |
-//! | [`font_list`] | the bundled-first picker list |
 //! | [`body`] | tab dispatch and the preview rail |
 //! | `tab_*` | one module per tab body |
 //!
@@ -42,7 +41,6 @@ mod body;
 mod borders;
 mod draft;
 mod fields;
-mod font_list;
 mod font_picker;
 mod preview;
 mod rows;

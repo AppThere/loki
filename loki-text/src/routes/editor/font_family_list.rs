@@ -15,7 +15,7 @@ use loki_fonts::{bundled_families, is_bundled_family};
 
 /// One row in the picker.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct FontRow {
+pub(in crate::routes::editor) struct FontRow {
     /// The family name, as the layout engine resolves it.
     pub name: String,
     /// For a bundled face, the proprietary family it stands in for. `None` for
@@ -28,7 +28,7 @@ pub(super) struct FontRow {
 
 /// The picker's two sections, in display order.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub(super) struct FontSections {
+pub(in crate::routes::editor) struct FontSections {
     /// Faces that ship with Loki, sorted by name.
     pub bundled: Vec<FontRow>,
     /// Faces found on this device, sorted by name, with the bundled ones
@@ -52,7 +52,10 @@ impl FontSections {
 /// picker that returned nothing for `arial` would send them to a device face
 /// that may not exist on their reader's machine.
 #[must_use]
-pub(super) fn font_sections(device_families: &[String], query: &str) -> FontSections {
+pub(in crate::routes::editor) fn font_sections(
+    device_families: &[String],
+    query: &str,
+) -> FontSections {
     let q = query.trim().to_lowercase();
     let matches = |name: &str, substitutes: Option<&str>| {
         q.is_empty()
@@ -89,5 +92,5 @@ pub(super) fn font_sections(device_families: &[String], query: &str) -> FontSect
 }
 
 #[cfg(test)]
-#[path = "font_list_tests.rs"]
+#[path = "font_family_list_tests.rs"]
 mod tests;

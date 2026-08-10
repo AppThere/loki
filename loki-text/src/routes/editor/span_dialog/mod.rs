@@ -8,6 +8,7 @@
 //! "Clear direct formatting" removes (design note 09).
 
 mod body;
+mod char_style;
 mod marks;
 mod selection;
 mod tab_effects;
@@ -27,6 +28,7 @@ use loki_i18n::fl;
 use super::editor_insert_sync::InsertLinkSync;
 use super::editor_keydown_ctrl::post_mutation_sync;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
+use char_style::{apply_char_style, read_char_style};
 use marks::{SpanMarks, apply_marks, clear_direct, read_marks};
 use tabs::SpanTab;
 
@@ -38,6 +40,11 @@ pub(super) struct SpanDraft {
     /// The marks as the selection carried them when the dialog opened, so only
     /// what changed is written and Cancel is a discard.
     pub original: SpanMarks,
+    /// The character-style reference staged for the selection. A style level,
+    /// not a mark: Clear direct formatting leaves it alone (design note 09).
+    pub char_style: Option<String>,
+    /// The reference as the selection carried it when the dialog opened.
+    pub original_char_style: Option<String>,
     /// Buffer for the size box.
     pub size_buffer: String,
     /// Buffer for the letter-spacing box.
@@ -49,7 +56,7 @@ pub(super) struct SpanDraft {
 impl SpanDraft {
     /// Opens a draft over the marks currently on the selection.
     #[must_use]
-    pub fn new(marks: SpanMarks, selection_chars: usize) -> Self {
+    pub fn new(marks: SpanMarks, char_style: Option<String>, selection_chars: usize) -> Self {
         let size_buffer = marks.font_size_pt.map(format_number).unwrap_or_default();
         let spacing_buffer = marks
             .letter_spacing_pt
@@ -58,6 +65,8 @@ impl SpanDraft {
         Self {
             original: marks.clone(),
             marks,
+            original_char_style: char_style.clone(),
+            char_style,
             size_buffer,
             spacing_buffer,
             selection_chars,
@@ -67,7 +76,7 @@ impl SpanDraft {
     /// `true` when something is staged.
     #[must_use]
     pub fn is_dirty(&self) -> bool {
-        self.marks != self.original
+        self.marks != self.original || self.char_style != self.original_char_style
     }
 }
 
@@ -123,6 +132,7 @@ pub(super) fn SpanFormatDialog(props: SpanFormatDialogProps) -> Element {
         guard.as_ref().map(|ldoc| {
             SpanDraft::new(
                 read_marks(ldoc, &cursor),
+                read_char_style(ldoc, &cursor),
                 selection::selection_len(&doc_state, &sync),
             )
         })
@@ -189,7 +199,11 @@ pub(super) fn SpanFormatDialog(props: SpanFormatDialogProps) -> Element {
                             let guard = sync.loro_doc.read();
                             let cursor = sync.cursor_state.read().clone();
                             let refreshed = guard.as_ref().map(|ldoc| {
-                                SpanDraft::new(read_marks(ldoc, &cursor), selection::selection_len(&doc_state, &sync))
+                                SpanDraft::new(
+                                    read_marks(ldoc, &cursor),
+                                    read_char_style(ldoc, &cursor),
+                                    selection::selection_len(&doc_state, &sync),
+                                )
                             });
                             drop(guard);
                             draft.set(refreshed);
@@ -237,6 +251,9 @@ fn run_apply(
     };
     let cursor = sync.cursor_state.read().clone();
     if apply_marks(ldoc, &cursor, &draft.original, &draft.marks).is_err() {
+        return false;
+    }
+    if apply_char_style(ldoc, &cursor, &draft.original_char_style, &draft.char_style).is_err() {
         return false;
     }
     apply_mutation_and_relayout(doc_state, ldoc);

@@ -8,13 +8,7 @@ use appthere_ui::{AtDialogNotice, AtField, AtNoticeTone, DialogPosture, tokens};
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
-/// How many device families the chip row offers.
-///
-/// The row is a chip grid, not a searchable list: past a screenful it stops
-/// being quicker than the ribbon's font picker, which is where a full
-/// enumeration belongs.
-const DEVICE_FAMILY_LIMIT: usize = 60;
-
+use super::super::font_family_field::{FontFamilyPicker, FontFamilyPickerProps};
 use super::body::{
     SpanDraftSignal, StyleContext, chip_style, edit, grid, line, number_field, span_all, tri_toggle,
 };
@@ -40,66 +34,86 @@ pub(super) fn font(
         .font_family
         .as_deref()
         .is_some_and(|f| !loki_fonts::is_bundled_family(f));
-    // Device families offered after the bundled ones, minus any the bundle
-    // already covers, so the same face never appears twice under two spellings.
-    let device: Vec<String> = font_families
-        .iter()
-        .filter(|f| !loki_fonts::is_bundled_family(f))
-        .take(DEVICE_FAMILY_LIMIT)
-        .cloned()
-        .collect();
 
     rsx! {
         div {
             style: grid(posture),
 
+            // The reusable span-level styles (LibreOffice's character styles):
+            // apply one from the catalog, or None to fall back to the
+            // paragraph level. A style level, not direct formatting — Clear
+            // direct formatting leaves it in place (design note 09).
+            AtField {
+                label: fl!("span-dialog-char-style"),
+                extra_style: span_all(posture),
+                control: rsx! {
+                    if styles.char_styles.is_empty() {
+                        div {
+                            style: format!(
+                                "font-size: {fs}px; color: {fg};",
+                                fs = tokens::FONT_SIZE_BODY,
+                                fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                            ),
+                            { fl!("span-dialog-char-style-empty") }
+                        }
+                    } else {
+                        div {
+                            style: format!(
+                                "display: flex; flex-direction: row; flex-wrap: wrap; gap: {gap}px;",
+                                gap = tokens::SPACE_2,
+                            ),
+                            button {
+                                style: chip_style(current.char_style.is_none(), posture),
+                                onclick: move |evt| {
+                                    evt.stop_propagation();
+                                    edit(draft, |d| d.char_style = None);
+                                },
+                                { fl!("span-dialog-char-style-none") }
+                            }
+                            for (id, display) in styles.char_styles.iter().cloned() {
+                                button {
+                                    key: "{id}",
+                                    style: chip_style(
+                                        current.char_style.as_deref() == Some(id.as_str()),
+                                        posture,
+                                    ),
+                                    onclick: {
+                                        let id = id.clone();
+                                        move |evt: Event<MouseData>| {
+                                            evt.stop_propagation();
+                                            let id = id.clone();
+                                            edit(draft, move |d| {
+                                                d.char_style = Some(id.clone());
+                                            });
+                                        }
+                                    },
+                                    {display.clone()}
+                                }
+                            }
+                        }
+                    }
+                },
+            }
+
             AtField {
                 label: fl!("span-dialog-font-family"),
                 extra_style: span_all(posture),
+                // The same searchable bundled-first picker the paragraph
+                // dialog uses, so a face chosen in either place carries the
+                // same guarantee — and every installed family is reachable
+                // (the old chip grid stopped at sixty, silently).
                 control: rsx! {
-                    div {
-                        style: format!(
-                            "display: flex; flex-direction: row; flex-wrap: wrap; gap: {gap}px;",
-                            gap = tokens::SPACE_2,
-                        ),
-                        // Bundled faces first, badged — the same rule the
-                        // paragraph picker follows, so a face chosen in either
-                        // place carries the same guarantee.
-                        for f in loki_fonts::bundled_families().iter() {
-                            button {
-                                key: "{f.name}",
-                                style: chip_style(
-                                    m.font_family.as_deref() == Some(f.name),
-                                    posture,
-                                ),
-                                onclick: move |evt| {
-                                    evt.stop_propagation();
-                                    edit(draft, move |d| {
-                                        d.marks.font_family = Some(f.name.to_string());
-                                    });
-                                },
-                                {f.name}
-                            }
-                        }
-                        for name in device.iter().cloned() {
-                            button {
-                                key: "{name}",
-                                style: chip_style(
-                                    m.font_family.as_deref() == Some(name.as_str()),
-                                    posture,
-                                ),
-                                onclick: {
-                                    let name = name.clone();
-                                    move |evt: Event<MouseData>| {
-                                        evt.stop_propagation();
-                                        let name = name.clone();
-                                        edit(draft, move |d| {
-                                            d.marks.font_family = Some(name.clone());
-                                        });
-                                    }
-                                },
-                                {name.clone()}
-                            }
+                    FontFamilyPicker {
+                        ..FontFamilyPickerProps {
+                            selected: m.font_family.clone(),
+                            placeholder: fl!("style-dialog-font-family-inherit"),
+                            font_families: Rc::clone(&font_families),
+                            posture,
+                            on_pick: EventHandler::new(move |name: String| {
+                                edit(draft, move |d| {
+                                    d.marks.font_family = Some(name.clone());
+                                });
+                            }),
                         }
                     }
                 },

@@ -41,6 +41,10 @@ span-dialog-prov-char-style = { $value } — from the character style { $source 
 span-dialog-prov-para-style = { $value } — from the paragraph style { $source }
 span-dialog-prov-document = { $value } — the document default
 
+span-dialog-char-style = Character style
+# The chip that removes the reference — the run falls back to the paragraph style.
+span-dialog-char-style-none = None
+span-dialog-char-style-empty = No character styles in this document yet — create them in the style panel.
 span-dialog-font-family = Font
 span-dialog-size = Size
 span-dialog-unit-pt = pt

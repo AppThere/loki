@@ -18,13 +18,17 @@ use crate::editing::state::DocumentState;
 pub(super) type SpanDraftSignal = Signal<Option<SpanDraft>>;
 
 /// The styles in play under the selection — the two inherited levels the
-/// provenance line names.
+/// provenance line names — plus the catalog's character styles, which the
+/// Font tab offers for applying.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct StyleContext {
-    /// The run's character style, if it has one.
+    /// The run's character style (display name), if it has one.
     pub char_style: Option<String>,
     /// The enclosing paragraph's style.
     pub para_style: Option<String>,
+    /// Every character style the catalog defines, as `(id, display name)` —
+    /// what the Character style picker lists.
+    pub char_styles: Vec<(String, String)>,
 }
 
 /// The character and paragraph styles under the selection.
@@ -34,6 +38,13 @@ pub(super) fn style_context(
     sync: &InsertLinkSync,
 ) -> StyleContext {
     let cursor = sync.cursor_state.read().clone();
+    // The reference travels as a span mark, so it is read where the marks are.
+    let char_style_id = {
+        let guard = sync.loro_doc.read();
+        guard
+            .as_ref()
+            .and_then(|ldoc| super::char_style::read_char_style(ldoc, &cursor))
+    };
     let Some(focus) = cursor.focus.as_ref() else {
         return StyleContext::default();
     };
@@ -43,10 +54,25 @@ pub(super) fn style_context(
     let Some(doc) = state.document.as_ref() else {
         return StyleContext::default();
     };
-    // The paragraph style is the block's; the character style would come from
-    // the run under the caret, which the flat cursor cannot address yet.
-    // TODO(span-char-style): resolve the `StyledRun` at the caret so the
-    // character-style level can be named rather than left blank.
+    let char_styles: Vec<(String, String)> = doc
+        .styles
+        .character_styles
+        .iter()
+        .map(|(id, s)| {
+            let display = s
+                .display_name
+                .clone()
+                .unwrap_or_else(|| id.as_str().to_string());
+            (id.as_str().to_string(), display)
+        })
+        .collect();
+    // The provenance lines name the style by its display name.
+    let char_style = char_style_id.map(|id| {
+        char_styles
+            .iter()
+            .find(|(sid, _)| *sid == id)
+            .map_or_else(|| id.clone(), |(_, display)| display.clone())
+    });
     let para_style = doc
         .sections
         .iter()
@@ -54,8 +80,9 @@ pub(super) fn style_context(
         .nth(focus.paragraph_index)
         .and_then(block_style_name);
     StyleContext {
-        char_style: None,
+        char_style,
         para_style,
+        char_styles,
     }
 }
 

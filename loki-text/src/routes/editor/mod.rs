@@ -102,6 +102,8 @@ mod editor_style_target;
 mod editor_text_color;
 mod editor_wheel_zoom;
 mod editor_zoom;
+mod font_family_field;
+mod font_family_list;
 mod link_dialog;
 mod meta_dialog;
 mod page_dialog;
