@@ -145,6 +145,48 @@ pub(super) fn write_section_geometry(
     Ok(())
 }
 
+/// Re-mirrors every referenced page style's **catalog copy** from the live
+/// geometry of the sections that use it — the write-side half of the
+/// "both copies or neither" invariant (module docs), for mutations that edit
+/// sections directly rather than through a named style.
+///
+/// The document-wide `set_document_*` mutations ([`super::page`]) call this
+/// after touching every section: without it, a ribbon geometry edit leaves the
+/// catalog copy where it was, and the page dialog — which seeds its draft from
+/// the catalog — re-commits the pre-ribbon geometry on Apply. A page style no
+/// section references is left untouched: no section speaks for it, and its
+/// catalog entry is its only definition.
+///
+/// # Errors
+///
+/// [`MutationError::Loro`] for an underlying Loro error.
+pub(super) fn sync_catalog_geometry(loro: &LoroDoc) -> Result<(), MutationError> {
+    let sections = loro.get_list(KEY_SECTIONS);
+    let mut catalog: Option<crate::style::catalog::StyleCatalog> = None;
+    let mut changed = false;
+    for s in 0..sections.len() {
+        let Some(section) = section_at(&sections, s) else {
+            continue;
+        };
+        let Some(name) = section_ref(&section) else {
+            continue;
+        };
+        let cat = catalog.get_or_insert_with(|| crate::loro_bridge::read_document_styles(loro));
+        if let Some(ps) = cat.page_styles.get_mut(&StyleId::new(&name)) {
+            let live = crate::loro_bridge::reconstruct_page_layout(&section);
+            if ps.layout != live {
+                ps.layout = live;
+                changed = true;
+            }
+        }
+    }
+    if changed && let Some(cat) = catalog.as_ref() {
+        crate::loro_bridge::write_document_styles(loro, cat)
+            .map_err(|e| MutationError::Loro(e.to_string()))?;
+    }
+    Ok(())
+}
+
 /// Applies `layout`'s geometry to the page style `name`: every section that
 /// references it, **and** the catalog entry that defines it (see the module
 /// docs — both copies or neither). Sections that name a different page style,

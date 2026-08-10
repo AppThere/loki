@@ -145,6 +145,8 @@ pub(super) fn layout_tab_content(
     can_redo: Signal<bool>,
     // The page style open in the tabbed page dialog (design section 3).
     page_style_dialog: Signal<Option<String>>,
+    // Catalog editor draft — `Some` opens the style manager panel (§3a).
+    editing_style_draft: Signal<Option<super::editor_state::StyleDraft>>,
 ) -> Element {
     let (landscape, margins, page_size, columns) = loro_doc
         .read()
@@ -277,8 +279,13 @@ pub(super) fn layout_tab_content(
                 // changes, and this is the door to everything else.
                 super::editor_ribbon_page_style::page_style_group(
                     doc_state,
+                    loro_doc,
                     cursor_state,
+                    undo_manager,
+                    can_undo,
+                    can_redo,
                     page_style_dialog,
+                    editing_style_draft,
                     0,
                 ),
             ],

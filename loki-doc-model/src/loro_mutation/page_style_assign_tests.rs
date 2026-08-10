@@ -137,19 +137,26 @@ fn applying_a_created_style_gives_the_section_its_geometry() {
 /// When the target style is already on another section, that live section's
 /// geometry wins over the catalog copy — the renderer's own source.
 ///
-/// The two agree whenever `set_page_style_geometry` made the change, so the
-/// discriminating case has to come from a path that writes sections *without*
-/// the catalog: the Layout ribbon's document-wide `set_document_*` mutations do
-/// exactly that. Without the preference, applying a page style after a ribbon
-/// margin change hands the new section the geometry the document had before it.
+/// The ribbon's document-wide `set_document_*` mutations used to be the path
+/// that stranded the catalog (they wrote sections only); they now re-mirror the
+/// catalog (`sync_catalog_geometry`), so this fixture manufactures the stale
+/// entry directly — the state a document saved before that fix, or a catalog
+/// edited by another tool, still carries. The preference stays: without it,
+/// applying such a style hands the new section geometry no page has ever shown.
 #[test]
-fn a_live_section_outranks_a_catalog_entry_the_ribbon_left_behind() {
+fn a_live_section_outranks_a_stale_catalog_entry() {
     let loro = two_section_doc();
     create_page_style(&loro, "Landscape", &landscape_letter()).expect("create");
     set_section_page_style(&loro, 0, "Landscape").expect("apply to 0");
 
-    // The Layout ribbon: document-wide margins, sections only, catalog untouched.
-    super::super::set_document_margins(&loro, 72.0, 72.0, 123.0, 72.0).expect("ribbon");
+    // Move the live section on, then write a stale catalog copy behind its
+    // back (margins the section never had).
+    super::super::set_document_margins(&loro, 72.0, 72.0, 123.0, 72.0).expect("margins");
+    let mut catalog = crate::loro_bridge::read_document_styles(&loro);
+    if let Some(ps) = catalog.page_styles.get_mut(&StyleId::new("Landscape")) {
+        ps.layout.margins.left = crate::loki_primitives::units::Points::new(90.0);
+    }
+    crate::loro_bridge::write_document_styles(&loro, &catalog).expect("stale write");
     let mid = loro_to_document(&loro).expect("rebuild");
     assert_eq!(
         mid.styles
@@ -157,7 +164,7 @@ fn a_live_section_outranks_a_catalog_entry_the_ribbon_left_behind() {
             .get(&StyleId::new("Landscape"))
             .map(|ps| ps.layout.margins.left.value()),
         Some(90.0),
-        "fixture broken: the catalog entry was expected to be left stale here"
+        "fixture broken: the catalog entry must be stale here"
     );
 
     set_section_page_style(&loro, 1, "Landscape").expect("apply to 1");

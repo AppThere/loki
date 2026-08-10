@@ -10,6 +10,12 @@
 //! consistent. Applying to every section keeps the whole document uniform (the
 //! common single-section case, and a sensible default for multi-section docs).
 //!
+//! Every mutation here ends by re-mirroring the referenced page styles' catalog
+//! copies from the sections ([`super::page_style::sync_catalog_geometry`]) —
+//! the "both copies or neither" invariant that module documents. Without it a
+//! ribbon edit strands the catalog on pre-edit geometry, which the page dialog
+//! then re-commits on Apply.
+//!
 //! [`PageOrientation`]: crate::layout::page::PageOrientation
 
 use loro::{LoroDoc, LoroMap};
@@ -90,6 +96,7 @@ pub fn set_document_orientation(loro: &LoroDoc, landscape: bool) -> Result<(), M
             if landscape { "Landscape" } else { "Portrait" },
         )?;
     }
+    super::page_style::sync_catalog_geometry(loro)?;
     Ok(())
 }
 
@@ -148,6 +155,7 @@ pub fn set_document_margins(
         margins.insert(KEY_MARGIN_LEFT, left)?;
         margins.insert(KEY_MARGIN_RIGHT, right)?;
     }
+    super::page_style::sync_catalog_geometry(loro)?;
     Ok(())
 }
 
@@ -203,6 +211,7 @@ pub fn set_document_page_size(
         size.insert("width", w)?;
         size.insert("height", h)?;
     }
+    super::page_style::sync_catalog_geometry(loro)?;
     Ok(())
 }
 
@@ -256,5 +265,6 @@ pub fn set_document_columns(loro: &LoroDoc, count: u8) -> Result<(), MutationErr
         };
         cols.insert(KEY_COL_COUNT, i64::from(count))?;
     }
+    super::page_style::sync_catalog_geometry(loro)?;
     Ok(())
 }

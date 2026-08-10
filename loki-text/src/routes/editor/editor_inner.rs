@@ -715,7 +715,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     7 if table_selected => super::editor_ribbon_table::table_tab_content(
                         &doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo,
                     ),
-                    3 => super::editor_ribbon_layout::layout_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo, dialogs.page_style),
+                    3 => super::editor_ribbon_layout::layout_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo, dialogs.page_style, editing_style_draft),
                     4 => super::editor_ribbon_references::references_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
                     5 => super::editor_ribbon_review::review_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
                     6 => publish_tab_content(is_publish_panel_open, dialogs),

@@ -13,9 +13,14 @@ use appthere_ui::{AtRibbonIconButton, RibbonGroupSpec, estimate_group_metrics};
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
+use super::editor_keydown_ctrl::post_mutation_sync;
 use super::editor_ribbon_dialogs::dialog_label;
+use super::editor_state::StyleDraft;
+use super::editor_style_catalog::get_catalog_style;
+use super::editor_style_editor::style_to_draft;
+use super::editor_style_target::dialog_style_target;
 use crate::editing::cursor::CursorState;
-use crate::editing::state::DocumentState;
+use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
 /// The page style the caret sits in, falling back to the first catalogued one.
 ///
@@ -49,18 +54,27 @@ pub(super) fn caret_page_style(
     })
 }
 
-/// The Layout tab's **Page style…** group.
+/// The Layout tab's **Page style…** group: the page dialog opener plus the
+/// style catalog manager opener (§3a — the catalog editor's only entry point
+/// since the dialogs patch rewired the Write tab's Paragraph button).
+#[allow(clippy::too_many_arguments)]
 pub(super) fn page_style_group(
     doc_state: &Arc<Mutex<DocumentState>>,
+    loro_doc: Signal<Option<loro::LoroDoc>>,
     cursor_state: Signal<CursorState>,
+    undo_manager: Signal<Option<loro::UndoManager>>,
+    can_undo: Signal<bool>,
+    can_redo: Signal<bool>,
     mut open: Signal<Option<String>>,
+    mut editing_style_draft: Signal<Option<StyleDraft>>,
     priority: u8,
 ) -> RibbonGroupSpec {
     let target = caret_page_style(doc_state, &cursor_state.read());
     let has_target = target.is_some();
+    let ds_manage = Arc::clone(doc_state);
 
     RibbonGroupSpec {
-        metrics: estimate_group_metrics(priority, 1, true),
+        metrics: estimate_group_metrics(priority, 2, true),
         label: Some(fl!("ribbon-group-page-style")),
         aria_label: fl!("ribbon-group-page-style"),
         content: rsx! {
@@ -76,6 +90,48 @@ pub(super) fn page_style_group(
                     }
                 },
                 {dialog_label(&fl!("ribbon-page-style-dialog-label"))}
+            }
+            // Opens the style catalog editor panel on the style at the caret,
+            // resolved to a catalog id (and seeded when the definition is
+            // missing) — the same target resolution the paragraph dialog uses,
+            // so the panel never opens on a display key it cannot find.
+            AtRibbonIconButton {
+                aria_label: fl!("ribbon-manage-styles-aria"),
+                is_active: editing_style_draft.read().is_some(),
+                is_disabled: false,
+                on_click: move |_| {
+                    if editing_style_draft.read().is_some() {
+                        editing_style_draft.set(None);
+                        return;
+                    }
+                    let target = {
+                        let ldoc_guard = loro_doc.read();
+                        let cs = cursor_state.read();
+                        match (ldoc_guard.as_ref(), cs.focus.as_ref()) {
+                            (Some(ldoc), Some(focus)) => {
+                                let target = dialog_style_target(
+                                    &ds_manage, ldoc, focus.paragraph_index,
+                                );
+                                if target.as_ref().is_some_and(|t| t.seeded) {
+                                    apply_mutation_and_relayout(&ds_manage, ldoc);
+                                }
+                                target
+                            }
+                            _ => None,
+                        }
+                    };
+                    let Some(target) = target else { return };
+                    if target.seeded {
+                        post_mutation_sync(
+                            &ds_manage, loro_doc, cursor_state, undo_manager, can_undo, can_redo,
+                        );
+                    }
+                    let Some(style) = get_catalog_style(&ds_manage, &target.id) else {
+                        return;
+                    };
+                    editing_style_draft.set(Some(style_to_draft(&style)));
+                },
+                {dialog_label(&fl!("ribbon-manage-styles-label"))}
             }
         },
     }
