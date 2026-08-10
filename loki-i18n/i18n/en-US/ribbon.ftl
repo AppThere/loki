@@ -35,6 +35,13 @@ ribbon-save-as-label = Save As…
 ribbon-save-a-copy-label = Save a Copy…
 ribbon-save-as-template-label = Save as Template…
 
+# Lists group (Write tab)
+ribbon-group-lists = Lists
+ribbon-list-bullet-aria = Bullet list
+ribbon-list-numbered-aria = Numbered list
+ribbon-list-indent-aria = Increase list level (Tab)
+ribbon-list-outdent-aria = Decrease list level (Shift+Tab)
+
 # Styles group (Home tab)
 ribbon-group-styles = Styles
 ribbon-style-select-aria = Paragraph style

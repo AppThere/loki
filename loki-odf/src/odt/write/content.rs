@@ -79,9 +79,9 @@ pub(crate) fn content_xml(doc: &Document) -> Rendered {
         match (master.as_deref(), section.blocks.first()) {
             (Some(mp), Some(first)) => {
                 write_block_with_master(&mut body, first, mp, &mut cx);
-                for block in &section.blocks[1..] {
-                    write_block(&mut body, block, &mut cx);
-                }
+                // Grouped so list runs nest (a first-block list item carries
+                // the master attribute and starts its run standalone).
+                super::list_write::write_blocks(&mut body, &section.blocks[1..], &mut cx);
             }
             (Some(mp), None) => {
                 // Empty section: emit a carrier paragraph so the break survives.
@@ -94,9 +94,7 @@ pub(crate) fn content_xml(doc: &Document) -> Rendered {
                 body.push_str(&format!("<text:p text:style-name=\"{style}\"/>"));
             }
             _ => {
-                for block in &section.blocks {
-                    write_block(&mut body, block, &mut cx);
-                }
+                super::list_write::write_blocks(&mut body, &section.blocks, &mut cx);
             }
         }
     }

@@ -47,9 +47,12 @@ use crate::docx::write::xml::{
 /// `collector` is populated with lists, links, images, and notes encountered.
 pub(super) fn write_document_xml(
     sections: &[Section],
-    _catalog: &StyleCatalog,
+    catalog: &StyleCatalog,
     collector: &mut ExportCollector,
 ) -> Vec<u8> {
+    // Make every catalog list style addressable by StyledPara.list_id before
+    // any paragraph is written; dormant entries cost nothing (§10 tier 2).
+    collector.num_state.register_catalog(catalog);
     let mut out = Vec::new();
     let mut w = Writer::new(&mut out);
     let _ = write_decl(&mut w);

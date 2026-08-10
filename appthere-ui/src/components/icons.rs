@@ -52,6 +52,22 @@ pub const LUCIDE_DOWNLOAD: &str = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 1
 /// "Save as Template" to distinguish it from the plain Save / Save As actions.
 pub const LUCIDE_LAYOUT_TEMPLATE: &str = "M3 3h18v7H3zM3 14h9v7H3zM16 14h5v7h-5z";
 
+/// Lucide `list` — three lines with leading dots. The bullet-list toggle.
+pub const LUCIDE_LIST: &str = "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01";
+
+/// Lucide `list-ordered` — three lines with leading numerals. The
+/// numbered-list toggle.
+pub const LUCIDE_LIST_ORDERED: &str =
+    "M10 6h11M10 12h11M10 18h11M4 6h1v4M4 10h2M6 18H4c0-1 2-2 2-3s-1-1.5-2-1";
+
+/// Lucide `indent-increase` — lines with a right-pointing chevron. Demote a
+/// list item (deeper level).
+pub const LUCIDE_INDENT_INCREASE: &str = "M21 6H11M21 12H11M21 18H11M3 8l4 4-4 4";
+
+/// Lucide `indent-decrease` — lines with a left-pointing chevron. Promote a
+/// list item (shallower level).
+pub const LUCIDE_INDENT_DECREASE: &str = "M21 6H11M21 12H11M21 18H11M7 8l-4 4 4 4";
+
 /// Lucide `chevron-down` — the split-button / dropdown menu affordance.
 pub const LUCIDE_CHEVRON_DOWN: &str = "m6 9 6 6 6-6";
 

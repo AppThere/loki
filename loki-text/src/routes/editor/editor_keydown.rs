@@ -12,7 +12,7 @@ use loki_renderer::ViewMode;
 use loki_renderer::render_layout::reflow_layout_content_width_pt;
 
 use super::editor_keydown_backspace::handle_backspace_key;
-use super::editor_keydown_ctrl::{handle_ctrl_keys, handle_delete_key};
+use super::editor_keydown_ctrl::{handle_ctrl_keys, handle_delete_key, post_mutation_sync};
 use super::editor_keydown_enter::handle_enter_key;
 use super::editor_keydown_text::{SelectionRemoval, handle_character_key, remove_selection};
 use super::editor_scrollbar::ScrollMetrics;
@@ -232,6 +232,46 @@ pub(super) fn make_keydown_handler(
             }
 
             // ── Enter — split paragraph ───────────────────────────────────────
+            // ── Tab / Shift-Tab: list item demote / promote (§10 tier 3) ─────
+            Key::Tab => {
+                // The event driver runs this handler before the blitz default
+                // action, so preventing the default is what keeps focus in the
+                // canvas. A non-list paragraph (or a level already at its
+                // boundary) changes nothing and falls through to the ordinary
+                // focus traversal — Tab must not invent a list.
+                let changed = {
+                    let ldoc_guard = loro_doc.read();
+                    match ldoc_guard.as_ref() {
+                        Some(ldoc) => {
+                            let delta: i8 = if modifiers.shift() { -1 } else { 1 };
+                            let changed = super::editor_lists::change_list_level(
+                                ldoc,
+                                &cursor_state.read(),
+                                delta,
+                            );
+                            if changed {
+                                crate::editing::state::apply_mutation_and_relayout(
+                                    &doc_state, ldoc,
+                                );
+                            }
+                            changed
+                        }
+                        None => false,
+                    }
+                };
+                if changed {
+                    evt.prevent_default();
+                    post_mutation_sync(
+                        &doc_state,
+                        loro_doc,
+                        cursor_state,
+                        undo_manager,
+                        can_undo,
+                        can_redo,
+                    );
+                }
+            }
+
             Key::Enter => {
                 handle_enter_key(
                     focus,

@@ -10,7 +10,7 @@ use loki_doc_model::style::table_banding::resolve_cell_shading_cnf;
 use loki_doc_model::style::{TableCnf, TableLook, resolve_cell_shading};
 use loki_primitives::color::DocumentColor;
 
-use super::content::{Cx, write_block};
+use super::content::Cx;
 use super::xml::attr;
 
 /// Writes a `<table:table>` (header rows, then bodies, then footer). Each
@@ -165,9 +165,7 @@ fn table_cell(out: &mut String, cell: &Cell, background: Option<&DocumentColor>,
     if cell.blocks.is_empty() {
         out.push_str("<text:p/>");
     } else {
-        for b in &cell.blocks {
-            write_block(out, b, cx);
-        }
+        super::list_write::write_blocks(out, &cell.blocks, cx);
     }
     out.push_str("</table:table-cell>");
     for _ in 1..cell.col_span {

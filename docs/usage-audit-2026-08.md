@@ -230,9 +230,14 @@ all of it today (the 2026-04 audit's five steps all landed). What's missing is
 everything around it:
 
 - **No way to create a list**: no `set_block_list` mutation (only `get`/
-  `clear`), no ribbon buttons, no icons, no autoformat, and **Tab is
+  `clear`), no ribbon buttons, no icons, no autoformat. ~~And **Tab is
   unreachable** — the blitz-dom patch intercepts it for focus traversal before
-  dispatch (`patches/blitz-dom/src/events/keyboard.rs:25`).
+  dispatch (`patches/blitz-dom/src/events/keyboard.rs:25`).~~ **Corrected
+  2026-08-10:** that observation was stale — the vendored `EventDriver`
+  dispatches to the Dioxus handler *before* the blitz default action and skips
+  the default when the handler calls `prevent_default()`
+  (`patches/blitz-dom/src/events/driver.rs`, `handle_dom_event`). Tab was
+  reachable all along; the editor keydown just had to handle it.
 - **Export destroys lists**: DOCX write emits `w:numPr` only for legacy
   pandoc list blocks and writes `StyledPara.list_id` as a plain paragraph;
   nine-level definitions are flattened to one hardcoded level. ODT write emits
@@ -246,12 +251,18 @@ everything around it:
 - Style panel's list family is a read-only browser (no draft, no commit fn,
   no per-level form).
 
-**Plan (dependency order).** (0) blitz-dom Tab patch (dispatch before focus
-fallback). (1) `set_block_list`/`set_block_list_level` mutations (copy the
-`align.rs` shape) + built-in default bullet/numbered `ListStyle`
-constructors. (2) **DOCX/ODT list writers** (real 9-level serialisation;
-`w:numPr` for styled paras) — ships *with*, not after, the UI. (3) Ribbon:
-bullet/number/indent± buttons + icons + keys; Tab/Shift-Tab keyboard arm.
+**Plan (dependency order).** ~~(0) blitz-dom Tab patch~~ (not needed — see
+the correction above). **(1) landed 2026-08-10**: `set_block_list`/
+`set_block_list_level` (+ path-aware `_at` variants) and the default
+bullet/numbered `ListStyle` constructors (`style/list_defaults.rs`).
+**(2) landed 2026-08-10**: DOCX writes full 9-level `w:abstractNum`s from the
+catalog with `w:numPr` on styled paras (dormant-until-used registration);
+ODT writes `text:list-style` definitions and groups consecutive items into
+properly nested `<text:list>` markup in every block loop (sections, cells,
+notes, frames). Round-trip tested both formats. **(3) landed 2026-08-10**:
+Write-tab Lists group (bullet/numbered toggles seeded from the defaults,
+indent/outdent) + the Tab/Shift-Tab keydown arm (level change only inside a
+list item; otherwise the default focus traversal proceeds). Still open:
 (4) ODT import convergence onto path A (retires the read-only path). (5)
 Per-level list-style editor form in the style panel. (6) Refinements: label
 alignment, `lvlText` restarts, `"- "` autoformat (greenfield).

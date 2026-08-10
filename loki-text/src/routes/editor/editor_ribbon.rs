@@ -159,7 +159,7 @@ pub(super) fn write_tab_content(
     };
 
     let paragraph = RibbonGroupSpec {
-        metrics: estimate_group_metrics(2, 1, true),
+        metrics: estimate_group_metrics(1, 1, true),
         label: Some(fl!("ribbon-group-paragraph")),
         aria_label: fl!("ribbon-group-paragraph"),
         content: rsx! {
@@ -215,6 +215,7 @@ pub(super) fn write_tab_content(
                 history,
                 styles,
                 paragraph,
+                super::editor_ribbon_lists::lists_group(doc_state, edit_ctx, 2),
                 super::editor_ribbon_format::inline_format_group(doc_state, edit_ctx, inline_state, 8),
             ],
         }

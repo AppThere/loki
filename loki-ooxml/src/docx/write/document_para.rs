@@ -64,6 +64,19 @@ pub(super) fn write_styled_para<W: std::io::Write>(
     let has_pp = sp.direct_para_props.is_some();
     let has_cp = sp.direct_char_props.is_some();
 
+    // List membership → the w:numPr this paragraph must carry (§10 tier 2).
+    // Resolved here (not in write_para_props_inline) because the numId mapping
+    // lives on the collector, which the inline props writer does not see.
+    let num_pr: Option<(u32, u8)> = sp
+        .direct_para_props
+        .as_ref()
+        .and_then(|pp| {
+            pp.list_id
+                .as_ref()
+                .map(|id| (id, pp.list_level.unwrap_or(0)))
+        })
+        .map(|(id, lvl)| (collector.num_state.num_id_for_list(id.as_str()), lvl));
+
     if has_style || has_pp || has_cp {
         let _ = write_start(w, "w:pPr", &[]);
         if let Some(ref sid) = sp.style_id {
@@ -71,7 +84,7 @@ pub(super) fn write_styled_para<W: std::io::Write>(
         }
         if let Some(ref pp) = sp.direct_para_props {
             // Emit para prop children inline (not a nested w:pPr).
-            write_para_props_inline(w, pp);
+            write_para_props_inline(w, pp, num_pr);
         }
         if let Some(ref cp) = sp.direct_char_props {
             let _ = write_start(w, "w:rPr", &[]);
@@ -92,6 +105,7 @@ pub(super) fn write_styled_para<W: std::io::Write>(
 pub(super) fn write_para_props_inline<W: std::io::Write>(
     w: &mut Writer<W>,
     pp: &loki_doc_model::style::props::para_props::ParaProps,
+    num_pr: Option<(u32, u8)>,
 ) {
     use loki_doc_model::style::props::para_props::ParagraphAlignment;
 
@@ -109,10 +123,18 @@ pub(super) fn write_para_props_inline<W: std::io::Write>(
         None => {}
     }
 
-    // keep/widow/break toggles, the paragraph border box, and shading — parsed by
-    // the importer but previously dropped on DOCX export. Shared with the styles
-    // writer; the canonicalisation pass places them in CT_PPr order.
-    crate::docx::write::style_props::write_para_flags_borders_shading(w, pp);
+    // CT_PPr order: the keep/break/widow toggles, then w:numPr, then the
+    // border box and shading. The split writers keep numPr in its schema slot.
+    crate::docx::write::style_props::write_para_flags(w, pp);
+    if let Some((num_id, ilvl)) = num_pr {
+        let num_id_s = num_id.to_string();
+        let ilvl_s = ilvl.to_string();
+        let _ = write_start(w, "w:numPr", &[]);
+        let _ = write_empty(w, "w:ilvl", &wval(&ilvl_s));
+        let _ = write_empty(w, "w:numId", &wval(&num_id_s));
+        let _ = write_end(w, "w:numPr");
+    }
+    crate::docx::write::style_props::write_para_borders_shading(w, pp);
 
     if let Some(align) = pp.alignment {
         let jc = match align {
