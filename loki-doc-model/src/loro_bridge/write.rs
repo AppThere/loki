@@ -48,7 +48,7 @@ pub(crate) fn map_block(block: &Block, map: &LoroMap) -> Result<(), BridgeError>
         Block::StyledPara(para) => {
             map.insert(KEY_TYPE, BLOCK_TYPE_STYLED_PARA)?;
             if let Some(style_id) = &para.style_id {
-                map.insert("style_id", style_id.as_str())?;
+                map.insert(KEY_STYLE_ID, style_id.as_str())?;
             }
             if let Some(para_props) = &para.direct_para_props {
                 let props_map = map.insert_container(KEY_PARA_PROPS, LoroMap::new())?;

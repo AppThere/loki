@@ -370,16 +370,21 @@ pub(super) fn EditorInner(path: String) -> Element {
         }
     });
 
-    // ── Page count sync — re-runs when document_load resolves ────────────────
+    // ── Page count sync — re-runs on load and on every mutation ──────────────
     //
-    // Subscribe to `document_load.value()` so this effect re-runs when the
-    // resource resolves.  By the time this post-render effect fires,
-    // doc_state.page_count is already updated.
+    // `doc_state.page_count` lives behind a Mutex, which nothing can subscribe
+    // to, so `total_pages` is its reactive mirror — the I-10 pattern
+    // (`editor_seed_publish`). Subscribing only to the load resource left the
+    // edit path unmirrored: typing onto a new page showed "Page 2 of 1" until
+    // a tab switch. The generation memo (bumped by `post_mutation_sync` after
+    // every relayout) covers growth *and* shrinkage while typing.
+    let page_sync_generation = use_memo(move || cursor_state.read().document_generation);
     use_effect(move || {
-        // Reactive read — subscribes so this effect re-runs when the document
-        // finishes loading (resource signal changes).
+        // Reactive reads — subscribe to the load resource (open path) and the
+        // mirrored document generation (edit path).
         let resource_signal = document_load.value();
         let _sub = resource_signal.read();
+        let _gen = page_sync_generation();
         if let Ok(state) = doc_state_pages.lock() {
             let count = state.page_count as u32;
             if *total_pages.peek() != count {

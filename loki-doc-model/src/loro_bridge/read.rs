@@ -30,7 +30,7 @@ pub(super) fn map_loro_block(map: &LoroMap) -> Result<Block, BridgeError> {
         BLOCK_TYPE_STYLED_PARA => {
             let inlines = reconstruct_inlines(map)?;
             let style_id = map
-                .get("style_id")
+                .get(KEY_STYLE_ID)
                 .and_then(|v| v.into_value().ok())
                 .and_then(|v| v.into_string().ok())
                 .map(|s| crate::style::catalog::StyleId(s.to_string()));

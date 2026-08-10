@@ -400,10 +400,15 @@ docs (done in this audit's follow-up), add a typing-workload bench that does
 
 ## §P Proposed sequencing
 
-**Now (bug fixes, small, high confidence):**
+**Now (bug fixes, small, high confidence):** — **all five landed 2026-08-10**
+(same branch as this audit; each with the inversion tests the fix admits).
 1. §9 total-pages mirror (I-10 pattern) · 2. §B1 Enter next-style resolution
-(reuses `resolve_target`) + B7 · 3. §14 ribbon expand-on-tab-click ·
-4. §8 per-document substitution reporting · 5. §B3, §B4, §B6, §B5 sweep.
+(reuses the resolver pattern; new read-only `editor_next_style`) + B7 (+ a
+related fix: `set_block_type_heading` now drops a stale stored
+`heading_style`) · 3. §14 ribbon expand-on-tab-click (in `AtRibbon`, so
+loki-spreadsheet inherits it) · 4. §8 per-document substitution reporting
+(per-run recording on `FontResources`, accumulated on `DocumentState`,
+cleared on load/switch) · 5. §B3, §B4, §B6, §B5 sweep.
 
 **Next (small features / stale-observation completions):**
 6. §3(a) restore the style-manager opener + §B2 · 7. §7 template pass

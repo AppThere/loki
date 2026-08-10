@@ -8,7 +8,7 @@ use loro::LoroDoc;
 use super::{MutationError, get_block_map_and_list};
 use crate::loro_schema::{
     BLOCK_TYPE_HEADING, BLOCK_TYPE_PARA, BLOCK_TYPE_STYLED_PARA, KEY_HEADING_LEVEL, KEY_PARA_PROPS,
-    KEY_TYPE, PROP_LIST_ID, PROP_LIST_LEVEL,
+    KEY_STYLE_ID, KEY_TYPE, PROP_LIST_ID, PROP_LIST_LEVEL,
 };
 
 /// Returns a display string for the current named style of the block at
@@ -36,7 +36,7 @@ pub fn get_block_style_name(loro: &LoroDoc, block_index: usize) -> String {
 
     match block_type.as_str() {
         BLOCK_TYPE_STYLED_PARA => block_map
-            .get("style_id")
+            .get(KEY_STYLE_ID)
             .and_then(|v| v.into_value().ok())
             .and_then(|v| v.into_string().ok())
             .map(|s| s.to_string())
@@ -98,6 +98,15 @@ pub fn set_block_type_heading(
     let (_, block_map, _) = get_block_map_and_list(loro, block_index)?;
     block_map.insert(KEY_TYPE, BLOCK_TYPE_HEADING)?;
     block_map.insert(KEY_HEADING_LEVEL, level as i64)?;
+    // Drop any stored heading_style: the layout resolver prefers it over the
+    // canonical Heading{N} id, so a stale name would silently override the
+    // level this call just set.
+    if block_map
+        .get(crate::loro_schema::KEY_HEADING_STYLE)
+        .is_some()
+    {
+        block_map.delete(crate::loro_schema::KEY_HEADING_STYLE)?;
+    }
     Ok(())
 }
 
@@ -159,17 +168,17 @@ pub fn set_block_style(
             // Upgrade plain para to styled_para so the style_id is honoured
             // by the bridge read path.
             block_map.insert(KEY_TYPE, BLOCK_TYPE_STYLED_PARA)?;
-            block_map.insert("style_id", style_id)?;
+            block_map.insert(KEY_STYLE_ID, style_id)?;
         }
         BLOCK_TYPE_STYLED_PARA => {
-            block_map.insert("style_id", style_id)?;
+            block_map.insert(KEY_STYLE_ID, style_id)?;
         }
         BLOCK_TYPE_HEADING => {
             // Preserve heading type; store style name in the heading_style slot.
             block_map.insert(crate::loro_schema::KEY_HEADING_STYLE, style_id)?;
         }
         _ => {
-            block_map.insert("style_id", style_id)?;
+            block_map.insert(KEY_STYLE_ID, style_id)?;
         }
     }
 

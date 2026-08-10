@@ -240,6 +240,7 @@ fn force_full_relayout(
         state.document = Some(fresh_doc);
         state.paginated_layout = Some(Arc::new(laid_out.layout));
         state.layout_reuse = Some(laid_out.reuse);
+        state.font_substitutions.extend(laid_out.substitutions);
         state.page_count = page_count;
         state.page_width_px = width_px;
         state.page_height_px = height_px;

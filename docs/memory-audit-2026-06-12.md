@@ -141,8 +141,15 @@ drops to ~0 and RSS plateaus.
 Finding 6 remains real but is **not** the idle grower: every keystroke appends
 ops to the Loro oplog, and deleted characters leave tombstones in the rich-text
 CRDT tree; neither is ever compacted, so resident memory grows with edit
-*history* during active editing. The `UndoManager` is bounded
-(`max_undo_steps(100)`).
+*history* during active editing. **Correction (2026-08-10):** the
+`UndoManager` is **not** bounded — no call to `set_max_undo_steps` (or
+`set_merge_interval`) exists anywhere in the workspace, so the loro default
+(`max_stack_size = usize::MAX`, one item per keystroke) applies. The earlier
+claim of `max_undo_steps(100)` never matched the code. Before bounding it,
+note the coupling documented in `saved_state.rs`: the clean-checkpoint
+discriminator relies on every edit pushing its own item, and stack eviction
+bypasses the `on_pop` mirror — a naive cap silently desynchronises the dirty
+indicator.
 
 **Diagnosis aid (added):** `apply_mutation_and_relayout` now logs throttled
 counters under the `loki_text::mem` target:

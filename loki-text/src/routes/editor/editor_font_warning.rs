@@ -36,9 +36,14 @@ struct Sub {
 /// the substitution engine exposes severity directly; remove this list then.
 fn is_metric_compatible(substitute: &str) -> bool {
     const COMPAT: &[&str] = &[
-        "Carlito",
+        // The bundled substitute set (loki-fonts): each is the canonical
+        // metric-compatible replacement for the family it substitutes.
+        "Arimo",
         "Caladea",
+        "Carlito",
+        "Cousine",
         "Gelasio",
+        "Tinos",
         "Liberation Sans",
         "Liberation Serif",
         "Liberation Mono",

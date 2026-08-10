@@ -33,7 +33,16 @@ pub struct FontResources {
     ///
     /// Key: requested font name.
     /// Value: `Some(substitute)` if substituted, or `None` if missing without standard substitute.
+    ///
+    /// **Process-lifetime memo, not a report.** This doubles as
+    /// [`Self::resolve_font_name`]'s cache and is never cleared, so it spans
+    /// every document this handle ever laid out. UI reporting must use the
+    /// per-run recording ([`Self::begin_substitution_run`] /
+    /// [`Self::take_substitution_run`]) instead.
     pub substitutions: HashMap<String, Option<String>>,
+    /// Substitutions touched since [`Self::begin_substitution_run`] — the
+    /// reportable subset for the layout run in progress.
+    run_substitutions: HashMap<String, Option<String>>,
     /// Memoised paragraph layouts, keyed by a hash of every shaping input.
     ///
     /// Lets [`crate::para::layout_paragraph`] skip re-shaping paragraphs that
@@ -81,6 +90,7 @@ impl FontResources {
             layout_cx: parley::LayoutContext::new(),
             font_data_cache: HashMap::new(),
             substitutions: HashMap::new(),
+            run_substitutions: HashMap::new(),
             para_cache: ParaCache::default(),
             fallbacks_registered: false,
         }
@@ -147,6 +157,7 @@ impl FontResources {
     pub fn resolve_font_name(&mut self, name: &str) -> String {
         // Return cached result if we already processed this font.
         if let Some(sub) = self.substitutions.get(name) {
+            self.run_substitutions.insert(name.to_string(), sub.clone());
             return sub.as_ref().cloned().unwrap_or_else(|| name.to_string());
         }
 
@@ -183,13 +194,34 @@ impl FontResources {
             if self.font_cx.collection.family_id(sub_name).is_some() {
                 self.substitutions
                     .insert(name.to_string(), Some(sub_name.to_string()));
+                self.run_substitutions
+                    .insert(name.to_string(), Some(sub_name.to_string()));
                 return sub_name.to_string();
             }
         }
 
         // Nothing available — record as unresolved so the banner reports it.
         self.substitutions.insert(name.to_string(), None);
+        self.run_substitutions.insert(name.to_string(), None);
         name.to_string()
+    }
+
+    /// Starts a fresh per-run substitution recording. Call at the start of a
+    /// layout run, under the same lock the run holds.
+    pub fn begin_substitution_run(&mut self) {
+        self.run_substitutions.clear();
+    }
+
+    /// The substitutions touched since [`Self::begin_substitution_run`].
+    ///
+    /// A run's recording **under-reports** by itself: paragraph-cache hits and
+    /// incrementally reused pages skip font resolution entirely, so their
+    /// families are not re-recorded. Callers must accumulate runs into a
+    /// per-document set rather than replace it — the accumulator is only
+    /// cleared on a fresh document load, whose seed layout re-shapes (and so
+    /// re-records) everything.
+    pub fn take_substitution_run(&mut self) -> HashMap<String, Option<String>> {
+        std::mem::take(&mut self.run_substitutions)
     }
 }
 
@@ -200,79 +232,5 @@ impl Default for FontResources {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_font_resolution_fallback() {
-        let mut r = FontResources::new();
-
-        // Aptos should be missing (not installed in typical environments)
-        let resolved = r.resolve_font_name("Aptos");
-        assert_eq!(resolved, "Aptos");
-        assert!(r.substitutions.contains_key("Aptos"));
-        assert_eq!(r.substitutions.get("Aptos"), Some(&None));
-
-        // Test standard substitute: Calibri -> Carlito (if Carlito is missing, it should resolve to Calibri and track as None)
-        let resolved = r.resolve_font_name("Calibri");
-        if r.font_cx.collection.family_id("Carlito").is_some() {
-            assert_eq!(resolved, "Carlito");
-            assert_eq!(
-                r.substitutions.get("Calibri"),
-                Some(&Some("Carlito".to_string()))
-            );
-        } else {
-            assert_eq!(resolved, "Calibri");
-            assert_eq!(r.substitutions.get("Calibri"), Some(&None));
-        }
-
-        // Test case-insensitive behavior: calibri -> Carlito or calibri
-        let resolved = r.resolve_font_name("calibri");
-        if r.font_cx.collection.family_id("Carlito").is_some() {
-            assert_eq!(resolved, "Carlito");
-            assert_eq!(
-                r.substitutions.get("calibri"),
-                Some(&Some("Carlito".to_string()))
-            );
-        } else {
-            assert_eq!(resolved, "calibri");
-            assert_eq!(r.substitutions.get("calibri"), Some(&None));
-        }
-
-        // "Calibri Light" (Word's default heading face) must resolve to the same
-        // metric-compatible substitute as Calibri — otherwise headings/titles
-        // fall back to a wider face and wrap differently from Word.
-        let resolved = r.resolve_font_name("Calibri Light");
-        if r.font_cx.collection.family_id("Carlito").is_some() {
-            assert_eq!(resolved, "Carlito", "Calibri Light must map to Carlito");
-        }
-    }
-
-    // Regression guard: the embedded metric-compatible faces must be available on
-    // every platform (not gated to Android), so headless/CI/PDF-export builds can
-    // register them. Re-gating to `target_os = "android"` would fail this here.
-    #[test]
-    fn fallback_font_blobs_embedded_on_all_targets() {
-        assert!(
-            !loki_fonts::fallback_font_blobs().is_empty(),
-            "metric-compatible fallback faces must be embedded on this target"
-        );
-    }
-
-    // Regression guard for the actual rendering bug: resolving a font with a known
-    // metric-compatible substitute must yield a family that is *actually present*
-    // in the collection. Before lazy fallback registration, "Calibri" resolved to
-    // itself but Carlito was absent on desktop → Parley fell back to a digit-less
-    // font, so list markers and Calibri text rendered `.notdef`.
-    #[test]
-    fn substituted_family_is_actually_available() {
-        let mut r = FontResources::new();
-        for requested in ["Calibri", "Arial", "Times New Roman", "Cambria", "Georgia"] {
-            let resolved = r.resolve_font_name(requested);
-            assert!(
-                r.font_cx.collection.family_id(resolved.as_str()).is_some(),
-                "{requested:?} resolved to {resolved:?}, which is not available in the collection",
-            );
-        }
-    }
-}
+#[path = "font_tests.rs"]
+mod tests;

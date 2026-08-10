@@ -89,7 +89,11 @@ pub fn AtRibbon(
     tabs: Vec<RibbonTabDesc>,
     /// Index of the currently active ribbon tab.
     active_tab: RibbonTabIndex,
-    /// Fired with the clicked tab's index.
+    /// Fired with the clicked tab's index. While the ribbon is collapsed, a
+    /// tab click (including the already-active tab) also fires
+    /// `on_toggle_collapse` first — selecting a tab is a statement of intent
+    /// to use its controls, so the framework expands for every app rather
+    /// than each caller re-implementing it.
     on_tab_select: EventHandler<RibbonTabIndex>,
     /// Content for the active tab's button row.  Pass `rsx! {}` to render
     /// an empty content row (e.g. when no document is open).
@@ -114,7 +118,12 @@ pub fn AtRibbon(
             AtRibbonTabStrip {
                 tabs: tabs,
                 active_tab: active_tab,
-                on_tab_select: move |idx| on_tab_select.call(idx),
+                on_tab_select: move |idx| {
+                    if collapsed {
+                        on_toggle_collapse.call(());
+                    }
+                    on_tab_select.call(idx);
+                },
                 collapsed: collapsed,
                 on_toggle_collapse: move |_| on_toggle_collapse.call(()),
                 toggle_aria_label: toggle_aria_label,

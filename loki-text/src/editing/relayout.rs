@@ -28,6 +28,10 @@ fn edit_opts() -> LayoutOptions {
 pub(crate) struct LaidOut {
     pub layout: PaginatedLayout,
     pub reuse: PaginatedReuse,
+    /// Font substitutions this run touched (requested → substitute). An
+    /// under-count on incremental runs (cache hits skip resolution) — callers
+    /// extend `DocumentState::font_substitutions` rather than replace it.
+    pub substitutions: std::collections::HashMap<String, Option<String>>,
 }
 
 /// Lays out `doc` (paginated), reusing `prev` incrementally when the edit is
@@ -39,14 +43,25 @@ pub(crate) fn relayout_paginated(
     prev: Option<(&Document, &PaginatedLayout, &PaginatedReuse)>,
 ) -> LaidOut {
     let opts = edit_opts();
+    fr.begin_substitution_run();
     if let Some((prev_doc, prev_layout, prev_reuse)) = prev
         && let Some((layout, reuse)) =
             relayout_paginated_incremental(fr, doc, prev_doc, prev_layout, prev_reuse, 1.0, &opts)
     {
-        return LaidOut { layout, reuse };
+        let substitutions = fr.take_substitution_run();
+        return LaidOut {
+            layout,
+            reuse,
+            substitutions,
+        };
     }
     let (layout, reuse) = layout_paginated_full(fr, doc, 1.0, &opts);
-    LaidOut { layout, reuse }
+    let substitutions = fr.take_substitution_run();
+    LaidOut {
+        layout,
+        reuse,
+        substitutions,
+    }
 }
 
 /// Page count and CSS-pixel page dimensions (points × 96/72) for a layout.

@@ -51,22 +51,19 @@ pub(super) fn use_font_families(doc_state: &Arc<Mutex<DocumentState>>) -> Signal
     font_families
 }
 
-/// The font substitutions recorded by the layout engine (requested →
+/// The font substitutions **this document's** layouts recorded (requested →
 /// substitute), for the status-bar chip and the detail panel.
 ///
-/// Non-blocking: while the warm-up scan or a layout worker holds the font
-/// context this returns empty — "no substitutions this frame" — and the
-/// publish that follows bumps the generation and re-renders with the real map.
+/// Reads `DocumentState::font_substitutions` — the per-document accumulator —
+/// not `FontResources::substitutions`, which is a process-lifetime resolve
+/// memo spanning every document this app ever laid out. Reading the memo here
+/// is what made the chip survive tab switches and tab closes.
 pub(super) fn font_substitutions(
     doc_state: &Arc<Mutex<DocumentState>>,
 ) -> HashMap<String, Option<String>> {
     doc_state
         .lock()
         .ok()
-        .and_then(|s| {
-            s.shared_font_resources
-                .try_lock()
-                .map(|fr| fr.substitutions.clone())
-        })
+        .map(|s| s.font_substitutions.clone())
         .unwrap_or_default()
 }

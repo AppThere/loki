@@ -11,10 +11,11 @@ use loki_doc_model::{
     Document, MutationError, NodeAttr, clear_block_list,
     content::block::{Block, StyledParagraph},
     content::inline::Inline,
-    delete_block, delete_text, get_block_list_id, get_block_text, insert_text,
+    delete_block, delete_text, get_block_heading_style, get_block_list_id, get_block_style_name,
+    get_block_text, insert_text,
     layout::section::Section,
     loro_bridge::document_to_loro,
-    merge_block, split_block,
+    merge_block, set_block_style, set_block_type_heading, split_block,
     style::{
         StyleId,
         list_style::ListId,
@@ -828,5 +829,76 @@ fn delete_block_out_of_range_errors() {
     assert!(
         matches!(err, MutationError::BlockIndexOutOfRange(5)),
         "got {err:?}"
+    );
+}
+
+// ── Split style-reference copy tests ──────────────────────────────────────────
+
+#[test]
+fn split_copies_the_styled_para_style_id_to_the_tail() {
+    // make_doc_with_paragraphs builds StyledPara blocks with style_id "Normal".
+    let doc = make_doc_with_paragraphs(&["hello world"]);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    split_block(&ldoc, 0, 5).expect("split succeeded");
+
+    assert_eq!(
+        get_block_style_name(&ldoc, 1),
+        "Normal",
+        "the tail half of a split must keep the source block's named style"
+    );
+}
+
+#[test]
+fn split_copies_a_heading_stored_style_to_the_tail() {
+    let doc = make_doc_with_heading(2, "Chapter");
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+    // Store an ODF-style heading style name on the source block.
+    set_block_style(&ldoc, 0, "Heading_20_2").expect("stored heading style");
+
+    split_block(&ldoc, 0, 7).expect("split succeeded");
+
+    assert_eq!(
+        get_block_heading_style(&ldoc, 1).as_deref(),
+        Some("Heading_20_2"),
+        "the tail heading must keep the stored heading_style the resolver prefers"
+    );
+}
+
+#[test]
+fn split_of_an_unstyled_para_copies_no_style_reference() {
+    // Inverse: a plain para has no style keys, so the tail must not invent one.
+    let mut doc = Document::new();
+    let mut section = Section::new();
+    section
+        .blocks
+        .push(Block::Para(vec![Inline::Str("plain".into())]));
+    doc.sections.clear();
+    doc.sections.push(section);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    split_block(&ldoc, 0, 5).expect("split succeeded");
+
+    assert_eq!(
+        get_block_style_name(&ldoc, 1),
+        "Default Paragraph Style",
+        "an unstyled paragraph's tail stays unstyled"
+    );
+}
+
+#[test]
+fn set_block_type_heading_clears_a_stale_stored_style() {
+    let doc = make_doc_with_heading(1, "Title");
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+    set_block_style(&ldoc, 0, "Heading_20_1").expect("stored heading style");
+    assert!(get_block_heading_style(&ldoc, 0).is_some());
+
+    set_block_type_heading(&ldoc, 0, 2).expect("retype succeeded");
+
+    assert_eq!(
+        get_block_heading_style(&ldoc, 0),
+        None,
+        "changing the heading level must drop the stored style name, or the \
+         layout resolver keeps rendering the old style"
     );
 }

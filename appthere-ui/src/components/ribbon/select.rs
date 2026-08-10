@@ -40,12 +40,14 @@ pub struct AtRibbonSelectProps {
 /// Ribbon select button — shows the current paragraph style name and fires
 /// `on_open` when the user activates it.
 ///
-/// # COMPAT(dioxus-native)
+/// # Why no floating dropdown
 ///
-/// A floating dropdown overlay requires `position: absolute`, which is
-/// confirmed unsupported in current Blitz. The caller is responsible for
-/// rendering the option list as an inline panel in the editor layout (outside
-/// the ribbon's `overflow-y: hidden` content row).
+/// The option list is the caller's to render — by convention as a docked
+/// panel in the editor layout (outside the ribbon's `overflow-y: hidden`
+/// content row), which displaces the canvas rather than covering it. Block
+/// `position: absolute` overlays *are* supported in the current Blitz stack
+/// (see the root CLAUDE.md confirmed-CSS list and `AtPopoverHost`); the
+/// docked-panel posture is a design choice, not a platform limitation.
 ///
 /// # Touch target
 ///

@@ -165,7 +165,7 @@ pub(super) fn layout_tab_content(
     // descends left→right so Columns overflows first and Orientation stays full
     // the longest; the container runs the width-driven cascade + overflow menu.
     let orientation = RibbonGroupSpec {
-        metrics: estimate_group_metrics(3, 2, true),
+        metrics: estimate_group_metrics(4, 2, true),
         label: Some(fl!("ribbon-group-orientation")),
         aria_label: fl!("ribbon-group-orientation"),
         content: rsx! {
@@ -193,7 +193,7 @@ pub(super) fn layout_tab_content(
     };
 
     let margins_group = RibbonGroupSpec {
-        metrics: estimate_group_metrics(2, MARGIN_PRESETS.len(), true),
+        metrics: estimate_group_metrics(3, MARGIN_PRESETS.len(), true),
         label: Some(fl!("ribbon-group-margins")),
         aria_label: fl!("ribbon-group-margins"),
         content: rsx! {
@@ -217,7 +217,7 @@ pub(super) fn layout_tab_content(
     };
 
     let size_group = RibbonGroupSpec {
-        metrics: estimate_group_metrics(1, PAGE_SIZE_PRESETS.len(), true),
+        metrics: estimate_group_metrics(2, PAGE_SIZE_PRESETS.len(), true),
         label: Some(fl!("ribbon-group-page-size")),
         aria_label: fl!("ribbon-group-page-size"),
         content: rsx! {
@@ -243,7 +243,7 @@ pub(super) fn layout_tab_content(
     };
 
     let columns_group = RibbonGroupSpec {
-        metrics: estimate_group_metrics(0, COLUMN_PRESETS.len(), true),
+        metrics: estimate_group_metrics(1, COLUMN_PRESETS.len(), true),
         label: Some(fl!("ribbon-group-columns")),
         aria_label: fl!("ribbon-group-columns"),
         content: rsx! {

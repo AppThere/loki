@@ -60,6 +60,12 @@ pub struct DocumentState {
     /// layout, enabling `loki_layout::relayout_paginated_incremental` to reuse
     /// unchanged pages on the next edit. `None` until the first layout.
     pub layout_reuse: Option<PaginatedReuse>,
+    /// Font substitutions **this document's** layouts have requested
+    /// (requested → substitute) — what the status-bar chip reports. Extended on
+    /// every relayout, cleared on fresh load, stashed/restored with the tab's
+    /// `DocSession`. Deliberately not the process-lifetime memo on
+    /// `FontResources`, which spans every document this app ever opened.
+    pub font_substitutions: std::collections::HashMap<String, Option<String>>,
 }
 
 impl DocumentState {
@@ -84,6 +90,7 @@ impl DocumentState {
             reflow_cache: None,
             incremental: None,
             layout_reuse: None,
+            font_substitutions: std::collections::HashMap::new(),
         }
     }
 }
@@ -205,6 +212,9 @@ pub(crate) fn publish_seed_layout(
     state.document = Some(Arc::new(doc.clone()));
     state.paginated_layout = Some(Arc::new(laid_out.layout));
     state.layout_reuse = Some(laid_out.reuse);
+    // Seed layouts clear the paragraph cache first, so this recording is
+    // complete — replace, don't extend.
+    state.font_substitutions = laid_out.substitutions;
     state.page_count = page_count;
     state.page_width_px = page_width_px;
     state.page_height_px = page_height_px;

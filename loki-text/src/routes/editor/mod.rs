@@ -62,6 +62,7 @@ mod editor_macro_signature_section;
 mod editor_macro_viewer;
 mod editor_metadata;
 mod editor_modals;
+mod editor_next_style;
 mod editor_path_sync;
 mod editor_pointer;
 mod editor_pointer_touch;

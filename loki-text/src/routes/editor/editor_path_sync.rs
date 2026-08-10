@@ -146,6 +146,8 @@ pub(super) fn restore_session(
         state.generation = session.generation;
         state.page_count = 0;
         state.paginated_layout = None;
+        // Rebuilt (replaced) by the restore relayout's complete recording.
+        state.font_substitutions.clear();
     } else {
         tracing::error!("doc_state lock poisoned during restore — state may be stale");
     }
@@ -175,6 +177,7 @@ fn reset_for_fresh_load(doc_state: &Arc<Mutex<DocumentState>>, sig: &mut PathSyn
         state.generation = 0;
         state.page_count = 0;
         state.paginated_layout = None;
+        state.font_substitutions.clear();
     } else {
         tracing::error!("doc_state lock poisoned during tab switch — state may be stale");
     }

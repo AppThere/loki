@@ -102,3 +102,59 @@ fn the_count_is_unchanged_by_publishing() {
     assert_eq!(before_publish, known);
     assert_eq!(count_words(&published), known);
 }
+
+/// The substituted-fonts defect, stated on the state layer: the chip's source
+/// must be per-document, so seeding a document that requests no missing font
+/// must *replace* (clear) the substitutions a previous document accumulated —
+/// the process-lifetime resolve memo notwithstanding.
+#[test]
+fn seeding_a_clean_document_replaces_the_substitution_report() {
+    use loki_doc_model::content::block::StyledParagraph;
+    use loki_doc_model::style::props::CharProps;
+    use loki_doc_model::{NodeAttr, StyleId};
+
+    let doc_state = Arc::new(Mutex::new(DocumentState::new()));
+    let fonts = doc_state
+        .lock()
+        .expect("lock doc_state")
+        .shared_font_resources
+        .clone();
+
+    // Document 1 requests a font that cannot exist.
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![Block::StyledPara(StyledParagraph {
+        style_id: Some(StyleId::new("Normal")),
+        direct_para_props: None,
+        direct_char_props: Some(Box::new(CharProps {
+            font_name: Some("Loki Test Nonexistent Face".into()),
+            ..CharProps::default()
+        })),
+        inlines: vec![Inline::Str("text".into())],
+        attr: NodeAttr::default(),
+    })];
+    let layout = compute_seed_layout(&fonts, &doc);
+    publish_seed_layout(&doc_state, &doc, layout);
+    assert!(
+        doc_state
+            .lock()
+            .expect("lock doc_state")
+            .font_substitutions
+            .contains_key("Loki Test Nonexistent Face"),
+        "the missing font must be reported for the document that requested it"
+    );
+
+    // Document 2 requests nothing special: the report must come back empty,
+    // even though the shared resolve memo still remembers the missing font.
+    let (clean, _) = doc_of_known_words();
+    let layout = compute_seed_layout(&fonts, &clean);
+    publish_seed_layout(&doc_state, &clean, layout);
+    assert!(
+        doc_state
+            .lock()
+            .expect("lock doc_state")
+            .font_substitutions
+            .is_empty(),
+        "a document that requests no missing font must report none — the old \
+         behaviour surfaced the previous document's substitutions here"
+    );
+}

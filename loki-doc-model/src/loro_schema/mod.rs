@@ -80,6 +80,9 @@ pub const KEY_HEADING_JC: &str = "jc";
 /// headings that use the hardcoded "Heading1" … "Heading6" fallback.
 pub const KEY_HEADING_STYLE: &str = "heading_style";
 
+/// Key for the catalog style id stored on a `styled_para` Block.
+pub const KEY_STYLE_ID: &str = "style_id";
+
 /// Key for ParaProps applied to a paragraph Block.
 pub const KEY_PARA_PROPS: &str = "para_props";
 

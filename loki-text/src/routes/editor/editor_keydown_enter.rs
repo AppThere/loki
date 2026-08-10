@@ -11,9 +11,11 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 use loki_doc_model::{
-    StyleId, clear_block_list, get_block_list_id, get_block_style_name, get_block_text,
-    set_block_style, split_block_at,
+    clear_block_list, get_block_heading_style, get_block_list_id, get_block_style_name,
+    get_block_text, set_block_style, set_block_type_heading, set_block_type_para, split_block_at,
 };
+
+use super::editor_next_style::{NextBlock, next_block_for_split};
 
 use super::editor_keydown_ctrl::post_mutation_sync;
 use super::editor_keydown_text::{delete_selection_in_doc, deletion_mark, set_collapsed_cursor};
@@ -81,31 +83,40 @@ pub(super) fn handle_enter_key(
 
     let nested = !focus.path.is_empty();
 
-    // Resolve next_style_id for the current block's style before splitting.
-    // Style inheritance via next_style_id is a top-level concern (named styles
-    // address top-level paragraphs); nested splits keep the source block's type.
-    let next_style: Option<String> = if nested {
+    // Resolve the next style for the tail block before splitting. Top-level
+    // only (named styles address top-level paragraphs), and only when the
+    // caret sits at the end of the paragraph — a mid-text split leaves both
+    // halves in the source style (Word semantics; `editor_next_style`).
+    let at_paragraph_end = focus.byte_offset >= get_block_text(ldoc, focus.paragraph_index).len();
+    let next_block: Option<NextBlock> = if nested || !at_paragraph_end {
         None
     } else {
-        let style_name = get_block_style_name(ldoc, focus.paragraph_index);
-        doc_state.lock().ok().and_then(|state| {
-            state
-                .document
-                .as_ref()?
-                .styles
-                .paragraph_styles
-                .get(&StyleId::new(&style_name))
-                .and_then(|s| s.next_style_id.clone())
-        })
+        let key = get_block_style_name(ldoc, focus.paragraph_index);
+        let stored = get_block_heading_style(ldoc, focus.paragraph_index);
+        doc_state
+            .lock()
+            .ok()
+            .and_then(|state| next_block_for_split(&state.document.as_ref()?.styles, &key, stored))
     };
 
     if split_block_at(ldoc, &focus.block_path(), focus.byte_offset).is_err() {
         return;
     }
 
-    // Apply the next_style to the newly created block if one is defined.
-    if let Some(ref nstyle) = next_style {
-        let _ = set_block_style(ldoc, focus.paragraph_index + 1, nstyle);
+    // Apply the next style to the newly created block. A heading next style is
+    // a block-type change; anything else converts the tail to a styled_para —
+    // without the type reset, Enter after a heading would produce another
+    // heading merely tagged with the body style's name.
+    match next_block {
+        Some(NextBlock::Heading(level)) => {
+            let _ = set_block_type_heading(ldoc, focus.paragraph_index + 1, level);
+        }
+        Some(NextBlock::Styled(id)) => {
+            // Retype first — the style write only lands on a styled_para.
+            let _ = set_block_type_para(ldoc, focus.paragraph_index + 1)
+                .and_then(|()| set_block_style(ldoc, focus.paragraph_index + 1, &id));
+        }
+        None => {}
     }
 
     apply_mutation_and_relayout(doc_state, ldoc);

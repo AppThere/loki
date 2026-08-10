@@ -65,8 +65,13 @@ and quantify the two unfixed ones so the fix work (separate) has a number.
   compacted** (memory audit Finding 6). Resident memory grows with edit *history*
   during a long single-document session — the §7 "grows with time, not size" culprit,
   confirmed in source.
-- **Undo is bounded.** `UndoManager` is capped (`max_undo_steps(100)`), so undo
-  history itself is not the unbounded grower — the oplog/tombstones are (BM-7).
+- **Undo is NOT bounded** *(corrected 2026-08-10 — the original "capped at
+  `max_undo_steps(100)`" claim never matched the code)*: no `set_max_undo_steps`
+  call exists, so the loro default (`usize::MAX`, one item per keystroke)
+  applies. Undo items are cheap (a `CounterSpan` + default meta), so the
+  oplog/tombstones remain the dominant grower (BM-7) — but the stack is an
+  unbounded collection and pins oplog history that compaction could otherwise
+  truncate. See the `saved_state.rs` coupling before bounding it.
 - **Instrumentation already exists.** `apply_mutation_and_relayout` →
   `log_memory_counters` logs throttled (1-per-64-mutations) `loro_ops` / `loro_changes`
   counters under the `loki_text::mem` target, explicitly so "`loro_ops` climbing while

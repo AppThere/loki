@@ -96,6 +96,7 @@ pub fn apply_mutation_and_relayout(
     state.document = Some(Arc::new(doc));
     state.paginated_layout = Some(Arc::new(laid_out.layout));
     state.layout_reuse = Some(laid_out.reuse);
+    state.font_substitutions.extend(laid_out.substitutions);
     state.page_count = page_count;
     state.page_width_px = page_width_px;
     state.page_height_px = page_height_px;

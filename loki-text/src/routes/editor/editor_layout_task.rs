@@ -120,6 +120,9 @@ fn publish_restore_layout(
     let (page_count, page_width_px, page_height_px) = page_metrics(&laid.layout);
     state.paginated_layout = Some(Arc::new(laid.layout));
     state.layout_reuse = Some(laid.reuse);
+    // Restore layouts come from compute_seed_layout (cache cleared → complete
+    // recording) — replace, don't extend.
+    state.font_substitutions = laid.substitutions;
     state.page_count = page_count;
     state.page_width_px = page_width_px;
     state.page_height_px = page_height_px;

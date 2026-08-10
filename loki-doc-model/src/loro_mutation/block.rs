@@ -7,7 +7,8 @@
 use loro::{LoroDoc, LoroMap, LoroMovableList, LoroText};
 
 use crate::loro_schema::{
-    KEY_CONTENT, KEY_DIRECT_CHAR_PROPS, KEY_HEADING_LEVEL, KEY_PARA_PROPS, KEY_TYPE,
+    KEY_CONTENT, KEY_DIRECT_CHAR_PROPS, KEY_HEADING_LEVEL, KEY_HEADING_STYLE, KEY_PARA_PROPS,
+    KEY_STYLE_ID, KEY_TYPE,
 };
 
 use super::nested::resolve_block_list;
@@ -143,6 +144,15 @@ fn split_block_in_list(
         .and_then(|v| v.into_value().ok())
     {
         new_map.insert(KEY_HEADING_LEVEL, level_val)?;
+    }
+
+    // Copy the style reference keys: a styled_para's style_id and a heading's
+    // stored heading_style. Without these the tail half of a split silently
+    // loses its named style and falls back to the catalog default.
+    for key in [KEY_STYLE_ID, KEY_HEADING_STYLE] {
+        if let Some(val) = block_map.get(key).and_then(|v| v.into_value().ok()) {
+            new_map.insert(key, val)?;
+        }
     }
 
     // Create the content LoroText with the tail.
