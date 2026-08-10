@@ -469,6 +469,14 @@ pub(super) fn EditorInner(path: String) -> Element {
         save_message,
         path_signal,
     );
+    // The Document group's New/Open/Save-a-Copy callbacks + recents handle (§4).
+    let (document_actions, ribbon_recents) = super::editor_document_actions::use_document_group(
+        &doc_state,
+        save_message,
+        path_signal,
+        save_as,
+        save_as_template,
+    );
 
     // ── Insert tab handles (image insertion at the cursor) ────────────────────
     let insert_ctx = super::editor_ribbon_insert::InsertCtx {
@@ -610,6 +618,10 @@ pub(super) fn EditorInner(path: String) -> Element {
                 can_undo,
                 can_redo,
                 save_request,
+                super::editor_keydown::DocShortcuts {
+                    on_new: document_actions.on_new,
+                    on_open: document_actions.on_open,
+                },
                 path_signal,
                 document_load,
                 canvas_hovered,
@@ -737,8 +749,9 @@ pub(super) fn EditorInner(path: String) -> Element {
                     save_request,
                     is_dirty,
                     paragraph_style_dialog,
-                    save_as,
-                    save_as_template,
+                    document_actions,
+                    ribbon_recents.read().entries.iter()
+                        .map(|e| (e.path.clone(), e.title.clone())).collect(),
                 ),
                 },
             }

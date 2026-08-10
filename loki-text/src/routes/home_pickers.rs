@@ -9,9 +9,9 @@ use dioxus_router::Navigator;
 use loki_file_access::{FilePicker, PickOptions, PickerError};
 use loki_i18n::fl;
 
-use super::templates::TEMPLATE_MIME_TYPES;
 use crate::new_document::new_import_tab;
 use crate::routes::Route;
+use crate::routes::home_templates::TEMPLATE_MIME_TYPES;
 use crate::routes::home_util::push_new_tab;
 use crate::tabs::OpenTab;
 use crate::utils::display_title_from_path;

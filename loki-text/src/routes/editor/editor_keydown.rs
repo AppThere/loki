@@ -31,6 +31,16 @@ use crate::editing::state::{DocumentState, ensure_reflow_layout};
 // open. Distraction-free reading is handled by the View ribbon tab (future
 // pass), not by a separate mode.
 
+/// Document-level shortcut callbacks the canvas keydown handler can't build
+/// itself (they need the tab/recents context): Ctrl+N and Ctrl+O.
+#[derive(Clone, Copy)]
+pub(super) struct DocShortcuts {
+    /// New blank document (the Document group's main New action).
+    pub on_new: Callback<String>,
+    /// The platform open picker.
+    pub on_open: Callback<()>,
+}
+
 /// Builds the `onkeydown` closure for the document canvas scroll container.
 ///
 /// Dispatches printable characters, `Backspace`, `Delete`, arrow navigation,
@@ -44,6 +54,7 @@ pub(super) fn make_keydown_handler(
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
     mut save_request: Signal<u32>,
+    shortcuts: DocShortcuts,
     view_mode: Signal<ViewMode>,
     scroll_metrics: Signal<ScrollMetrics>,
 ) -> impl FnMut(Event<KeyboardData>) {
@@ -61,6 +72,17 @@ pub(super) fn make_keydown_handler(
             if matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("s")) {
                 let next = save_request.peek().wrapping_add(1);
                 save_request.set(next);
+                return;
+            }
+            // Ctrl/Cmd+N / +O — the Document group's New and Open (§4).
+            if matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("n")) {
+                shortcuts
+                    .on_new
+                    .call(super::editor_document_actions::BLANK_MENU_ID.to_string());
+                return;
+            }
+            if matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("o")) {
+                shortcuts.on_open.call(());
                 return;
             }
             handle_ctrl_keys(

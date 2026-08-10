@@ -82,6 +82,8 @@ editor-font-download-original = Download original
 
 # Save
 editor-save-success = Document saved
+# Suggested filename for Save a Copy, from the current document's stem.
+editor-save-copy-suggested-name = { $stem } (copy).docx
 editor-save-template-success = Template saved
 editor-save-error = Could not save: { $reason }
 editor-save-untitled-hint = Use File → Save As to save new documents

@@ -52,6 +52,18 @@ pub const LUCIDE_DOWNLOAD: &str = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 1
 /// "Save as Template" to distinguish it from the plain Save / Save As actions.
 pub const LUCIDE_LAYOUT_TEMPLATE: &str = "M3 3h18v7H3zM3 14h9v7H3zM16 14h5v7h-5z";
 
+/// Lucide `chevron-down` — the split-button / dropdown menu affordance.
+pub const LUCIDE_CHEVRON_DOWN: &str = "m6 9 6 6 6-6";
+
+/// Lucide `file-plus` — a page with a corner fold and a plus. The New
+/// document action.
+pub const LUCIDE_FILE_PLUS: &str =
+    "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7ZM14 2v4a2 2 0 0 0 2 2h4M9 15h6M12 18v-6";
+
+/// Lucide `folder-open` — the Open document action.
+pub const LUCIDE_FOLDER_OPEN: &str =
+    "m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2";
+
 /// Lucide `align-left` — three lines, all left-aligned.
 pub const LUCIDE_ALIGN_LEFT: &str = "M15 12H3M17 6H3M13 18H3";
 

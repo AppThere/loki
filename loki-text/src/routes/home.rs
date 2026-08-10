@@ -26,9 +26,7 @@ use crate::utils::display_title_from_path;
 
 #[path = "home_pickers.rs"]
 mod pickers;
-#[path = "home_templates.rs"]
-mod templates;
-use templates::{MIME_TYPES, make_templates};
+use super::home_templates::{MIME_TYPES, make_templates};
 
 // ── Home ──────────────────────────────────────────────────────────────────────
 
@@ -48,16 +46,18 @@ pub fn Home() -> Element {
     // Holds the last file-picker error message, if any.
     let pick_error: Signal<Option<String>> = use_signal(|| None);
 
-    // ── on_template_select ── index 0 = Blank, 1..=5 = bundled templates ─────
+    // ── on_template_select ── card 0 = Blank; cards 1.. index straight into
+    // `loki_templates::TEMPLATES`, the same list `make_templates` renders —
+    // one id list, so a new template cannot appear on a card that opens
+    // nothing (or the wrong thing).
     let on_template_select = move |idx: usize| {
-        let tab = match idx {
-            0 => new_blank_tab(),
-            1 => new_template_tab("markdown", fl!("home-template-markdown")),
-            2 => new_template_tab("apa", fl!("home-template-apa")),
-            3 => new_template_tab("mla", fl!("home-template-mla")),
-            4 => new_template_tab("screenplay", fl!("home-template-screenplay")),
-            5 => new_template_tab("resume", fl!("home-template-resume")),
-            _ => return,
+        let tab = if idx == 0 {
+            new_blank_tab()
+        } else {
+            let Some(t) = loki_templates::TEMPLATES.get(idx - 1) else {
+                return;
+            };
+            new_template_tab(t.id, super::home_templates::template_display_name(t.id))
         };
         let path = push_new_tab(tabs, active_tab, tab);
         navigator.push(Route::Editor { path });

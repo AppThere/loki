@@ -34,6 +34,7 @@ pub mod group;
 pub mod groups;
 mod overflow_menu;
 pub mod select;
+pub mod split_button;
 pub mod tab_strip;
 
 pub use button::AtRibbonIconButton;
@@ -41,6 +42,7 @@ pub use content_row::AtRibbonContent;
 pub use group::{AtRibbonGroup, AtRibbonGroupProps};
 pub use groups::{AtRibbonGroups, AtRibbonGroupsProps, RibbonGroupSpec};
 pub use select::AtRibbonSelect;
+pub use split_button::{AtRibbonSplitButton, SplitMenuItem};
 pub use tab_strip::AtRibbonTabStrip;
 
 use dioxus::prelude::*;

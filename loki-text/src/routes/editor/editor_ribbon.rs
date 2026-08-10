@@ -8,9 +8,8 @@
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
-    AtIcon, AtRibbonGroups, AtRibbonIconButton, AtRibbonSelect, GroupMetrics, LUCIDE_DOWNLOAD,
-    LUCIDE_LAYOUT_TEMPLATE, LUCIDE_PILCROW, LUCIDE_REDO, LUCIDE_SAVE, LUCIDE_UNDO, RibbonGroupSpec,
-    estimate_group_metrics, tokens,
+    AtIcon, AtRibbonGroups, AtRibbonIconButton, AtRibbonSelect, GroupMetrics, LUCIDE_PILCROW,
+    LUCIDE_REDO, LUCIDE_UNDO, RibbonGroupSpec, estimate_group_metrics, tokens,
 };
 use dioxus::prelude::*;
 use loki_i18n::fl;
@@ -47,12 +46,13 @@ pub(super) fn write_tab_content(
     subscript_active: Signal<bool>,
     current_style_name: String,
     mut is_style_picker_open: Signal<bool>,
-    mut save_request: Signal<u32>,
+    save_request: Signal<u32>,
     is_dirty: Signal<bool>,
     // The paragraph style open in the tabbed style dialog (Spec 05 M2/M6).
     mut paragraph_style_dialog: Signal<Option<String>>,
-    save_as: Callback<()>,
-    save_as_template: Callback<()>,
+    // The Document group's callbacks + a recents snapshot (usage audit §4).
+    document_actions: super::editor_ribbon_document::DocumentGroupActions,
+    recents: Vec<(String, String)>,
 ) -> Element {
     // One Arc clone per button — cheap reference-count increment.
     let ds_undo = Arc::clone(doc_state);
@@ -81,41 +81,13 @@ pub(super) fn write_tab_content(
     // editing controls (Inline, Styles) stay full the longest. Font/highlight
     // colour live on the Format tab; paragraph alignment lives in the
     // paragraph style editor.
-    let document = RibbonGroupSpec {
-        metrics: estimate_group_metrics(4, 3, true),
-        label: Some(fl!("ribbon-group-document")),
-        aria_label: fl!("ribbon-group-document"),
-        content: rsx! {
-            AtRibbonIconButton {
-                aria_label:  fl!("ribbon-save-aria"),
-                is_active:   false,
-                // Disabled when clean (plan 4b.3); untitled reads as dirty.
-                is_disabled: !is_dirty(),
-                on_click: move |_| {
-                    // Route through the shared save handler (the Ctrl+S effect
-                    // in `EditorInner`), which owns the untitled→Save-As routing,
-                    // the clean baseline, status message, and history compaction.
-                    let next = save_request.peek().wrapping_add(1);
-                    save_request.set(next);
-                },
-                AtIcon { path_d: LUCIDE_SAVE.to_string() }
-            }
-            AtRibbonIconButton {
-                aria_label:  fl!("ribbon-save-as-aria"),
-                is_active:   false,
-                is_disabled: false,
-                on_click: move |_| save_as.call(()),
-                AtIcon { path_d: LUCIDE_DOWNLOAD.to_string() }
-            }
-            AtRibbonIconButton {
-                aria_label:  fl!("ribbon-save-as-template-aria"),
-                is_active:   false,
-                is_disabled: false,
-                on_click: move |_| save_as_template.call(()),
-                AtIcon { path_d: LUCIDE_LAYOUT_TEMPLATE.to_string() }
-            }
-        },
-    };
+    let document = super::editor_ribbon_document::document_group(
+        document_actions,
+        recents,
+        is_dirty(),
+        save_request,
+        4,
+    );
 
     let history = RibbonGroupSpec {
         metrics: estimate_group_metrics(3, 2, true),

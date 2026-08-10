@@ -69,12 +69,12 @@ pub(super) fn render_canvas_area(
     is_dragging: Signal<bool>,
     drag_origin: Signal<Option<(f32, f32)>>,
     touch_state: Signal<Option<TouchInteractionState>>,
-    mut scroll_offset: Signal<f32>,
-    mut scroll_metrics: Signal<ScrollMetrics>,
+    scroll_offset: Signal<f32>,
+    scroll_metrics: Signal<ScrollMetrics>,
     mut canvas_mounted: CanvasMounted,
     vbar_drag: ThumbDrag,
     hbar_drag: ThumbDrag,
-    mut current_page: Signal<u32>,
+    current_page: Signal<u32>,
     total_pages: Signal<u32>,
     view_mode: Signal<ViewMode>,
     cursor_state: Signal<CursorState>,
@@ -83,6 +83,7 @@ pub(super) fn render_canvas_area(
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
     save_request: Signal<u32>,
+    shortcuts: super::editor_keydown::DocShortcuts,
     path_signal: Signal<String>,
     document_load: Resource<(String, Result<Document, LoadError>)>,
     mut canvas_hovered: Signal<bool>,
@@ -157,44 +158,15 @@ pub(super) fn render_canvas_area(
             onmouseenter: move |_| { canvas_hovered.set(true); },
             onmouseleave: move |_| { canvas_hovered.set(false); },
 
-            // Scroll events are dispatched by the patched Blitz shell
-            // (PATCH(loki) in blitz-shell/blitz-dom/dioxus-native-dom) after a
-            // wheel or touch gesture changes this container's scroll offset.
-            // Updates the status-bar page indicator: the current page is the
-            // one occupying the vertical centre of the viewport.
-            onscroll: move |evt: ScrollEvent| {
-                let top = evt.scroll_top() as f32;
-                scroll_offset.set(top);
-                let viewport_h = evt.client_height() as f32;
-                // Mirror the full geometry so the custom scrollbars can size and
-                // place their thumbs.  scroll_width / scroll_height are the
-                // scrollable distance (content − client); see editor_scrollbar.
-                scroll_metrics.set(ScrollMetrics {
-                    scroll_top: top,
-                    scroll_left: evt.scroll_left() as f32,
-                    scroll_width: evt.scroll_width() as f32,
-                    scroll_height: evt.scroll_height() as f32,
-                    client_width: evt.client_width() as f32,
-                    client_height: viewport_h,
-                });
-                let (page_h, count) = match doc_state_scroll.lock() {
-                    Ok(s) => (s.page_height_px, s.page_count),
-                    Err(_) => return,
-                };
-                // Tiles are painted at `zoom` scale (the inter-page gap is a
-                // fixed, unscaled CSS margin), so the page stride the scroll
-                // offset measures against is `page_h × zoom + gap`.
-                let zoom = zoom_percent() as f32 / 100.0;
-                let slot = page_h * zoom + page_gap_px;
-                if slot <= 0.0 || count == 0 {
-                    return;
-                }
-                let page = (((top + viewport_h * 0.5) / slot).floor() as i64 + 1)
-                    .clamp(1, count as i64) as u32;
-                if *current_page.peek() != page {
-                    current_page.set(page);
-                }
-            },
+            // Scroll geometry mirror + page indicator — see `editor_canvas_scroll`.
+            onscroll: super::editor_canvas_scroll::make_scroll_handler(
+                doc_state_scroll,
+                scroll_offset,
+                scroll_metrics,
+                current_page,
+                zoom_percent,
+                page_gap_px,
+            ),
 
             // Ctrl/Cmd+wheel zooms about the pointer, via the PATCH(loki) wheel
             // chain — see `editor_wheel_zoom` for the chain and the policy.
@@ -259,6 +231,7 @@ pub(super) fn render_canvas_area(
                 can_undo,
                 can_redo,
                 save_request,
+                shortcuts,
                 view_mode,
                 scroll_metrics,
             ),
