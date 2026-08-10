@@ -29,6 +29,7 @@
 mod align;
 mod block;
 mod block_edit;
+mod list;
 mod nested;
 #[cfg(feature = "serde")]
 mod objects;
@@ -53,6 +54,11 @@ pub use self::block::{merge_block, merge_block_at, split_block, split_block_at};
 pub use self::block_edit::delete_block;
 #[cfg(feature = "serde")]
 pub use self::block_edit::insert_block_after;
+pub use self::list::{
+    MAX_LIST_LEVEL, clear_block_list_at, get_block_list_id_at, get_block_list_level,
+    get_block_list_level_at, set_block_list, set_block_list_at, set_block_list_level,
+    set_block_list_level_at,
+};
 pub use self::nested::{
     BlockPath, PathStep, delete_text_at, get_block_text_at, get_mark_at_path, insert_text_at,
     insert_text_tracked_at, mark_text_at,

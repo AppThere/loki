@@ -10,6 +10,7 @@
 
 pub mod catalog;
 pub mod char_style;
+pub mod list_defaults;
 pub mod list_style;
 pub mod page_style;
 pub mod para_style;
