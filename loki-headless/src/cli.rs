@@ -82,6 +82,9 @@ pub struct PrintArgs {
     /// With --duplex: flip on the short edge instead.
     #[arg(long, requires = "duplex")]
     pub short_edge: bool,
+    /// Pages to print, e.g. "1-3,5" (1-based, inclusive). Default: all.
+    #[arg(long)]
+    pub pages: Option<String>,
     /// Media size: A3, A4, A5, letter, legal, or a raw IPP media keyword.
     #[arg(long)]
     pub media: Option<String>,

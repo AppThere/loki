@@ -65,6 +65,38 @@ pub struct PrintOptions {
     pub color: ColorMode,
     /// Job title shown in the printer queue.
     pub job_title: Option<String>,
+    /// Pages to print, `"1-3,5"` style (1-based, inclusive; a bare `N` is the
+    /// single page `N`, `N-M` a closed range). `None` prints everything.
+    /// IPP `page-ranges` (RFC 8011 §5.2.7). Parsed and validated by
+    /// [`parse_page_ranges`] at attribute-build time, so a malformed string is
+    /// a typed [`PrintError::InvalidOption`] before any bytes reach a printer.
+    pub page_ranges: Option<String>,
+}
+
+/// Parses a `"1-3,5"` page-range string into 1-based inclusive `(from, to)`
+/// pairs. Rejects empty segments, zero pages (IPP ranges are 1-based),
+/// inverted ranges, and non-numeric input — every rejection names the
+/// offending segment.
+pub fn parse_page_ranges(spec: &str) -> Result<Vec<(i32, i32)>, PrintError> {
+    let invalid = |seg: &str| PrintError::InvalidOption(format!("page-ranges segment {seg:?}"));
+    let mut ranges = Vec::new();
+    for segment in spec.split(',') {
+        let segment = segment.trim();
+        let (from, to) = match segment.split_once('-') {
+            Some((a, b)) => (a.trim(), b.trim()),
+            None => (segment, segment),
+        };
+        let from: i32 = from.parse().map_err(|_| invalid(segment))?;
+        let to: i32 = to.parse().map_err(|_| invalid(segment))?;
+        if from < 1 || to < from {
+            return Err(invalid(segment));
+        }
+        ranges.push((from, to));
+    }
+    if ranges.is_empty() {
+        return Err(PrintError::InvalidOption("page-ranges is empty".into()));
+    }
+    Ok(ranges)
 }
 
 /// Maps friendly media names to IPP self-describing media keywords
@@ -114,6 +146,21 @@ impl PrintOptions {
         if let Some(color) = self.color.keyword() {
             attributes.push(keyword("print-color-mode", color)?);
         }
+        if let Some(spec) = &self.page_ranges {
+            let ranges: Vec<IppValue> = parse_page_ranges(spec)?
+                .into_iter()
+                .map(|(min, max)| IppValue::RangeOfInteger { min, max })
+                .collect();
+            // A single range is sent bare; several as a 1setOf.
+            let value = match <[IppValue; 1]>::try_from(ranges) {
+                Ok([single]) => single,
+                Err(many) => IppValue::Array(many),
+            };
+            attributes.push(
+                IppAttribute::with_name("page-ranges", value)
+                    .map_err(|_| PrintError::InvalidOption("page-ranges".to_owned()))?,
+            );
+        }
         Ok(attributes)
     }
 }
@@ -135,17 +182,38 @@ mod tests {
             media: Some("A4".into()),
             color: ColorMode::Monochrome,
             job_title: None,
+            page_ranges: Some("1-3,5".into()),
         };
         let attrs = options.ipp_attributes().unwrap();
         let rendered: Vec<String> = attrs
             .iter()
             .map(|a| format!("{}={:?}", a.name(), a.value()))
             .collect();
-        assert_eq!(attrs.len(), 4, "{rendered:?}");
+        assert_eq!(attrs.len(), 5, "{rendered:?}");
+        assert!(rendered.iter().any(|a| a.starts_with("page-ranges=")));
         assert!(rendered.iter().any(|a| a.starts_with("copies=Integer(3)")));
         assert!(rendered.iter().any(|a| a.contains("two-sided-long-edge")));
         assert!(rendered.iter().any(|a| a.contains("iso_a4_210x297mm")));
         assert!(rendered.iter().any(|a| a.contains("monochrome")));
+    }
+
+    #[test]
+    fn page_ranges_parse_and_reject() {
+        assert_eq!(parse_page_ranges("1-3,5").unwrap(), vec![(1, 3), (5, 5)]);
+        assert_eq!(parse_page_ranges(" 2 - 4 ").unwrap(), vec![(2, 4)]);
+        // The inversions: zero page, inverted range, junk, empty.
+        for bad in ["0", "3-2", "1-", "a-b", "", "1,,2"] {
+            assert!(
+                parse_page_ranges(bad).is_err(),
+                "{bad:?} should be rejected"
+            );
+        }
+        // A malformed spec surfaces at attribute build, not at the printer.
+        let options = PrintOptions {
+            page_ranges: Some("3-2".into()),
+            ..Default::default()
+        };
+        assert!(options.ipp_attributes().is_err());
     }
 
     #[test]

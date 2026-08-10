@@ -195,6 +195,7 @@ fn run_print(args: &PrintArgs) -> Result<(), CliError> {
             ColorMode::Auto
         },
         job_title: args.title.clone().or(file_name),
+        page_ranges: args.pages.clone(),
     };
 
     let printer = IppPrinter::connect(&args.printer)?;
