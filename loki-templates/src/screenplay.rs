@@ -11,9 +11,13 @@
 use loki_doc_model::document::Document;
 use loki_doc_model::style::props::para_props::ParagraphAlignment::Right;
 
-use crate::helpers::{Char, Para, assemble, inches, letter_layout, p, style};
+use loki_doc_model::style::props::para_props::ParagraphAlignment::Center;
 
-const MONO: &str = "Courier New";
+use crate::helpers::{Char, Para, assemble, inches, letter_layout, p, p_page_break, style};
+
+// Courier Prime (bundled, loki-fonts): drawn as a Courier replacement with
+// Courier's metrics — the screenplay face, with no substitution chip.
+const MONO: &str = "Courier Prime";
 
 fn courier() -> Char {
     Char {
@@ -32,7 +36,7 @@ pub(crate) fn build() -> Document {
             "Normal",
             "Action",
             None,
-            None,
+            Some("Normal"),
             &courier(),
             &Para {
                 space_after: Some(12.0),
@@ -82,16 +86,45 @@ pub(crate) fn build() -> Document {
                 ..Default::default()
             },
         ),
-        // Dialogue: indented 1in, right inset ~1.5in.
+        // Dialogue: indented 1in, right inset ~1.5in. Next style is Action —
+        // after a speech the writer describes what happens, not more speech.
         style(
             "Dialogue",
             "Dialogue",
             Some("Normal"),
-            Some("Dialogue"),
+            Some("Normal"),
             &courier(),
             &Para {
                 indent_left: Some(72.0),
                 space_after: Some(12.0),
+                ..Default::default()
+            },
+        ),
+        // Title page: centered lines, Courier 12 like everything else. The
+        // title sits ~3.5in down (industry layout); the lines that follow
+        // ("written by", the author) follow each other.
+        style(
+            "TitlePageTitle",
+            "Title Page Title",
+            Some("Normal"),
+            Some("TitlePageLine"),
+            &courier(),
+            &Para {
+                align: Some(Center),
+                space_before: Some(252.0),
+                space_after: Some(24.0),
+                ..Default::default()
+            },
+        ),
+        style(
+            "TitlePageLine",
+            "Title Page Line",
+            Some("Normal"),
+            Some("TitlePageLine"),
+            &courier(),
+            &Para {
+                align: Some(Center),
+                space_after: Some(24.0),
                 ..Default::default()
             },
         ),
@@ -112,7 +145,12 @@ pub(crate) fn build() -> Document {
     ];
 
     let body = vec![
-        p("SceneHeading", "INT. COFFEE SHOP - DAY"),
+        // Title page (conventionally uppercase, like the cues below).
+        p("TitlePageTitle", "YOUR SCREENPLAY TITLE"),
+        p("TitlePageLine", "written by"),
+        p("TitlePageLine", "Your Name"),
+        // The direct page break ends the title page; the script starts here.
+        p_page_break("SceneHeading", "INT. COFFEE SHOP - DAY"),
         p(
             "Normal",
             "A quiet corner cafe. RAIN streaks the window. ALEX sits alone, \

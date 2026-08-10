@@ -57,7 +57,7 @@ pub(super) fn write_styles_xml(catalog: &StyleCatalog) -> Vec<u8> {
         ],
     );
 
-    write_doc_defaults(&mut w);
+    write_doc_defaults(&mut w, catalog);
 
     // Normal: emit the catalog's version (with its edited props) when present,
     // else a minimal default flagged as the document default.
@@ -162,22 +162,36 @@ fn emit_paragraph_style<W: std::io::Write>(w: &mut Writer<W>, style: &ParagraphS
     let _ = write_end(w, "w:style");
 }
 
-fn write_doc_defaults<W: std::io::Write>(w: &mut Writer<W>) {
+fn write_doc_defaults<W: std::io::Write>(w: &mut Writer<W>, catalog: &StyleCatalog) {
+    // Source, in order: the synthetic `__DocDefault` the importer derived from
+    // the original file's docDefaults; else the catalog's default paragraph
+    // style (a programmatically-built document — the bundled templates — has
+    // no `__DocDefault`, and hardcoding Times New Roman here re-introduced a
+    // proprietary face into templates that name only bundled ones); else the
+    // Word-conventional Times New Roman 12.
+    let source = catalog
+        .paragraph_styles
+        .get(&StyleId::new("__DocDefault"))
+        .or_else(|| catalog.paragraph_styles.values().find(|s| s.is_default))
+        .or_else(|| catalog.paragraph_styles.get(&StyleId::new("Normal")));
+    let font = source
+        .and_then(|s| s.char_props.font_name.as_deref())
+        .unwrap_or("Times New Roman");
+    let half_pts = source.and_then(|s| s.char_props.font_size).map_or_else(
+        || "24".to_string(),
+        |p| crate::docx::write::xml::pts_to_half_pts(p.value()).to_string(),
+    );
+
     let _ = write_start(w, "w:docDefaults", &[]);
     let _ = write_start(w, "w:rPrDefault", &[]);
     let _ = write_start(w, "w:rPr", &[]);
-    // Default font 12pt (24 half-pts), Times New Roman
     let _ = write_empty(
         w,
         "w:rFonts",
-        &[
-            ("w:ascii", "Times New Roman"),
-            ("w:hAnsi", "Times New Roman"),
-            ("w:cs", "Times New Roman"),
-        ],
+        &[("w:ascii", font), ("w:hAnsi", font), ("w:cs", font)],
     );
-    let _ = write_empty(w, "w:sz", &wval("24"));
-    let _ = write_empty(w, "w:szCs", &wval("24"));
+    let _ = write_empty(w, "w:sz", &wval(&half_pts));
+    let _ = write_empty(w, "w:szCs", &wval(&half_pts));
     let _ = write_end(w, "w:rPr");
     let _ = write_end(w, "w:rPrDefault");
     let _ = write_start(w, "w:pPrDefault", &[]);

@@ -14,6 +14,7 @@
 
 mod apa;
 mod assets;
+mod blank;
 mod helpers;
 mod markdown;
 mod mla;
@@ -66,6 +67,9 @@ pub const TEMPLATES: &[TemplateInfo] = &[
 #[must_use]
 pub fn build_document(id: &str) -> Option<Document> {
     Some(match id {
+        // Not in `TEMPLATES` (no gallery card, no `.dotx` asset): the blank
+        // document, reachable through the editor's blank arm.
+        "blank" => blank::build(),
         "markdown" => markdown::build(),
         "apa" => apa::build(),
         "mla" => mla::build(),

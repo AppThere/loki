@@ -58,7 +58,7 @@ use tail::{flow_footnotes, flow_hrule, get_items_max_x};
 // Public for ADR-0017's DOM reflow view: paragraph synthesis and the list
 // marker/indent rules, so neither path states either twice (see their defs).
 pub use dispatch::{NESTED_INDENT_PT, list_marker, synthesize_list_item_para};
-pub use tail::{synthesize_heading_para, synthesize_plain_para};
+pub use tail::synthesize::{synthesize_heading_para, synthesize_plain_para};
 
 use std::collections::HashMap;
 

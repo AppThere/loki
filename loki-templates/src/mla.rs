@@ -8,9 +8,12 @@ use loki_doc_model::style::props::para_props::ParagraphAlignment::Center;
 
 use crate::helpers::{Char, Para, assemble, letter_layout, p, style};
 
-const SERIF: &str = "Times New Roman";
+// Bundled face with Times New Roman's metrics (loki-fonts) — MLA asks
+// for "Times New Roman or a similar legible font", which this is.
+const SERIF: &str = "Tinos";
 
-/// Builds the MLA 9 paper template (Times New Roman 12 pt, double-spaced,
+/// Builds the MLA 9 paper template (Tinos 12 pt — Times New Roman metrics —
+/// double-spaced,
 /// 1-inch margins, four-line heading block, centered title, half-inch
 /// first-line indent, and a hanging-indent Works Cited style).
 pub(crate) fn build() -> Document {
@@ -83,9 +86,9 @@ pub(crate) fn build() -> Document {
         p("MLATitle", "The Title of Your Paper"),
         p(
             "Normal",
-            "Begin your essay here. MLA style uses 12-point Times New Roman, \
-           double spacing throughout, and a half-inch first-line indent on each \
-           paragraph. The four-line heading block above is flush left.",
+            "Begin your essay here. MLA style asks for a 12-point legible serif \
+           face, double spacing throughout, and a half-inch first-line indent on \
+           each paragraph. The four-line heading block above is flush left.",
         ),
         p("MLATitle", "Works Cited"),
         p(

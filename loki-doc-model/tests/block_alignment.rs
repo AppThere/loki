@@ -125,3 +125,40 @@ fn setting_alignment_on_an_invalid_path_errors() {
     let bad = BlockPath::in_cell(0, 0, 0);
     assert!(set_block_alignment_at(&ldoc, &bad, "Center").is_err());
 }
+
+#[test]
+fn heading_page_break_attr_survives_a_round_trip() {
+    // A heading's direct page break rides `NodeAttr::kv["page-break-before"]`
+    // (set by the OOXML mapper's heading promotion); the Loro bridge must
+    // persist it, or a chapter-start break disappears on the first edit.
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![
+        Block::Heading(
+            1,
+            loki_doc_model::NodeAttr {
+                kv: vec![("page-break-before".into(), "true".into())],
+                ..Default::default()
+            },
+            vec![Inline::Str("Chapter".into())],
+        ),
+        // Control: a heading without the attr must come back without it.
+        Block::Heading(
+            2,
+            loki_doc_model::NodeAttr::default(),
+            vec![Inline::Str("Section".into())],
+        ),
+    ];
+    let ldoc = document_to_loro(&doc).expect("to loro");
+    let out = loro_to_document(&ldoc).expect("rebuild");
+
+    let break_of = |b: &Block| -> bool {
+        let Block::Heading(_, attr, _) = b else {
+            panic!("expected a heading");
+        };
+        attr.kv
+            .iter()
+            .any(|(k, v)| k == "page-break-before" && v == "true")
+    };
+    assert!(break_of(&out.sections[0].blocks[0]), "break persisted");
+    assert!(!break_of(&out.sections[0].blocks[1]), "control stays clean");
+}

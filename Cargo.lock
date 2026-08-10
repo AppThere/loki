@@ -5092,6 +5092,7 @@ name = "loki-templates"
 version = "0.1.0"
 dependencies = [
  "loki-doc-model",
+ "loki-fonts",
  "loki-ooxml",
  "loki-primitives",
 ]

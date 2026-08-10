@@ -60,11 +60,18 @@ pub(super) fn load_document(path: String) -> Result<Document, LoadError> {
     // template, or an imported external file) — see `loki_app_shell::untitled`.
     let mut doc = match new_document::parse_new_doc_source(&path) {
         Some(NewDocSource::Blank) => {
+            // Blank is the `blank` template (Markdown's catalog, empty body —
+            // §7.5), so a new document starts with a body font, heading
+            // styles, and next-style chains rather than the bare
+            // `Document::new_blank` catalog. The builder is used directly:
+            // there is no `.dotx` asset to import for a template with no
+            // content.
+            let mut blank =
+                loki_templates::build_document("blank").unwrap_or_else(Document::new_blank);
             // T6.3/D-07: the app-scoped defaults seed a *new* document only.
             // The other three arms carry geometry that belongs to whoever made
             // the template or the file; re-seeding those would reformat other
             // people's documents to this reader's preferences.
-            let mut blank = Document::new_blank();
             super::editor_defaults::apply_document_defaults(
                 &mut blank,
                 &loki_app_shell::document_defaults::DocumentDefaults::load(),

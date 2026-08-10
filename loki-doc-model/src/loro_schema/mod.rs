@@ -80,6 +80,11 @@ pub const KEY_HEADING_JC: &str = "jc";
 /// headings that use the hardcoded "Heading1" … "Heading6" fallback.
 pub const KEY_HEADING_STYLE: &str = "heading_style";
 
+/// Key for the direct page-break-before flag stored on a heading Block.
+/// Derived from `NodeAttr::kv["page-break-before"]` set by the OOXML mapper
+/// (a chapter heading that starts a new page). Absent means no direct break.
+pub const KEY_HEADING_PAGE_BREAK: &str = "page_break_before";
+
 /// Key for the catalog style id stored on a `styled_para` Block.
 pub const KEY_STYLE_ID: &str = "style_id";
 

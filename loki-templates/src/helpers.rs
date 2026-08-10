@@ -140,13 +140,12 @@ pub(crate) fn heading_block(level: u8, s: &str) -> Block {
     Block::Heading(level, NodeAttr::default(), inline(s))
 }
 
-/// A paragraph carrying named style `style_id` with plain text `s` (empty `s`
-/// yields an empty paragraph used for vertical spacing).
-#[must_use]
-pub(crate) fn p(style_id: &str, s: &str) -> Block {
+/// A paragraph carrying named style `style_id`, text `s` (empty `s` yields an
+/// empty paragraph used for vertical spacing), and optional direct props.
+fn styled_para(style_id: &str, s: &str, direct: Option<Box<ParaProps>>) -> Block {
     Block::StyledPara(StyledParagraph {
         style_id: Some(StyleId::new(style_id)),
-        direct_para_props: None,
+        direct_para_props: direct,
         direct_char_props: None,
         inlines: if s.is_empty() {
             vec![]
@@ -155,6 +154,30 @@ pub(crate) fn p(style_id: &str, s: &str) -> Block {
         },
         attr: NodeAttr::default(),
     })
+}
+
+/// A paragraph carrying named style `style_id` with plain text `s` (empty `s`
+/// yields an empty paragraph used for vertical spacing).
+#[must_use]
+pub(crate) fn p(style_id: &str, s: &str) -> Block {
+    styled_para(style_id, s, None)
+}
+
+/// [`p`], but starting a new page: the paragraph carries a **direct**
+/// `page_break_before` (round-tripped as the inline `w:pageBreakBefore`).
+/// Direct rather than on the style, because a break that lived on the style
+/// would break before *every* paragraph using it — this marks the one block
+/// that ends a template's title page.
+#[must_use]
+pub(crate) fn p_page_break(style_id: &str, s: &str) -> Block {
+    styled_para(
+        style_id,
+        s,
+        Some(Box::new(ParaProps {
+            page_break_before: Some(true),
+            ..Default::default()
+        })),
+    )
 }
 
 /// Assembles a single-section [`Document`] from a title, layout, styles, and body.

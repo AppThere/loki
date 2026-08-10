@@ -8,7 +8,8 @@ use loki_doc_model::style::props::para_props::ParagraphAlignment::Center;
 
 use crate::helpers::{Char, Para, assemble, letter_layout, p, style};
 
-const SANS: &str = "Arial";
+// Bundled face (loki-fonts): renders identically for every reader.
+const SANS: &str = "Arimo";
 
 /// Builds the basic resume template (clean sans-serif, name banner, section
 /// headings, and entry styles) on US Letter with 0.8-inch margins.

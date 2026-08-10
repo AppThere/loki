@@ -72,6 +72,13 @@ pub(crate) fn map_block(block: &Block, map: &LoroMap) -> Result<(), BridgeError>
             if let Some((_, style)) = attr.kv.iter().find(|(k, _)| k == "style") {
                 map.insert(KEY_HEADING_STYLE, style.as_str())?;
             }
+            if attr
+                .kv
+                .iter()
+                .any(|(k, v)| k == "page-break-before" && v == "true")
+            {
+                map.insert(KEY_HEADING_PAGE_BREAK, true)?;
+            }
             let content = map.insert_container(KEY_CONTENT, LoroText::new())?;
             map_inlines(inlines, &content, map)?;
         }

@@ -124,3 +124,35 @@ fn run_recording_re_records_memo_hits() {
     );
     assert!(!second.is_empty());
 }
+
+#[test]
+fn a_bundled_family_requested_by_name_always_resolves() {
+    // A template (or a document authored in Loki) names a bundled face
+    // directly. On a machine where it is not installed system-wide, the
+    // embedded faces must be registered and the name answered as-is — not
+    // recorded as missing (`None`), which is what happened when only the
+    // proprietary-name substitute arms triggered registration.
+    let mut r = FontResources::new();
+    r.begin_substitution_run();
+    let resolved = r.resolve_font_name("Courier Prime");
+    assert_eq!(resolved, "Courier Prime");
+    assert_ne!(
+        r.substitutions.get("Courier Prime"),
+        Some(&None),
+        "a bundled family must never be recorded as missing"
+    );
+
+    // Control (guard inversion): a non-bundled absent family still records
+    // as missing — the bundled arm must not swallow genuine misses.
+    let unresolved = r.resolve_font_name("Definitely Not A Font");
+    assert_eq!(unresolved, "Definitely Not A Font");
+    assert_eq!(r.substitutions.get("Definitely Not A Font"), Some(&None));
+}
+
+#[test]
+fn bare_courier_substitutes_to_courier_prime() {
+    // Screenplays from other tools commonly name plain "Courier".
+    let mut r = FontResources::new();
+    r.begin_substitution_run();
+    assert_eq!(r.resolve_font_name("Courier"), "Courier Prime");
+}

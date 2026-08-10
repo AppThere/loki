@@ -9,13 +9,15 @@
 //! | Carlito                    | Calibri                 |
 //! | Caladea                    | Cambria                 |
 //! | Arimo                      | Arial                   |
+//! | Courier Prime              | Courier                 |
 //! | Cousine                    | Courier New             |
 //! | Tinos                      | Times New Roman         |
 //! | Gelasio                    | Georgia                 |
 //!
 //! Atkinson Hyperlegible Next is licensed under SIL OFL 1.1 by the Braille
 //! Institute; the metric-compatible faces under SIL OFL 1.1 from
-//! <https://github.com/google/fonts>. The bundled Gelasio faces (added under
+//! <https://github.com/google/fonts> (Courier Prime — Quote-Unquote Apps, also
+//! OFL 1.1 — was fetched from the Google Fonts static file service). The bundled Gelasio faces (added under
 //! Spec 02 B-10; license in `fonts/OFL-Gelasio.txt`, no Reserved Font Name)
 //! were reconstructed from the `@fontsource/gelasio` npm distribution by
 //! merging its latin + latin-ext + vietnamese subsets with fonttools — the
@@ -55,10 +57,11 @@ const ATKINSON_VF: &[u8] = include_bytes!("../fonts/AtkinsonHyperlegibleNext-VF.
 /// Raw bytes of every bundled UI/fallback face, for **synchronous** registration
 /// into the renderer's Parley `FontContext` at launch.
 ///
-/// Includes the Atkinson Hyperlegible Next UI variable font followed by the six
+/// Includes the Atkinson Hyperlegible Next UI variable font followed by the
 /// metric-compatible fallback families (see [`fallback_font_blobs`]). Registering
 /// these at startup makes the family names ("Atkinson Hyperlegible Next",
-/// "Carlito", "Caladea", "Arimo", "Cousine", "Tinos", "Gelasio") resolve immediately on
+/// "Carlito", "Caladea", "Arimo", "Courier Prime", "Cousine", "Tinos",
+/// "Gelasio") resolve immediately on
 /// every platform, without relying on the asynchronous `@font-face` `data:` URI
 /// fetch (which is unreliable on Android).
 pub fn ui_font_blobs() -> Vec<Vec<u8>> {
@@ -69,8 +72,8 @@ pub fn ui_font_blobs() -> Vec<Vec<u8>> {
 }
 
 /// Raw bytes of every bundled metric-compatible fallback face (Carlito, Caladea,
-/// Arimo, Cousine, Tinos, Gelasio), for direct registration into the document
-/// layout engine's font collection.
+/// Arimo, Courier Prime, Cousine, Tinos, Gelasio), for direct registration into
+/// the document layout engine's font collection.
 ///
 /// Available on **all** platforms. The layout engine registers these lazily, only
 /// when a substitute family (e.g. Carlito for Calibri) is requested but not found
@@ -90,6 +93,11 @@ pub fn fallback_font_blobs() -> &'static [&'static [u8]] {
         include_bytes!("../fonts/Caladea-Bold.ttf"),
         include_bytes!("../fonts/Caladea-Italic.ttf"),
         include_bytes!("../fonts/Caladea-BoldItalic.ttf"),
+        // Courier Prime — metric-compatible Courier (the screenplay face)
+        include_bytes!("../fonts/CourierPrime-Regular.ttf"),
+        include_bytes!("../fonts/CourierPrime-Bold.ttf"),
+        include_bytes!("../fonts/CourierPrime-Italic.ttf"),
+        include_bytes!("../fonts/CourierPrime-BoldItalic.ttf"),
         // Cousine — metric-compatible Courier New
         include_bytes!("../fonts/Cousine-Regular.ttf"),
         include_bytes!("../fonts/Cousine-Bold.ttf"),
@@ -150,6 +158,10 @@ pub fn bundled_families() -> &'static [BundledFamily] {
         BundledFamily {
             name: "Carlito",
             substitutes_for: "Calibri",
+        },
+        BundledFamily {
+            name: "Courier Prime",
+            substitutes_for: "Courier",
         },
         BundledFamily {
             name: "Cousine",

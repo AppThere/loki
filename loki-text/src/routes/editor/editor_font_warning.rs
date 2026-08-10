@@ -35,20 +35,15 @@ struct Sub {
 /// Metric-compatible substitute faces (Spec 02 §7.3). A UI-side heuristic until
 /// the substitution engine exposes severity directly; remove this list then.
 fn is_metric_compatible(substitute: &str) -> bool {
-    const COMPAT: &[&str] = &[
-        // The bundled substitute set (loki-fonts): each is the canonical
-        // metric-compatible replacement for the family it substitutes.
-        "Arimo",
-        "Caladea",
-        "Carlito",
-        "Cousine",
-        "Gelasio",
-        "Tinos",
-        "Liberation Sans",
-        "Liberation Serif",
-        "Liberation Mono",
-    ];
-    COMPAT.iter().any(|c| c.eq_ignore_ascii_case(substitute))
+    // Every bundled face is by definition the canonical metric-compatible
+    // replacement for the family it substitutes, so the set is *derived* from
+    // loki-fonts rather than copied here (a second copy is how the bundled
+    // Arimo/Cousine/Tinos once ended up badged "approximate"). The Liberation
+    // trio are not bundled but are the same metrics under another license,
+    // common as system fonts on Linux.
+    const EXTRA: &[&str] = &["Liberation Sans", "Liberation Serif", "Liberation Mono"];
+    loki_fonts::is_bundled_family(substitute)
+        || EXTRA.iter().any(|c| c.eq_ignore_ascii_case(substitute))
 }
 
 /// Download URL for an original (requested) font, where one is known.

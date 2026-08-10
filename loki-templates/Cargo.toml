@@ -10,3 +10,8 @@ description = "Bundled document templates (Markdown, APA, MLA, Screenplay, Resum
 loki-doc-model = { path = "../loki-doc-model" }
 loki-ooxml = { path = "../loki-ooxml" }
 loki-primitives = { path = "../loki-primitives" }
+
+[dev-dependencies]
+# The bundled-faces-only guarantee (round_trip.rs) is checked against the
+# actual bundled set rather than a copied name list.
+loki-fonts = { path = "../loki-fonts" }

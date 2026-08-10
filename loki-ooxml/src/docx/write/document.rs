@@ -11,11 +11,13 @@
 
 use quick_xml::Writer;
 
-use loki_doc_model::content::block::Block;
+use loki_doc_model::content::attr::NodeAttr;
+use loki_doc_model::content::block::{Block, StyledParagraph};
 use loki_doc_model::layout::page::PageLayout;
 use loki_doc_model::layout::section::Section;
-use loki_doc_model::style::catalog::StyleCatalog;
+use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
 use loki_doc_model::style::props::char_props::CharProps;
+use loki_doc_model::style::props::para_props::{ParaProps, ParagraphAlignment};
 
 use crate::docx::write::collector::ExportCollector;
 use crate::docx::write::section::write_sect_pr;
@@ -155,9 +157,47 @@ fn write_block<W: std::io::Write>(
         Block::StyledPara(sp) => {
             write_styled_para(w, sp, collector);
         }
-        Block::Heading(level, _, inlines) => {
-            let style_id = format!("Heading{level}");
-            write_para(w, Some(&style_id), None, inlines, collector);
+        Block::Heading(level, attr, inlines) => {
+            // The attr carries what heading promotion preserved from import:
+            // the named style the paragraph resolved through ("SceneHeading",
+            // an ODF heading style), a direct alignment, and a direct page
+            // break. Writing them back closes the promote-then-drop round-trip
+            // hole; without the style key the fallback matches the old output.
+            let style_id = attr
+                .kv
+                .iter()
+                .find(|(k, _)| k == "style")
+                .map_or_else(|| format!("Heading{level}"), |(_, v)| v.clone());
+            let alignment =
+                attr.kv
+                    .iter()
+                    .find(|(k, _)| k == "jc")
+                    .and_then(|(_, v)| match v.as_str() {
+                        "center" => Some(ParagraphAlignment::Center),
+                        "right" => Some(ParagraphAlignment::Right),
+                        "justify" => Some(ParagraphAlignment::Justify),
+                        _ => None,
+                    });
+            let page_break = attr
+                .kv
+                .iter()
+                .any(|(k, v)| k == "page-break-before" && v == "true");
+            if alignment.is_some() || page_break {
+                let sp = StyledParagraph {
+                    style_id: Some(StyleId::new(&style_id)),
+                    direct_para_props: Some(Box::new(ParaProps {
+                        alignment,
+                        page_break_before: page_break.then_some(true),
+                        ..Default::default()
+                    })),
+                    direct_char_props: None,
+                    inlines: inlines.clone(),
+                    attr: NodeAttr::default(),
+                };
+                write_styled_para(w, &sp, collector);
+            } else {
+                write_para(w, Some(&style_id), None, inlines, collector);
+            }
         }
         Block::BulletList(items) => {
             let num_id = collector.num_state.register_bullet();

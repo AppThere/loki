@@ -8,9 +8,14 @@ use loki_doc_model::style::props::para_props::ParagraphAlignment::{Center, Left}
 
 use crate::helpers::{Char, Para, assemble, letter_layout, p, style};
 
-const SERIF: &str = "Times New Roman";
+// Bundled face with Times New Roman's metrics (loki-fonts). APA 7
+// requires a legible font, naming Times New Roman 12 pt as one option;
+// the metric match keeps the same line breaks without the substitution
+// chip on machines without MS fonts.
+const SERIF: &str = "Tinos";
 
-/// Builds the APA 7 paper template (Times New Roman 12 pt, double-spaced,
+/// Builds the APA 7 paper template (Tinos 12 pt — Times New Roman metrics —
+/// double-spaced,
 /// 1-inch margins, title-page block and level-1/2/3 headings).
 pub(crate) fn build() -> Document {
     let body_char = || Char {
@@ -139,7 +144,8 @@ pub(crate) fn build() -> Document {
             "Normal",
             "Begin the body of your paper here. The first line of each \
            paragraph is indented half an inch and the whole document is double-spaced \
-           in 12-point Times New Roman, as APA 7 requires.",
+           at 12 points in a serif face with Times New Roman's metrics, as APA 7 \
+           permits.",
         ),
         p("Heading2", "A Level 2 Heading"),
         p(

@@ -114,6 +114,18 @@ pub(crate) fn map_paragraph(p: &DocxParagraph, ctx: &mut MappingContext<'_>) -> 
                 };
                 attr.kv.push(("jc".into(), val.into()));
             }
+            // A direct page break must survive the promotion: "chapter heading
+            // starts a new page" is the single most common direct property on a
+            // heading, and dropping it silently reflows the whole document.
+            if pp.page_break_before == Some(true) {
+                attr.kv.push(("page-break-before".into(), "true".into()));
+            }
+        }
+        // Keep the named style the paragraph resolved through (the ODF mapper
+        // already does): without it the layout falls back to `Heading{level}`,
+        // so a heading styled "SceneHeading" or "Chapter" lost its formatting.
+        if let Some(ref sid) = style_id {
+            attr.kv.push(("style".into(), sid.as_str().to_string()));
         }
         return vec![Block::Heading(level, attr, inlines)];
     }

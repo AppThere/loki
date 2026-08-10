@@ -167,9 +167,29 @@ impl FontResources {
             return name.to_string();
         }
 
+        // A *bundled* family requested by name (a template or a document
+        // authored in Loki says "Cousine" or "Courier Prime" directly) must
+        // always resolve — that guarantee is why the picker badges bundled
+        // faces as substitution-free. Register the embedded faces and answer
+        // with the requested name; without this arm a bundled name fell
+        // through the substitute table below (which only maps *proprietary*
+        // names) and was reported missing on machines where it is not
+        // installed system-wide.
+        if loki_fonts::is_bundled_family(name) {
+            self.ensure_fallback_fonts_registered();
+            if self.font_cx.collection.family_id(name).is_some() {
+                return name.to_string();
+            }
+        }
+
         // Font is not available. Check standard substitutes (case-insensitive).
         let substitute = match name.to_lowercase().as_str() {
             "arial" => Some("Arimo"),
+            // Courier Prime matches Courier's metrics (it was drawn as a
+            // Courier replacement); Cousine covers the metrically-identical
+            // Courier New. Screenplays from other tools commonly name bare
+            // "Courier".
+            "courier" => Some("Courier Prime"),
             "courier new" => Some("Cousine"),
             "times new roman" => Some("Tinos"),
             // "Calibri Light" is a distinct family in Word (the default heading

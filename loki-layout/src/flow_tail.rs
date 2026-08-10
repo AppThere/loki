@@ -3,13 +3,16 @@
 
 //! Section-finalization helpers for the flow engine (split from `flow.rs` for
 //! the 300-line ceiling): the horizontal-rule block renderer, end-of-section
-//! footnote rendering, the paragraph synthesizers used by the block loop for
-//! bare/heading content, and the `get_items_max_x` content-width measurement
-//! used by the table layout. The FlowState-touching entry points are
-//! re-exported from `flow.rs`.
+//! footnote rendering, and the `get_items_max_x` content-width measurement
+//! used by the table layout. The paragraph synthesizers moved to
+//! `flow_synthesize.rs` (same ceiling). The FlowState-touching entry points
+//! are re-exported from `flow.rs`.
 
-use loki_doc_model::NodeAttr;
-use loki_doc_model::content::block::{Block, StyledParagraph};
+// The split-off synthesizer cluster, re-exported through `flow.rs`.
+#[path = "flow_synthesize.rs"]
+pub(super) mod synthesize;
+
+use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::Inline;
 
 use super::{FlowState, editing, flow_block, flow_paragraph};
@@ -192,70 +195,6 @@ fn footnote_mark(n: u32) -> String {
         8 => "\u{2078}".to_string(),
         9 => "\u{2079}".to_string(),
         _ => format!("[{n}]"),
-    }
-}
-
-/// A bare inline run as the styled paragraph the resolver understands.
-///
-/// `pub`, not `pub(super)`: ADR-0017's DOM reflow view needs this same mapping
-/// before it can resolve, and a second copy would decide which style a heading
-/// level names for a second time.
-pub fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
-    StyledParagraph {
-        style_id: None,
-        direct_para_props: None,
-        direct_char_props: None,
-        inlines: inlines.to_vec(),
-        attr: NodeAttr::default(),
-    }
-}
-
-/// A heading as the styled paragraph the resolver understands. `pub` for the
-/// same reason as [`synthesize_plain_para`].
-pub fn synthesize_heading_para(level: u8, attr: &NodeAttr, inlines: &[Inline]) -> StyledParagraph {
-    use loki_doc_model::style::catalog::StyleId;
-    use loki_doc_model::style::props::para_props::{ParaProps, ParagraphAlignment};
-    // Prefer the style name carried in NodeAttr (set by the ODF mapper from
-    // text:style-name so the catalog can resolve ODF heading properties like
-    // font-size and bold). Fall back to the canonical OOXML/internal names.
-    let style_id: StyleId = attr
-        .kv
-        .iter()
-        .find(|(k, _)| k == "style")
-        .map(|(_, v)| StyleId::new(v.as_str()))
-        .unwrap_or_else(|| {
-            let hardcoded = match level {
-                1 => "Heading1",
-                2 => "Heading2",
-                3 => "Heading3",
-                4 => "Heading4",
-                5 => "Heading5",
-                _ => "Heading6",
-            };
-            StyleId::new(hardcoded)
-        });
-    let direct_alignment =
-        attr.kv
-            .iter()
-            .find(|(k, _)| k == "jc")
-            .and_then(|(_, v)| match v.as_str() {
-                "center" => Some(ParagraphAlignment::Center),
-                "right" => Some(ParagraphAlignment::Right),
-                "justify" => Some(ParagraphAlignment::Justify),
-                _ => None,
-            });
-    let direct_para_props = direct_alignment.map(|align| {
-        Box::new(ParaProps {
-            alignment: Some(align),
-            ..Default::default()
-        })
-    });
-    StyledParagraph {
-        style_id: Some(style_id),
-        direct_para_props,
-        direct_char_props: None,
-        inlines: inlines.to_vec(),
-        attr: NodeAttr::default(),
     }
 }
 

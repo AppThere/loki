@@ -570,6 +570,31 @@ fn block_taller_than_page_emits_warning() {
     );
 }
 
+/// A heading carrying the promotion-preserved `page-break-before` attr (the
+/// OOXML mapper's channel for "chapter starts a new page") must start a new
+/// page — and the same heading without the attr must not, or the guard is a
+/// description rather than a precondition.
+#[test]
+fn heading_page_break_attr_splits_onto_second_page() {
+    let mut r = test_resources();
+    let heading = |attr: NodeAttr| Block::Heading(1, attr, vec![Inline::Str("Chapter".into())]);
+    let broken_attr = NodeAttr {
+        kv: vec![("page-break-before".into(), "true".into())],
+        ..Default::default()
+    };
+    for (attr, expected_pages) in [(NodeAttr::default(), 1), (broken_attr, 2)] {
+        let section = Section {
+            page_style: None,
+            layout: PageLayout::default(),
+            start: Default::default(),
+            blocks: vec![Block::StyledPara(make_para("Front matter")), heading(attr)],
+            extensions: ExtensionBag::default(),
+        };
+        let (pages, _) = flow_paginated(&mut r, &section);
+        assert_eq!(pages.len(), expected_pages);
+    }
+}
+
 #[test]
 fn heading_block_does_not_panic() {
     let mut r = test_resources();

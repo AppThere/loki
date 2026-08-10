@@ -66,6 +66,9 @@ pub(super) fn map_loro_block(map: &LoroMap) -> Result<Block, BridgeError> {
             if let Some(style) = get_str_from_map(map, KEY_HEADING_STYLE) {
                 attr.kv.push(("style".into(), style));
             }
+            if get_bool_from_map(map, KEY_HEADING_PAGE_BREAK) == Some(true) {
+                attr.kv.push(("page-break-before".into(), "true".into()));
+            }
             Ok(Block::Heading(level, attr, inlines))
         }
         BLOCK_TYPE_CODE_BLOCK => {

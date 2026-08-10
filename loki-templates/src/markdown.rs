@@ -9,12 +9,15 @@ use loki_doc_model::style::props::para_props::ParagraphAlignment;
 
 use crate::helpers::{Char, Para, assemble, heading_block, letter_layout, p, style};
 
-const SANS: &str = "Arial";
-const MONO: &str = "Courier New";
+// Bundled faces (loki-fonts), so the template opens with zero font
+// substitutions on every machine (§7: "bundled fonts only").
+const SANS: &str = "Arimo";
+const MONO: &str = "Cousine";
 
-/// Builds the Markdown-styled blank template.
-pub(crate) fn build() -> Document {
-    let styles = vec![
+/// The template's style catalog — shared with the `blank` template, which is
+/// this catalog minus the sample text (§7: Blank = Markdown minus content).
+pub(crate) fn styles() -> Vec<ParagraphStyle> {
+    vec![
         style(
             "Normal",
             "Normal",
@@ -69,8 +72,11 @@ pub(crate) fn build() -> Document {
                 ..Default::default()
             },
         ),
-    ];
+    ]
+}
 
+/// Builds the Markdown-styled blank template.
+pub(crate) fn build() -> Document {
     let body = vec![
         heading_block(1, "Document Title"),
         p(
@@ -88,7 +94,7 @@ pub(crate) fn build() -> Document {
         p("CodeBlock", "code blocks use a monospace face"),
     ];
 
-    assemble("Markdown Document", letter_layout(1.0), styles, body)
+    assemble("Markdown Document", letter_layout(1.0), styles(), body)
 }
 
 /// A heading style with the given size, outline level, before/after spacing.
