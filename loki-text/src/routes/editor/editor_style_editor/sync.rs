@@ -14,7 +14,7 @@ use crate::editing::cursor::CursorState;
 
 /// Signals the style editor needs to persist edits through Loro and refresh the
 /// undo/redo state. Grouped to keep the function signature manageable (mirrors
-/// `editor_metadata_panel::MetaPanelSync`).
+/// `editor_insert_sync::InsertLinkSync`).
 ///
 /// `PartialEq` compares the [`Signal`] handles, not the values behind them, so
 /// it means "the same signals" rather than "the same document" — which is what a

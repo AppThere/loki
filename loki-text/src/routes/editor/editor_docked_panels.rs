@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Transient panels docked above the ribbon, triggered by toolbar actions:
-//! the spelling suggestions menu, the spelling language picker, and the Insert
-//! tab's hyperlink URL panel.
+//! Transient panels docked above the ribbon, triggered by toolbar actions: the
+//! spelling suggestions menu and the spelling language picker.
+//!
+//! The Insert tab's one-field hyperlink panel used to be the third; it was
+//! retired when the Insert link dialog took over that button, and the dialog is
+//! mounted as an overlay by `editor_modals` rather than docked here.
 //!
 //! Bundled into one element so `editor_inner` (an oversized file) stays lean.
 //! Each sub-panel self-gates on its own open/draft signal, so this helper can be
@@ -14,7 +17,6 @@ use std::sync::{Arc, Mutex};
 use dioxus::prelude::*;
 use loki_app_shell::spell::SpellService;
 
-use super::editor_insert_panel::{InsertLinkSync, insert_link_panel};
 use super::editor_language_panel::language_panel;
 use super::editor_spell::{SpellMenu, SpellSync};
 use super::editor_spell_popover::{SpellPopover, SpellPopoverProps};
@@ -72,10 +74,8 @@ pub(super) fn docked_panels(
     is_language_panel_open: Signal<bool>,
     language_status: Signal<Option<String>>,
     spell_hover: Signal<Option<String>>,
-    link_draft: Signal<Option<String>>,
 ) -> Element {
     let ds_lang = Arc::clone(&doc_state);
-    let ds_link = Arc::clone(&doc_state);
     let spell_sync = SpellSync {
         loro_doc: sync.loro_doc,
         cursor_state: sync.cursor_state,
@@ -106,19 +106,6 @@ pub(super) fn docked_panels(
                 spell_service,
                 is_language_panel_open,
                 language_status,
-            )}
-        }
-        if link_draft.read().is_some() {
-            {insert_link_panel(
-                ds_link,
-                link_draft,
-                InsertLinkSync {
-                    loro_doc: sync.loro_doc,
-                    cursor_state: sync.cursor_state,
-                    undo_manager: sync.undo_manager,
-                    can_undo: sync.can_undo,
-                    can_redo: sync.can_redo,
-                },
             )}
         }
     }

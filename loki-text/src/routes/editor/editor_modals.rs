@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex};
 use dioxus::prelude::*;
 
 use super::editor_dialog_state::DialogSignals;
-use super::editor_insert_panel::InsertLinkSync;
+use super::editor_insert_sync::InsertLinkSync;
 use super::editor_style_editor::StyleEditorSync;
 use super::link_dialog::{InsertLinkDialog, InsertLinkDialogProps};
 use super::meta_dialog::{MetadataDialog, MetadataDialogProps};

@@ -9,7 +9,7 @@ use appthere_ui::{AtCheckRow, AtField, AtProvenanceLine, DialogPosture, at_contr
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
-use super::super::editor_insert_panel::InsertLinkSync;
+use super::super::editor_insert_sync::InsertLinkSync;
 use super::SpanDraft;
 use super::tabs::{SpanLevel, SpanTab, level_of};
 use crate::editing::cursor::CursorState;

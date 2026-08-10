@@ -5,7 +5,7 @@
 //! Defines the editable Dublin Core fields ([`MetaField`]), the editor draft
 //! ([`MetaDraft`]), and the conversion to/from the live document's
 //! [`loki_doc_model::meta::DocumentMeta`]. The inline panel UI that consumes
-//! these lives in `editor_metadata_panel`.
+//! these lives in `meta_dialog`.
 
 use std::sync::{Arc, Mutex};
 

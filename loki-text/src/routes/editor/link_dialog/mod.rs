@@ -22,7 +22,7 @@ use dioxus::prelude::*;
 use loki_i18n::fl;
 
 use super::editor_insert::set_hyperlink;
-use super::editor_insert_panel::InsertLinkSync;
+use super::editor_insert_sync::InsertLinkSync;
 use super::editor_keydown_ctrl::post_mutation_sync;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 use target::LinkKind;

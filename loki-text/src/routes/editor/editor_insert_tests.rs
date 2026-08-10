@@ -229,7 +229,7 @@ fn insert_table_returns_first_cell_caret() {
     // Block 0 is a paragraph; inserting a table after it puts the table at
     // block 1 and returns a caret pointing at that table's first cell.
     let loro = doc_with_text("hello");
-    let target = insert_table_after_cursor(&loro, &selection(2, 2))
+    let target = insert_table_after_cursor(&loro, &selection(2, 2), Table::grid(2, 2))
         .expect("insert ok")
         .expect("a cursor was placed");
     assert_eq!(target, first_cell_caret(1));
@@ -252,7 +252,7 @@ fn insert_table_returns_first_cell_caret() {
 #[test]
 fn insert_table_without_cursor_is_a_noop() {
     let loro = doc_with_text("hello");
-    let target = insert_table_after_cursor(&loro, &CursorState::new()).unwrap();
+    let target = insert_table_after_cursor(&loro, &CursorState::new(), Table::grid(2, 2)).unwrap();
     assert!(target.is_none(), "no cursor → no table, no caret");
 }
 

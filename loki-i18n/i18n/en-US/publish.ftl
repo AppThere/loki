@@ -27,7 +27,6 @@ publish-export-error = Export failed: { $reason }
 publish-export-cancelled = Export cancelled.
 
 # Metadata editor — Dublin Core Elements and Terms
-metadata-panel-title = Document Metadata (Dublin Core)
 metadata-title = Title
 metadata-creator = Author (Creator)
 metadata-subject = Subject
@@ -46,6 +45,3 @@ metadata-relation = Relation
 metadata-coverage = Coverage
 metadata-issued = Date issued
 metadata-citation = Bibliographic citation
-metadata-save = Save
-metadata-cancel = Cancel
-metadata-saved = Metadata updated.

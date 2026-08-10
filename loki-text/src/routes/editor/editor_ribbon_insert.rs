@@ -8,11 +8,17 @@
 //!
 //! - **Image** — picks a file, embeds it as a `data:` URI, and inserts an
 //!   `Inline::Image` at the cursor (see [`super::editor_insert`]).
-//! - **Table** — inserts an empty 2×2 table after the cursor's block; its cells
-//!   are live editable containers (click in to edit).
+//! - **Table** — opens the Insert table dialog ([`super::table_dialog`]), which
+//!   commits a configured table after the cursor's block; its cells are live
+//!   editable containers (click in to edit).
 //! - **Footnote** — inserts a footnote at the cursor with an empty, editable
 //!   body.
-//! - **Link** — opens the URL panel ([`super::editor_insert_panel`]).
+//! - **Link** — opens the Insert link dialog ([`super::link_dialog`]).
+//!
+//! Table and Link once inserted a bare 2×2 grid and opened a one-field URL
+//! panel. Both were retired when the dialogs landed: two doors to one action,
+//! one of which quietly produced a table with no header row, is a worse offer
+//! than one door that asks.
 
 use std::sync::{Arc, Mutex};
 
@@ -26,10 +32,12 @@ use loki_doc_model::MutationError;
 use loki_i18n::fl;
 use loro::LoroDoc;
 
-use super::editor_insert::{insert_footnote_at_cursor, insert_table_after_cursor};
+use super::editor_insert::insert_footnote_at_cursor;
 use super::editor_keydown_ctrl::post_mutation_sync;
 use super::editor_keydown_text::set_collapsed_cursor;
 use super::editor_ribbon_insert_image::spawn_pick_and_insert_image;
+use super::link_dialog::LinkDraft;
+use super::table_dialog::TableSpec;
 use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
@@ -58,15 +66,15 @@ pub(super) struct InsertCtx {
 /// opens the URL panel); `ctx` carries the handles the Image button needs to
 /// pick a file and insert it at the cursor.
 ///
-/// `dialogs` carries the configured counterparts of the Table and Link
-/// buttons — the tabbed dialogs of design sections 5 and 6. Both sit *beside*
-/// the one-click actions rather than replacing them: a 2×2 table and a bare URL
-/// are still one press away, and the "…" buttons are the path that asks first.
+/// `dialogs` carries the Table and Link dialogs (design sections 5 and 6); `ctx`
+/// carries the handles the Image and Footnote buttons need to mutate at the
+/// cursor directly, which they still do — neither has anything to configure.
 pub(super) fn insert_tab_content(
-    mut link_draft: Signal<Option<String>>,
     dialogs: super::editor_dialog_state::DialogSignals,
     ctx: InsertCtx,
 ) -> Element {
+    let mut insert_table = dialogs.insert_table;
+    let mut insert_link = dialogs.insert_link;
     // Priorities (higher = kept full longer): Media/Tables over References/Links.
     let media = RibbonGroupSpec {
         metrics: estimate_group_metrics(3, 1, true),
@@ -87,31 +95,23 @@ pub(super) fn insert_tab_content(
     };
 
     let tables = RibbonGroupSpec {
-        metrics: estimate_group_metrics(2, 2, true),
+        metrics: estimate_group_metrics(2, 1, true),
         label: Some(fl!("ribbon-group-tables")),
         aria_label: fl!("ribbon-group-tables"),
         content: rsx! {
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-insert-table-aria"),
-                is_active:   false,
+                is_active:   insert_table.read().is_some(),
                 is_disabled: false,
-                on_click: {
-                    let ctx = ctx.clone();
-                    move |_| run_insert(
-                        &ctx,
-                        // Move the caret into the new table's first cell.
-                        |ldoc, cur| insert_table_after_cursor(ldoc, cur).map(|target| {
-                            match target {
-                                Some(pos) => InsertResult::Inserted(Some(pos)),
-                                None => InsertResult::NoCursor,
-                            }
-                        }),
-                        fl!("editor-insert-table-success"),
-                    )
+                on_click: move |_| {
+                    if insert_table.read().is_some() {
+                        insert_table.set(None);
+                    } else {
+                        insert_table.set(Some(TableSpec::default()));
+                    }
                 },
                 AtIcon { path_d: LUCIDE_TABLE.to_string() }
             }
-            {super::editor_ribbon_dialogs::table_button(dialogs.insert_table)}
         },
     };
 
@@ -146,24 +146,23 @@ pub(super) fn insert_tab_content(
     };
 
     let links = RibbonGroupSpec {
-        metrics: estimate_group_metrics(0, 2, true),
+        metrics: estimate_group_metrics(0, 1, true),
         label: Some(fl!("ribbon-group-links")),
         aria_label: fl!("ribbon-group-links"),
         content: rsx! {
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-insert-link-aria"),
-                is_active:   link_draft.read().is_some(),
+                is_active:   insert_link.read().is_some(),
                 is_disabled: false,
                 on_click: move |_| {
-                    if link_draft.read().is_some() {
-                        link_draft.set(None);
+                    if insert_link.read().is_some() {
+                        insert_link.set(None);
                     } else {
-                        link_draft.set(Some(String::new()));
+                        insert_link.set(Some(LinkDraft::default()));
                     }
                 },
                 AtIcon { path_d: LUCIDE_LINK.to_string() }
             }
-            {super::editor_ribbon_dialogs::link_button(dialogs.insert_link)}
         },
     };
 

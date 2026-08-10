@@ -36,7 +36,6 @@ use loro::LoroValue;
 use super::editor_canvas::render_canvas_area;
 use super::editor_docked_panels::{DockedSync, docked_panels};
 use super::editor_load::load_document;
-use super::editor_metadata_panel::metadata_panel;
 use super::editor_path_sync::{
     PathSyncSignals, restore_session, stash_outgoing, sync_path_and_reset,
 };
@@ -119,7 +118,6 @@ pub(super) fn EditorInner(path: String) -> Element {
         recent_highlights,
         is_publish_panel_open,
         pdf_level,
-        editing_metadata,
         paragraph_style_dialog,
         dialogs,
     } = use_editor_state();
@@ -133,8 +131,6 @@ pub(super) fn EditorInner(path: String) -> Element {
     let language_status = use_signal(|| Option::<String>::None);
     // Key of the spelling-menu row currently hovered (Blitz has no CSS :hover).
     let spell_hover = use_signal(|| Option::<String>::None);
-    // Insert-tab hyperlink panel: `Some(url)` while open (Spec 04 M4).
-    let link_draft = use_signal(|| Option::<String>::None);
     // Character style in the style panel (Spec 05 M6): id → inspector, draft → form.
     let editing_char_style = use_signal(|| Option::<String>::None);
     let editing_char_draft = use_signal(|| Option::<StyleDraft>::None);
@@ -246,9 +242,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_keydown = Arc::clone(&doc_state);
     let doc_state_pages = Arc::clone(&doc_state);
     let doc_state_ribbon = Arc::clone(&doc_state);
-    let doc_state_publish = Arc::clone(&doc_state);
     let doc_state_publish_panel = Arc::clone(&doc_state);
-    let doc_state_meta = Arc::clone(&doc_state);
     let doc_state_docked = Arc::clone(&doc_state);
     let doc_state_style_picker = Arc::clone(&doc_state);
     let doc_state_style_editor = Arc::clone(&doc_state);
@@ -677,24 +671,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 is_language_panel_open,
                 language_status,
                 spell_hover,
-                link_draft,
             )}
-
-            // ── Metadata editor panel (Dublin Core) ───────────────────────────
-            if editing_metadata.read().is_some() {
-                {metadata_panel(
-                    doc_state_meta,
-                    editing_metadata,
-                    save_message,
-                    super::editor_metadata_panel::MetaPanelSync {
-                        loro_doc,
-                        cursor_state,
-                        undo_manager,
-                        can_undo,
-                        can_redo,
-                    },
-                )}
-            }
 
             // ── PDF/X export panel (conformance-level picker) ─────────────────
             if is_publish_panel_open() {
@@ -726,16 +703,14 @@ pub(super) fn EditorInner(path: String) -> Element {
                     1 => super::editor_ribbon_span::format_tab_content(
                         loro_doc, cursor_state, open_color_picker, dialogs.span_format,
                     ),
-                    2 => insert_tab_content(link_draft, dialogs, insert_ctx.clone()),
+                    2 => insert_tab_content(dialogs, insert_ctx.clone()),
                     7 if table_selected => super::editor_ribbon_table::table_tab_content(
                         &doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo,
                     ),
                     3 => super::editor_ribbon_layout::layout_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo, dialogs.page_style),
                     4 => super::editor_ribbon_references::references_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
                     5 => super::editor_ribbon_review::review_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
-                    6 => publish_tab_content(
-                        &doc_state_publish, is_publish_panel_open, editing_metadata, dialogs,
-                    ),
+                    6 => publish_tab_content(is_publish_panel_open, dialogs),
                     _ => write_tab_content(
                     &doc_state_ribbon,
                     loro_doc,

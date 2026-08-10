@@ -8,16 +8,11 @@
 //! actions themselves ([`run_export`]) and the PDF/X level panel live in
 //! [`super::editor_publish`].
 
-use std::sync::{Arc, Mutex};
-
 use appthere_ui::{
     AtRibbonGroups, AtRibbonIconButton, RibbonGroupSpec, estimate_group_metrics, tokens,
 };
 use dioxus::prelude::*;
 use loki_i18n::fl;
-
-use super::editor_metadata::{MetaDraft, meta_to_draft};
-use crate::editing::state::DocumentState;
 
 /// Builds the Publish tab ribbon content (Export + Metadata groups).
 ///
@@ -25,14 +20,15 @@ use crate::editing::state::DocumentState;
 /// opens the **Publish EPUB 3** dialog (design section 7) rather than exporting
 /// straight away — the export itself still runs through [`run_export`], from
 /// the dialog's Publish button, once the standing preflight has been seen.
+/// Takes no document handle: all three buttons now open a surface that reads the
+/// document itself — the PDF/X level panel, the EPUB dialog, the properties
+/// dialog — where this tab used to build a metadata draft inline.
 pub(super) fn publish_tab_content(
-    doc_state: &Arc<Mutex<DocumentState>>,
     mut is_publish_panel_open: Signal<bool>,
-    mut editing_metadata: Signal<Option<MetaDraft>>,
     dialogs: super::editor_dialog_state::DialogSignals,
 ) -> Element {
-    let ds_meta = Arc::clone(doc_state);
     let mut publish_epub = dialogs.publish_epub;
+    let mut metadata = dialogs.metadata;
 
     // Export (PDF/X + EPUB) is kept full longer than the single Metadata button.
     let export = RibbonGroupSpec {
@@ -63,36 +59,33 @@ pub(super) fn publish_tab_content(
         },
     };
 
-    let metadata = RibbonGroupSpec {
-        metrics: estimate_group_metrics(0, 2, true),
+    let metadata_group = RibbonGroupSpec {
+        metrics: estimate_group_metrics(0, 1, true),
         label: Some(fl!("publish-group-metadata")),
         aria_label: fl!("publish-group-metadata"),
         content: rsx! {
+            // The tabbed document properties dialog (design section 4): the
+            // Dublin Core fields the docked panel carried, plus identifiers, an
+            // accessibility review and live statistics. It replaced that panel
+            // rather than sitting beside it — one door to one document's
+            // properties.
             AtRibbonIconButton {
                 aria_label: fl!("publish-metadata-aria"),
-                is_active: editing_metadata.read().is_some(),
+                is_active: metadata(),
                 is_disabled: false,
                 on_click: move |_| {
-                    if editing_metadata.read().is_some() {
-                        editing_metadata.set(None);
-                    } else {
-                        editing_metadata.set(Some(meta_to_draft(&ds_meta)));
-                    }
+                    let is_open = metadata();
+                    metadata.set(!is_open);
                 },
                 {label_node(&fl!("publish-metadata-label"))}
             }
-            // The tabbed document properties dialog (design section 4): the
-            // same Dublin Core fields, plus identifiers, an accessibility
-            // review and live statistics. The quick panel above stays — it is
-            // the two-field edit this is not.
-            {super::editor_ribbon_dialogs::properties_button(dialogs.metadata)}
         },
     };
 
     rsx! {
         AtRibbonGroups {
             overflow_aria_label: fl!("ribbon-overflow-aria"),
-            groups: vec![export, metadata],
+            groups: vec![export, metadata_group],
         }
     }
 }

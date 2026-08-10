@@ -125,10 +125,6 @@ pub fn insert_image_at_cursor(
     Ok(true)
 }
 
-/// Default dimensions for the Insert → Table control.
-const DEFAULT_TABLE_ROWS: usize = 2;
-const DEFAULT_TABLE_COLS: usize = 2;
-
 /// Inserts an empty footnote at the cursor's focus position.
 ///
 /// The note anchors at the cursor and its body is a single empty paragraph the
@@ -151,24 +147,26 @@ pub fn insert_footnote_at_cursor(
     Ok(true)
 }
 
-/// Inserts a default empty table immediately after the cursor's (root) block.
+/// Inserts `table` immediately after the cursor's (root) block.
 ///
 /// Returns the caret position for the table's first cell (so the caller can move
 /// the cursor into it after relayout — plan 4a.5), or `None` when there is no
 /// cursor. The table's cells are empty paragraphs the user edits by clicking or
 /// typing into them.
+///
+/// The table is a parameter rather than a fixed grid because the Insert table
+/// dialog builds a configured one — header row, caption, width — and there is
+/// no reason for two insertion paths when only the payload differs.
 pub fn insert_table_after_cursor(
     loro: &LoroDoc,
     cursor: &CursorState,
+    table: Table,
 ) -> Result<Option<DocumentPosition>, MutationError> {
     let Some(focus) = cursor.focus.as_ref() else {
         return Ok(None);
     };
-    let table = Block::Table(Box::new(Table::grid(
-        DEFAULT_TABLE_ROWS,
-        DEFAULT_TABLE_COLS,
-    )));
-    let new_index = insert_block_after(loro, focus.paragraph_index, &table)?;
+    let block = Block::Table(Box::new(table));
+    let new_index = insert_block_after(loro, focus.paragraph_index, &block)?;
     Ok(Some(first_cell_caret(new_index)))
 }
 

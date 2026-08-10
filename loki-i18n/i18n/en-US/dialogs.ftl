@@ -167,6 +167,8 @@ page-dialog-border-export-note = Page borders survive ODF and OOXML. EPUB has no
 
 page-dialog-preview = Preview
 page-dialog-preview-caption = { $width } × { $height } { $unit } · { $orientation } · { $mirrored }
+page-dialog-preview-mirrored = mirrored margins
+page-dialog-preview-not-mirrored = same margins on every page
 page-dialog-text-area = Text area { $width } × { $height } { $unit }
 
 ## ─────────────────────────────────────────────────────────────────────────

@@ -18,11 +18,10 @@ use std::sync::{Arc, Mutex};
 use appthere_ui::responsive::use_breakpoint;
 use appthere_ui::{AtDialogButton, AtDialogShell, DialogPosture, DialogWidth, tokens};
 use dioxus::prelude::*;
-use loki_doc_model::content::block::Block;
 use loki_i18n::fl;
 
-use super::editor_insert::first_cell_caret;
-use super::editor_insert_panel::InsertLinkSync;
+use super::editor_insert::insert_table_after_cursor;
+use super::editor_insert_sync::InsertLinkSync;
 use super::editor_keydown_ctrl::post_mutation_sync;
 use super::editor_keydown_text::set_collapsed_cursor;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
@@ -124,12 +123,9 @@ fn insert_table(
         return false;
     };
     let cursor = sync.cursor_state.read().clone();
-    let Some(focus) = cursor.focus.as_ref() else {
-        return false;
-    };
-    let block = Block::Table(Box::new(build_table(spec)));
-    let Ok(new_index) = loki_doc_model::insert_block_after(ldoc, focus.paragraph_index, &block)
-    else {
+    // The same insertion the ribbon used, given a configured table instead of a
+    // bare grid — one tested path for placing a table and finding its caret.
+    let Ok(Some(caret)) = insert_table_after_cursor(ldoc, &cursor, build_table(spec)) else {
         return false;
     };
     apply_mutation_and_relayout(doc_state, ldoc);
@@ -142,9 +138,9 @@ fn insert_table(
         sync.can_undo,
         sync.can_redo,
     );
-    // Park the caret in the first cell, the way the ribbon's insert does — a
-    // table you have to click into before typing is a table inserted twice.
-    // After the relayout, so the position resolves against the fresh pages.
-    set_collapsed_cursor(doc_state, sync.cursor_state, first_cell_caret(new_index));
+    // Park the caret in the first cell — a table you have to click into before
+    // typing is a table inserted twice. After the relayout, so the position
+    // resolves against the fresh pages.
+    set_collapsed_cursor(doc_state, sync.cursor_state, caret);
     true
 }
