@@ -159,6 +159,15 @@ pub fn AtRibbonSplitButton(props: AtRibbonSplitButtonProps) -> Element {
             return;
         };
         let Some(rect) = *menu_target.read() else {
+            // Mirrors `AtZoomControl`'s effect: closing is a state change too,
+            // and this is the only place that can turn it into a `dismiss()`.
+            // Without it, a row's own `on_dismiss` (which only resets
+            // `menu_target`) never reaches the host's `ctx.open`/`ctx.resolved`
+            // — `AtPopoverContext::dismiss_with` (the cause-carrying path a row
+            // click takes) calls the consumer's `on_dismiss` but does not clear
+            // that state itself, so the backdrop is left mounted, eating every
+            // click in the app.
+            anchor.dismiss();
             return;
         };
         let menu_target_reset = menu_target;
