@@ -39,8 +39,18 @@ which never re-creates, kept working). The patch:
   the create dialog) instead of trusting `suggested_name` — the name drives
   format detection on export.
 
-**Removal condition:** upstream `loki-file-access` ships the equivalent fix;
-then drop the `[patch]` entry and `patches/loki-file-access/`.
+**`FileAccessToken::from_path` (PATCH(loki), 2026-08-11, §13).** The token
+type deliberately has no public constructor — pickers mint tokens — but OS
+launch surfaces (argv "Open with", file-manager double-click, and later the
+single-instance forward) hand the app a bare path with no picker in the
+loop. `from_path` (desktop targets only) canonicalizes the path — which also
+verifies existence, so a mistyped argument fails at construction with the
+OS error — and builds the `Desktop` token variant. Used by
+`loki-text::routes::startup_open`.
+
+**Removal condition:** upstream `loki-file-access` ships the equivalent fix
+**and** a public `from_path`; then drop the `[patch]` entry and
+`patches/loki-file-access/`.
 
 ### appthere-color — 0.1.1 (vendored, not patched)
 

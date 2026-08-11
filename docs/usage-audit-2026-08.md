@@ -347,9 +347,15 @@ the manifest exists in two places that must be edited together). iOS is
 blocked on the §5 harness. Desktop associations need the §5 packaging assets
 (`.desktop` MimeType, `CFBundleDocumentTypes`, registry) — none exist.
 
-**Plan (layered).** (1) `loki-file-access`: public `FileAccessToken::
-from_path` (desktop) / `from_content_uri` (Android) — patch + upstream. (2)
-argv → stash before launch → seed tabs/route instead of Home. (3) Android:
+**Plan (layered).** **(1) and (2) landed 2026-08-11**: the vendored patch
+gained `FileAccessToken::from_path` (desktop; canonicalize-validated —
+documented in docs/patches.md), and loki-text stashes argv paths before
+launch (`startup_files`), then the router shell drains the stash once and
+seeds tabs (`routes/startup_open`): supported formats open in place and
+enter recents, templates and import-only formats open detached (the same
+`opens_as_detached_copy` posture as the picker), unopenable arguments are
+logged and skipped, and the app lands on the first opened document's editor
+instead of Home. `from_content_uri` (Android) remains open. (3) Android:
 VIEW intent-filter (MIME strings already exist in `home_templates.rs`) +
 `launchMode="singleTask"` + intent handling in `android_main` — this *is*
 Android's single-instance answer. (4) Desktop single-instance forward (socket

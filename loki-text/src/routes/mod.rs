@@ -16,6 +16,7 @@ pub mod home;
 mod home_templates;
 mod home_util;
 pub mod shell;
+mod startup_open;
 
 use dioxus::prelude::*;
 use editor::Editor;

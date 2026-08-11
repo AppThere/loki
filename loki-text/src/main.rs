@@ -39,6 +39,8 @@ fn init_logging() {
 
 fn main() {
     init_logging();
+    // §13: files handed to us by the OS (file-manager "Open with", argv).
+    loki_text::startup_files::stash_from_args(std::env::args().skip(1));
     loki_i18n::init();
     // Window: proper product title (instead of winit's "Dioxus App") and the
     // last session's inner size (persisted by `window_state`; falls back to a

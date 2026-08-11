@@ -94,6 +94,12 @@ pub fn Shell() -> Element {
     let mut active_tab = use_context::<Signal<usize>>();
     let doc_sessions = use_context::<Signal<DocSessions>>();
     let navigator = use_navigator();
+    let recent_docs_startup = use_context::<Signal<crate::recent_documents::RecentDocuments>>();
+    // §13: launch-argument files become tabs once, as soon as the router
+    // shell exists (the stash drains to empty, so re-renders no-op).
+    use_effect(move || {
+        super::startup_open::seed_pending(navigator, tabs, active_tab, recent_docs_startup);
+    });
     // A dirty tab awaiting close confirmation: `(tab-bar index, title)`.
     // While `Some`, the confirmation dialog overlays the shell (plan 4b.6).
     let mut pending_close: Signal<Option<(usize, String)>> = use_signal(|| None);

@@ -142,6 +142,36 @@ impl FileAccessToken {
         Ok(())
     }
 
+    /// Constructs a token for a local filesystem path — the trusted-caller
+    /// entry the picker flows do not need but OS launch surfaces do (§13:
+    /// argv "open with", file-manager double-click, single-instance
+    /// forwarding). Desktop platforms only: everywhere else file access
+    /// arrives through platform grant objects (content URIs, bookmarks) that
+    /// a bare path cannot represent.
+    ///
+    /// The path is canonicalized, which also verifies the file exists — a
+    /// mistyped argument fails here, with the OS error, rather than
+    /// surfacing later as an unreadable token.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AccessError`] when the path cannot be canonicalized (does
+    /// not exist, permission denied, broken symlink).
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Self, AccessError> {
+        let canonical = path.as_ref().canonicalize()?;
+        let display_name = canonical
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| canonical.to_string_lossy().into_owned());
+        Ok(Self {
+            inner: TokenInner::Desktop {
+                path: canonical,
+                display_name,
+            },
+        })
+    }
+
     /// Returns the user-visible display name of the file (typically the filename).
     #[must_use]
     pub fn display_name(&self) -> &str {

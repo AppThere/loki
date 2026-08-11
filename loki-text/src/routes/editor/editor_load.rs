@@ -20,7 +20,7 @@ use crate::new_document;
 
 /// Detected document format, derived from the file extension in the token's
 /// display name.
-pub(super) enum DocumentFormat {
+pub(crate) enum DocumentFormat {
     Docx,
     Odt,
     Markdown,
@@ -30,7 +30,7 @@ pub(super) enum DocumentFormat {
 
 /// Inspect the display name on `token` and return the [`DocumentFormat`] for
 /// this file.  The extension comparison is case-insensitive.
-pub(super) fn detect_format(token: &FileAccessToken) -> DocumentFormat {
+pub(crate) fn detect_format(token: &FileAccessToken) -> DocumentFormat {
     match token
         .display_name()
         .rsplit('.')

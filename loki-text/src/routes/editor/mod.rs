@@ -48,6 +48,7 @@ mod editor_language_panel;
 mod editor_layout_task;
 mod editor_lists;
 mod editor_load;
+pub(in crate::routes) use editor_load::{DocumentFormat, detect_format};
 mod editor_macro_apply;
 mod editor_macro_bridge;
 mod editor_macro_editor;

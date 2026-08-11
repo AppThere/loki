@@ -20,6 +20,7 @@ pub mod new_document;
 pub mod recent_documents;
 pub mod routes;
 pub mod sessions;
+pub mod startup_files;
 pub mod tabs;
 pub mod texture_budget;
 pub mod utils;
