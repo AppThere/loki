@@ -64,8 +64,10 @@ pub(super) fn build_sections(
             current_master = Some(nm.clone());
         }
 
-        if let Some(block) = map_body_child(child, ctx) {
-            current_blocks.push(block);
+        let mapped = map_body_child(child, ctx);
+        let had_any = !mapped.is_empty();
+        current_blocks.extend(mapped);
+        if had_any {
             let figs = std::mem::take(&mut ctx.pending_figures);
             current_blocks.extend(figs);
         }

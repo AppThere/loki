@@ -4,14 +4,12 @@
 //! Block-level mapping for lists, tables, tables of contents, and sections.
 
 use loki_doc_model::content::attr::NodeAttr;
-use loki_doc_model::content::block::{
-    Block, ListAttributes, ListDelimiter, ListNumberStyle, TableOfContentsBlock,
-};
+use loki_doc_model::content::block::{Block, TableOfContentsBlock};
 use loki_doc_model::content::table::col::{ColAlignment, ColSpec, ColWidth};
 use loki_doc_model::content::table::core::{Table, TableBody, TableCaption, TableFoot, TableHead};
 use loki_doc_model::content::table::row::{Cell, Row};
 use loki_doc_model::style::catalog::StyleCatalog;
-use loki_doc_model::style::list_style::{ListId, ListLevelKind, NumberingScheme};
+use loki_doc_model::style::list_style::{ListId, ListLevelKind};
 
 use crate::limits::MAX_TABLE_COLUMNS;
 use crate::odt::mapper::props::map_cell_props;
@@ -26,46 +24,149 @@ use super::map_body_children;
 
 // ── Lists ──────────────────────────────────────────────────────────────────────
 
-pub(super) fn map_list(list: &OdfList, ctx: &mut OdfMappingContext<'_>) -> Block {
-    let ordered = is_ordered_list(list.style_name.as_deref(), ctx.styles);
-    let items: Vec<Vec<Block>> = list
-        .items
-        .iter()
-        .map(|item| map_list_item(item, ctx))
-        .collect();
+/// Deepest list level the model addresses (levels are `0..=8`, matching the
+/// nine-level `ListStyle` definitions and both export writers).
+const MAX_LIST_LEVEL: u8 = 8;
 
-    if ordered {
-        let mut attrs = build_list_attributes(list, ctx.styles);
-        // Per-item start_value on the first item overrides the style-level start.
-        // text:continue-numbering is not tracked across lists (no cross-list state),
-        // so only the explicit start_value override is applied here.
-        if let Some(first_start) = list.items.first().and_then(|i| i.start_value) {
-            attrs.start_number = first_start.cast_signed();
-        }
-        Block::OrderedList(attrs, items)
+/// Maps a `<text:list>` tree onto the modern flat representation (§10 path
+/// A): one `StyledPara` per item paragraph, carrying `list_id` +
+/// `list_level`, nested `<text:list>` elements becoming deeper levels of the
+/// same run. This retires the legacy pandoc `BulletList`/`OrderedList`
+/// emission, whose items were read-only in the editor (no `PathStep`
+/// addressed them) and whose rendering hardcoded level-0 markers.
+///
+/// The list style reference is `text:style-name`, which the catalog already
+/// holds as a [`ListStyle`](loki_doc_model::style::list_style::ListStyle)
+/// (read by `styles_list_style`). A list with no resolvable style falls back
+/// to the built-in default of its kind — seeded into the catalog after
+/// mapping via the context's `needs_default_*` flags, so the reference is
+/// never dangling.
+///
+/// The model's start value lives in the shared style, not per item, so a
+/// `text:start-value` on the **first** item (the "this list starts at N"
+/// idiom) is preserved by synthesizing a derived style — the base style with
+/// that level's start replaced, under a derived id — collected on the
+/// context and merged into the catalog after mapping. A restart on a *later*
+/// item (mid-list renumbering) has no model expression and is dropped.
+pub(super) fn map_list(list: &OdfList, level: u8, ctx: &mut OdfMappingContext<'_>) -> Vec<Block> {
+    let mut list_id = resolve_list_id(list.style_name.as_deref(), ctx);
+    if let Some(start) = list.items.first().and_then(|i| i.start_value)
+        && let Some(derived) = derive_start_override(&list_id, level, start, ctx)
+    {
+        list_id = derived;
+    }
+    let mut blocks = Vec::new();
+    for item in &list.items {
+        map_list_item(item, &list_id, level, ctx, &mut blocks);
+    }
+    blocks
+}
+
+/// Synthesizes (or reuses) a derived list style whose `level` starts at
+/// `start`, returning its id — `None` when the base style is not in the
+/// catalog or the level does not exist or is not numbered.
+fn derive_start_override(
+    base_id: &str,
+    level: u8,
+    start: u32,
+    ctx: &mut OdfMappingContext<'_>,
+) -> Option<String> {
+    let derived_id = format!("{base_id}-start{start}-l{level}");
+    if ctx
+        .synthesized_list_styles
+        .iter()
+        .any(|s| s.id.as_str() == derived_id)
+    {
+        return Some(derived_id);
+    }
+    let base = ctx.styles.list_styles.get(&ListId::new(base_id))?;
+    let mut derived = base.clone();
+    let lvl = derived.levels.get_mut(usize::from(level))?;
+    let ListLevelKind::Numbered { start_value, .. } = &mut lvl.kind else {
+        return None;
+    };
+    if *start_value == start {
+        return None; // the base already starts there — no derivation needed
+    }
+    *start_value = start;
+    derived.id = ListId::new(&derived_id);
+    derived.display_name = Some(format!("{base_id} (start {start})"));
+    ctx.synthesized_list_styles.push(derived);
+    Some(derived_id)
+}
+
+/// The catalog id this list's items reference: its own named style when the
+/// catalog defines it, else the default style of its kind (flagging the
+/// context so the default gets seeded).
+fn resolve_list_id(style_name: Option<&str>, ctx: &mut OdfMappingContext<'_>) -> String {
+    if let Some(name) = style_name
+        && ctx.styles.list_styles.contains_key(&ListId::new(name))
+    {
+        return name.to_string();
+    }
+    if is_ordered_list(style_name, ctx.styles) {
+        ctx.needs_default_numbered = true;
+        loki_doc_model::style::list_defaults::DEFAULT_NUMBERED_LIST_ID.to_string()
     } else {
-        Block::BulletList(items)
+        ctx.needs_default_bullet = true;
+        loki_doc_model::style::list_defaults::DEFAULT_BULLET_LIST_ID.to_string()
     }
 }
 
-fn map_list_item(item: &OdfListItem, ctx: &mut OdfMappingContext<'_>) -> Vec<Block> {
-    let mut blocks = Vec::new();
+fn map_list_item(
+    item: &OdfListItem,
+    list_id: &str,
+    level: u8,
+    ctx: &mut OdfMappingContext<'_>,
+    blocks: &mut Vec<Block>,
+) {
     for child in &item.children {
         match child {
             OdfListItemChild::Paragraph(p) | OdfListItemChild::Heading(p) => {
-                let block = map_paragraph(p, ctx);
+                let block = with_list_membership(map_paragraph(p, ctx), list_id, level);
                 blocks.push(block);
                 let figs = std::mem::take(&mut ctx.pending_figures);
                 blocks.extend(figs);
             }
             OdfListItemChild::List(nested) => {
-                blocks.push(map_list(nested, ctx));
+                let deeper = (level + 1).min(MAX_LIST_LEVEL);
+                blocks.extend(map_list(nested, deeper, ctx));
                 let figs = std::mem::take(&mut ctx.pending_figures);
                 blocks.extend(figs);
             }
         }
     }
-    blocks
+}
+
+/// Attaches `list_id`/`list_level` to a mapped item paragraph. A plain
+/// paragraph is promoted to a `StyledPara`; an already-styled one keeps its
+/// style and gains the list props. A heading keeps its heading identity and
+/// stays out of the list (heading-ness carries more: outline level, TOC).
+fn with_list_membership(block: Block, list_id: &str, level: u8) -> Block {
+    let set = |props: &mut loki_doc_model::style::props::para_props::ParaProps| {
+        props.list_id = Some(ListId::new(list_id));
+        props.list_level = Some(level);
+    };
+    match block {
+        Block::Para(inlines) | Block::Plain(inlines) => {
+            let mut props = loki_doc_model::style::props::para_props::ParaProps::default();
+            set(&mut props);
+            Block::StyledPara(loki_doc_model::content::block::StyledParagraph {
+                style_id: None,
+                direct_para_props: Some(Box::new(props)),
+                direct_char_props: None,
+                inlines,
+                attr: NodeAttr::default(),
+            })
+        }
+        Block::StyledPara(mut sp) => {
+            let mut props = sp.direct_para_props.take().unwrap_or_default();
+            set(&mut props);
+            sp.direct_para_props = Some(props);
+            Block::StyledPara(sp)
+        }
+        other => other,
+    }
 }
 
 /// Returns `true` when the first level of the named list style is numbered.
@@ -77,49 +178,6 @@ fn is_ordered_list(style_name: Option<&str>, catalog: &StyleCatalog) -> bool {
     ls.levels
         .first()
         .is_some_and(|l| matches!(l.kind, ListLevelKind::Numbered { .. }))
-}
-
-/// Build [`ListAttributes`] from the first level of the named list style.
-fn build_list_attributes(list: &OdfList, catalog: &StyleCatalog) -> ListAttributes {
-    let default = ListAttributes::default();
-    let Some(name) = list.style_name.as_deref() else {
-        return default;
-    };
-    let Some(ls) = catalog.list_styles.get(&ListId::new(name)) else {
-        return default;
-    };
-    let Some(first) = ls.levels.first() else {
-        return default;
-    };
-    match &first.kind {
-        ListLevelKind::Numbered {
-            scheme,
-            start_value,
-            format,
-            ..
-        } => {
-            let style = match scheme {
-                NumberingScheme::LowerAlpha => ListNumberStyle::LowerAlpha,
-                NumberingScheme::UpperAlpha => ListNumberStyle::UpperAlpha,
-                NumberingScheme::LowerRoman => ListNumberStyle::LowerRoman,
-                NumberingScheme::UpperRoman => ListNumberStyle::UpperRoman,
-                _ => ListNumberStyle::Decimal,
-            };
-            let delimiter = if format.ends_with('.') {
-                ListDelimiter::Period
-            } else if format.ends_with(')') {
-                ListDelimiter::OneParen
-            } else {
-                ListDelimiter::DefaultDelim
-            };
-            ListAttributes {
-                start_number: (*start_value).cast_signed(),
-                style,
-                delimiter,
-            }
-        }
-        _ => default,
-    }
 }
 
 // ── Tables ─────────────────────────────────────────────────────────────────────

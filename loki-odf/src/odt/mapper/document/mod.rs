@@ -32,15 +32,15 @@ use crate::odt::model::styles::{OdfCellProps, OdfStyle, OdfStylesheet};
 use crate::xml_util::parse_length;
 
 mod blocks;
+mod dispatch;
 mod frames;
 mod inlines;
 mod meta;
 mod page;
 mod sections;
 
-use blocks::{map_list, map_section, map_table, map_toc};
+pub(super) use dispatch::{map_body_child, map_body_children};
 use frames::map_graphic_wrap;
-use inlines::map_paragraph;
 use meta::map_meta;
 
 // ── Context ────────────────────────────────────────────────────────────────────
@@ -82,6 +82,16 @@ pub(crate) struct OdfMappingContext<'a> {
     pub comments: Vec<Comment>,
     /// Tracked-change regions keyed by `text:id`, matched to body milestones.
     pub changed_regions: &'a HashMap<String, OdfChangedRegion>,
+    /// Set when a list had no resolvable `text:style-name`, so its items
+    /// reference the built-in default id — `map_document` seeds the matching
+    /// default style after mapping so the reference is never dangling.
+    pub needs_default_bullet: bool,
+    /// Numbered counterpart of [`Self::needs_default_bullet`].
+    pub needs_default_numbered: bool,
+    /// List styles synthesized during mapping (first-item `text:start-value`
+    /// overrides — see `blocks::derive_start_override`), merged into the
+    /// catalog after mapping.
+    pub synthesized_list_styles: Vec<loki_doc_model::style::list_style::ListStyle>,
 }
 
 // ── Public entry point ─────────────────────────────────────────────────────────
@@ -183,7 +193,12 @@ pub(crate) fn map_document(
         .collect();
 
     // ── 4. Map body, detecting master page transitions → multiple sections ────
-    let (sections, warnings, comments) = {
+    let (
+        sections,
+        warnings,
+        comments,
+        (needs_default_bullet, needs_default_numbered, synthesized_list_styles),
+    ) = {
         let mut ctx = OdfMappingContext {
             styles: &catalog,
             images,
@@ -198,6 +213,9 @@ pub(crate) fn map_document(
             pending_figures: Vec::new(),
             comments: Vec::new(),
             changed_regions: &changed_regions,
+            needs_default_bullet: false,
+            needs_default_numbered: false,
+            synthesized_list_styles: Vec::new(),
         };
         let sections = sections::build_sections(
             &doc.body_children,
@@ -206,8 +224,31 @@ pub(crate) fn map_document(
             initial_master,
             &mut ctx,
         );
-        (sections, ctx.warnings, ctx.comments)
+        (
+            sections,
+            ctx.warnings,
+            ctx.comments,
+            (
+                ctx.needs_default_bullet,
+                ctx.needs_default_numbered,
+                ctx.synthesized_list_styles,
+            ),
+        )
     };
+
+    // ── 4a. Seed the built-in default list styles referenced by lists whose
+    // own style name did not resolve (see `resolve_list_id`) — a dangling
+    // list_id would export as the writers' fallback anyway, but a seeded
+    // definition keeps the catalog self-describing.
+    if needs_default_bullet {
+        loki_doc_model::style::list_defaults::ensure_default_bullet(&mut catalog);
+    }
+    if needs_default_numbered {
+        loki_doc_model::style::list_defaults::ensure_default_numbered(&mut catalog);
+    }
+    for style in synthesized_list_styles {
+        catalog.list_styles.entry(style.id.clone()).or_insert(style);
+    }
 
     // ── 4b. Register ODF master-page names as first-class page styles ─────────
     // (ADR-0012 Decision 2) so the panel shows real names and they round-trip;
@@ -250,44 +291,6 @@ pub(crate) fn map_document(
 
 /// Convert a slice of [`OdfBodyChild`]s into [`Block`]s, flushing any
 /// pending floating figures after each block.
-pub(super) fn map_body_children(
-    children: &[OdfBodyChild],
-    ctx: &mut OdfMappingContext<'_>,
-) -> Vec<Block> {
-    let mut blocks = Vec::new();
-    for child in children {
-        if let Some(block) = map_body_child(child, ctx) {
-            blocks.push(block);
-            let figures = std::mem::take(&mut ctx.pending_figures);
-            blocks.extend(figures);
-        }
-    }
-    blocks
-}
-
-pub(super) fn map_body_child(
-    child: &OdfBodyChild,
-    ctx: &mut OdfMappingContext<'_>,
-) -> Option<Block> {
-    match child {
-        OdfBodyChild::Paragraph(para) | OdfBodyChild::Heading(para) => {
-            Some(map_paragraph(para, ctx))
-        }
-        OdfBodyChild::List(list) => Some(map_list(list, ctx)),
-        OdfBodyChild::Table(table) => Some(map_table(table, ctx)),
-        OdfBodyChild::TableOfContent(toc) => Some(map_toc(toc, ctx)),
-        OdfBodyChild::Section(section) => Some(map_section(section, ctx)),
-        // The region table produces no block; its content rides the milestones.
-        OdfBodyChild::TrackedChanges(_) => None,
-        OdfBodyChild::Other { element } => {
-            ctx.warnings.push(OdfWarning::UnrecognisedElement {
-                element: element.clone(),
-                context: "body index block (unimplemented)".to_string(),
-            });
-            None
-        }
-    }
-}
 
 #[cfg(test)]
 #[path = "document_tests.rs"]

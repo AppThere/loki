@@ -95,9 +95,7 @@ impl RenderCtx {
             attrs.push_str(&format!(" style=\"{style}\""));
         }
         out.push_str(&format!("<{tag}{attrs}>"));
-        for block in &cell.blocks {
-            self.render_block(block, out);
-        }
+        self.render_blocks(&cell.blocks, out);
         out.push_str(&format!("</{tag}>"));
     }
 }

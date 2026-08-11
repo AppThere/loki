@@ -243,11 +243,15 @@ everything around it:
   nine-level definitions are flattened to one hardcoded level. ODT write emits
   bare `<text:list>` with no style. **Any list-creation UI shipped before the
   writers is a data-loss feature.**
-- **Two representations**: ODT import still produces the legacy pandoc blocks
-  (level-0 attributes only, hardcoded `•`/`1.` at fixed 18pt, and — because no
-  `PathStep` addresses list items — *ODT-imported lists are read-only*). The
-  2026-04 audit already recommended converging ODT import onto
-  `StyledPara`+`list_id`; that is the single largest simplification.
+- ~~**Two representations**: ODT import still produces the legacy pandoc
+  blocks…~~ **Converged 2026-08-11 (tier 4)**: ODT import now emits
+  `StyledPara`+`list_id`/`list_level` — flat runs, nested `<text:list>`
+  becoming deeper levels — so ODT-imported lists are editable, and the ODT
+  round trip preserves membership and depth end to end. A list whose
+  `text:style-name` does not resolve references the seeded built-in default;
+  a first-item `text:start-value` survives as a synthesized derived style
+  (`{base}-startN-lL`). Dropped knowingly: a restart on a *later* item
+  (mid-list renumbering has no model expression).
 - Style panel's list family is a read-only browser (no draft, no commit fn,
   no per-level form).
 
@@ -263,7 +267,10 @@ notes, frames). Round-trip tested both formats. **(3) landed 2026-08-10**:
 Write-tab Lists group (bullet/numbered toggles seeded from the defaults,
 indent/outdent) + the Tab/Shift-Tab keydown arm (level change only inside a
 list item; otherwise the default focus traversal proceeds). Still open:
-(4) ODT import convergence onto path A (retires the read-only path). (5)
+~~(4) ODT import convergence~~ (**landed 2026-08-11** — see above; the same
+pass taught EPUB export to render path-A runs as nested `<ul>`/`<ol>`, which
+the convergence would otherwise have silently downgraded to plain
+paragraphs). (5)
 Per-level list-style editor form in the style panel. (6) Refinements: label
 alignment, `lvlText` restarts, `"- "` autoformat (greenfield).
 

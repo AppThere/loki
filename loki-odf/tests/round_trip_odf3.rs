@@ -14,6 +14,7 @@ use std::io::Cursor;
 
 use loki_doc_model::content::block::Block;
 use loki_doc_model::style::catalog::StyleId;
+use loki_doc_model::style::list_style::ListLevelKind;
 use loki_odf::error::OdfWarning;
 use loki_odf::odt::import::{OdtImportOptions, OdtImporter};
 
@@ -217,19 +218,31 @@ fn odf13_list_item_start_value_override() {
         .flat_map(|s| s.blocks.iter())
         .collect();
 
-    let start = all_blocks
+    // §10 path A: the items are styled paragraphs whose list_id names a
+    // *derived* style — the base style with the level-0 start replaced by the
+    // first item's text:start-value (see `derive_start_override`).
+    let list_id = all_blocks
         .iter()
         .find_map(|b| {
-            if let Block::OrderedList(attrs, _) = b {
-                Some(attrs.start_number)
+            if let Block::StyledPara(sp) = b {
+                sp.direct_para_props.as_ref()?.list_id.clone()
             } else {
                 None
             }
         })
-        .expect("document must contain an OrderedList block");
+        .expect("document must contain list items");
 
+    let style = result
+        .document
+        .styles
+        .list_styles
+        .get(&list_id)
+        .expect("the referenced (derived) list style must be in the catalog");
+    let ListLevelKind::Numbered { start_value, .. } = &style.levels[0].kind else {
+        panic!("level 0 must be numbered");
+    };
     assert_eq!(
-        start, 3,
-        "text:start-value=\"3\" must override start_number to 3, got {start}"
+        *start_value, 3,
+        "text:start-value=\"3\" must survive as the derived style's start"
     );
 }

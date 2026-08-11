@@ -42,14 +42,16 @@ fn import_rich_odt_smoke() {
     let has_heading = all_blocks.iter().any(|b| matches!(b, Block::Heading(..)));
     assert!(has_heading, "at least one Block::Heading must be present");
 
-    // ── 3. At least one BulletList ──────────────────────────────────────────
-    let has_bullet_list = all_blocks
-        .iter()
-        .any(|b| matches!(b, Block::BulletList(..)));
-    assert!(
-        has_bullet_list,
-        "at least one Block::BulletList must be present"
-    );
+    // ── 3. At least one list item (§10 path A: a StyledPara with list
+    // membership — the tier-4 convergence retired BulletList emission) ──────
+    let has_list_item = all_blocks.iter().any(|b| match b {
+        Block::StyledPara(sp) => sp
+            .direct_para_props
+            .as_ref()
+            .is_some_and(|pp| pp.list_id.is_some()),
+        _ => false,
+    });
+    assert!(has_list_item, "at least one list item must be present");
 }
 
 // ── Gap coverage tests ─────────────────────────────────────────────────────────

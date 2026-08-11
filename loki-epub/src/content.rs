@@ -47,6 +47,20 @@ pub struct RenderedContent {
 pub fn render_content(doc: &Document) -> RenderedContent {
     let mut ctx = RenderCtx {
         field_env: FieldEnv::from_meta(&doc.meta),
+        numbered_list_ids: doc
+            .styles
+            .list_styles
+            .iter()
+            .filter(|(_, ls)| {
+                ls.levels.first().is_some_and(|l| {
+                    matches!(
+                        l.kind,
+                        loki_doc_model::style::list_style::ListLevelKind::Numbered { .. }
+                    )
+                })
+            })
+            .map(|(id, _)| id.as_str().to_string())
+            .collect(),
         comments: doc
             .comments
             .iter()
@@ -56,9 +70,7 @@ pub fn render_content(doc: &Document) -> RenderedContent {
     };
     let mut body = String::new();
     for section in &doc.sections {
-        for block in &section.blocks {
-            ctx.render_block(block, &mut body);
-        }
+        ctx.render_blocks(&section.blocks, &mut body);
     }
     // Comments have no native EPUB element: each referenced comment is emitted as
     // an `<aside>` at the end of the body, linked from its inline ref marker.
@@ -86,6 +98,9 @@ pub(crate) struct RenderCtx {
     /// Static values for metadata-backed fields (Title/Author/Subject), used to
     /// resolve an [`Inline::Field`] whose `current_value` snapshot is absent.
     pub(crate) field_env: FieldEnv,
+    /// List-style ids whose level 0 is numbered — drives `<ol>` vs `<ul>` for
+    /// §10 path-A list runs (see [`crate::list_runs`]).
+    pub(crate) numbered_list_ids: std::collections::HashSet<String>,
     /// Comment bodies keyed by id, matched against [`Inline::Comment`] anchors.
     pub(crate) comments: HashMap<String, Comment>,
     /// Comment ids in first-reference order — drives the marker numbering and
@@ -119,9 +134,7 @@ impl RenderCtx {
             Block::OrderedList(_attrs, items) => self.render_list("ol", items, out),
             Block::BlockQuote(blocks) => {
                 out.push_str("<blockquote>\n");
-                for b in blocks {
-                    self.render_block(b, out);
-                }
+                self.render_blocks(blocks, out);
                 out.push_str("</blockquote>\n");
             }
             Block::CodeBlock(_attr, code) => {
@@ -148,9 +161,7 @@ impl RenderCtx {
                     out.push_str("</dt>\n");
                     for def in defs {
                         out.push_str("<dd>\n");
-                        for b in def {
-                            self.render_block(b, out);
-                        }
+                        self.render_blocks(def, out);
                         out.push_str("</dd>\n");
                     }
                 }
@@ -159,22 +170,16 @@ impl RenderCtx {
             Block::Table(table) => self.render_table(table, out),
             Block::Figure(_attr, caption, blocks) => {
                 out.push_str("<figure>\n");
-                for b in blocks {
-                    self.render_block(b, out);
-                }
+                self.render_blocks(blocks, out);
                 if !caption.full.is_empty() {
                     out.push_str("<figcaption>\n");
-                    for b in &caption.full {
-                        self.render_block(b, out);
-                    }
+                    self.render_blocks(&caption.full, out);
                     out.push_str("</figcaption>\n");
                 }
                 out.push_str("</figure>\n");
             }
             Block::Div(_attr, blocks) => {
-                for b in blocks {
-                    self.render_block(b, out);
-                }
+                self.render_blocks(blocks, out);
             }
             // Generated/auxiliary blocks carry no reflowable body content.
             Block::RawBlock(_, _)
@@ -235,9 +240,7 @@ impl RenderCtx {
                 "<p class=\"comment-byline\">{}</p>\n",
                 crate::xml::escape_text(&byline)
             ));
-            for block in &comment.body {
-                self.render_block(block, out);
-            }
+            self.render_blocks(&comment.body, out);
             out.push_str("</aside>\n");
         }
         out.push_str("</section>\n");

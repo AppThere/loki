@@ -1,14 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! ODT list export (§10 tier 2): `StyledPara.list_id` runs must come back as
-//! *lists* — nested to the right depth, styled from the catalog — not as the
-//! bare styled paragraphs the old writer emitted.
-//!
-//! The ODT importer still produces the legacy pandoc list blocks (the §10
-//! "two representations" gap; convergence is a later tier), so membership is
-//! asserted through that representation: what matters here is that the list
-//! *structure* and the nine-level style survive the trip at all.
+//! ODT list export (§10 tier 2) and, since the tier-4 convergence, the full
+//! round trip: `StyledPara.list_id` runs export as nested `<text:list>`
+//! markup and re-import as the same flat `StyledPara` + `list_id`/`list_level`
+//! run — depth and membership are now first-class on both directions.
 
 use std::io::Cursor;
 
@@ -58,40 +54,35 @@ fn content_xml(bytes: &[u8]) -> String {
     s
 }
 
-/// Collects every text run inside a legacy list block, depth-first, tagged
-/// with its nesting depth.
-fn collect_items(blocks: &[Block], depth: u8, out: &mut Vec<(String, u8)>) {
-    for block in blocks {
-        match block {
-            Block::BulletList(items) | Block::OrderedList(_, items) => {
-                for item_blocks in items {
-                    for b in item_blocks {
-                        match b {
-                            Block::BulletList(_) | Block::OrderedList(_, _) => {
-                                collect_items(std::slice::from_ref(b), depth + 1, out);
-                            }
-                            Block::Para(inl) | Block::Plain(inl) => {
-                                out.push((plain_text(inl), depth));
-                            }
-                            Block::StyledPara(sp) => out.push((plain_text(&sp.inlines), depth)),
-                            _ => {}
-                        }
-                    }
-                }
-            }
+/// Flattens an inline run to its text.
+fn plain_text(inlines: &[Inline]) -> String {
+    let mut out = String::new();
+    for inline in inlines {
+        match inline {
+            Inline::Str(t) => out.push_str(t),
+            Inline::Space => out.push(' '),
             _ => {}
         }
     }
+    out
 }
 
-fn plain_text(inlines: &[Inline]) -> String {
-    inlines
-        .iter()
-        .filter_map(|i| match i {
-            Inline::Str(s) => Some(s.as_str()),
-            _ => None,
-        })
-        .collect()
+/// Collects every list item in a block sequence as
+/// `(text, level, list_id)` — the converged importer emits list items as
+/// top-level `StyledPara`s, so this is a flat walk.
+fn collect_items(blocks: &[Block], out: &mut Vec<(String, u8, String)>) {
+    for block in blocks {
+        if let Block::StyledPara(sp) = block
+            && let Some(props) = sp.direct_para_props.as_ref()
+            && let Some(id) = props.list_id.as_ref()
+        {
+            out.push((
+                plain_text(&sp.inlines),
+                props.list_level.unwrap_or(0),
+                id.as_str().to_string(),
+            ));
+        }
+    }
 }
 
 #[test]
@@ -121,13 +112,16 @@ fn nested_run_exports_as_nested_lists_and_reimports_with_depth() {
 
     let round = import(bytes);
     let mut items = Vec::new();
-    collect_items(&round.sections[0].blocks, 0, &mut items);
+    collect_items(&round.sections[0].blocks, &mut items);
+    // The re-imported id is the exported style name itself — with the tier-4
+    // convergence, membership survives the trip, not just structure.
+    let id = "__default-bullet".to_string();
     assert_eq!(
         items,
         vec![
-            ("top".to_string(), 0),
-            ("nested".to_string(), 1),
-            ("top again".to_string(), 0),
+            ("top".to_string(), 0, id.clone()),
+            ("nested".to_string(), 1, id.clone()),
+            ("top again".to_string(), 0, id),
         ],
         "nesting depth is the payload the flat writer destroyed"
     );
