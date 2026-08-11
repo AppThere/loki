@@ -246,3 +246,60 @@ fn odf13_list_item_start_value_override() {
         "text:start-value=\"3\" must survive as the derived style's start"
     );
 }
+
+/// B8: `style:next-style-name` survives import (the writer already emitted
+/// it; the importer used to hardcode `None`, so a round trip lost every
+/// next-style chain — the data §7(4)'s Enter behaviour runs on).
+#[test]
+fn next_style_name_round_trips_through_import() {
+    let styles = b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-styles \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" \
+        xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\">\
+      <office:automatic-styles/>\
+      <office:styles>\
+        <style:style style:name=\"SceneHeading\" style:family=\"paragraph\" \
+          style:next-style-name=\"Action\"/>\
+        <style:style style:name=\"Action\" style:family=\"paragraph\"/>\
+      </office:styles>\
+      <office:master-styles/>\
+      </office:document-styles>";
+
+    let content = b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-content \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\">\
+      <office:automatic-styles/>\
+      <office:body><office:text>\
+        <text:p text:style-name=\"SceneHeading\">INT. LAB</text:p>\
+      </office:text></office:body>\
+      </office:document-content>";
+
+    let zip = helpers::build_odt_zip(content, styles, None);
+    let result = OdtImporter::new(OdtImportOptions::default())
+        .run(Cursor::new(zip))
+        .expect("import");
+
+    let style = result
+        .document
+        .styles
+        .paragraph_styles
+        .get(&StyleId::new("SceneHeading"))
+        .expect("style imported");
+    assert_eq!(
+        style.next_style_id.as_deref(),
+        Some("Action"),
+        "next-style-name must survive import"
+    );
+    // The style without the attribute keeps None (same-style default).
+    let action = result
+        .document
+        .styles
+        .paragraph_styles
+        .get(&StyleId::new("Action"))
+        .expect("style imported");
+    assert_eq!(action.next_style_id, None);
+}

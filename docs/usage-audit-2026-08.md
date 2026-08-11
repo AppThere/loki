@@ -441,7 +441,7 @@ docs (done in this audit's follow-up), add a typing-workload bench that does
 | B5 | Stale docs: `memory-audit-2026-06-12.md:145` and `spec-06-benchmarking-audit.md:68` assert an undo bound no code sets | docs | Low (doc-only, but per L08-017 it keeps being believed) |
 | B6 | `AtRibbonSelect` doc comment still claims floating overlays are impossible (stale since the popover host) | `ribbon/select.rs:43-48` | Trivial |
 | B7 | Split of a styled paragraph drops `style_id` on the tail block (copies type/props but not the style reference) | `loro_mutation/block.rs:111-152` | Medium — silent style loss on Enter |
-| B8 | ODT import hardcodes `next_style_id: None` (round-trip loses it) | `loki-odf/src/odt/mapper/styles.rs:53,146` | Low |
+| B8 | ~~ODT import hardcodes `next_style_id: None` (round-trip loses it)~~ **Fixed 2026-08-11**: the reader parses `style:next-style-name` (named + automatic styles), the mapper carries it, and the writer already emitted it — round-trip tested. | `loki-odf/src/odt/mapper/styles.rs` | Low |
 
 ## §P Proposed sequencing
 

@@ -143,7 +143,9 @@ pub(crate) fn map_stylesheet(sheet: &OdfStylesheet) -> StyleCatalog {
                     display_name,
                     parent,
                     linked_char_style: None,
-                    next_style_id: None,
+                    // B8: `style:next-style-name` round-trips (the writer
+                    // already emitted it; the importer used to drop it).
+                    next_style_id: s.next_style_name.clone(),
                     para_props,
                     char_props,
                     is_default: false,

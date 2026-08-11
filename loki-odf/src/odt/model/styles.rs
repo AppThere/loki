@@ -66,6 +66,9 @@ pub(crate) struct OdfStyle {
     pub family: OdfStyleFamily,
     /// `style:parent-style-name` — style inheritance chain.
     pub parent_name: Option<String>,
+    /// `style:next-style-name` — the style for a new paragraph created after
+    /// one carrying this style (ODF 1.3 §19.510). `None` = same style.
+    pub next_style_name: Option<String>,
     /// `text:list-style-name` — associated list style, if any.
     pub list_style_name: Option<String>,
     /// Paragraph formatting properties, if present.

@@ -94,6 +94,7 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                             local_attr_val(e, b"family").as_deref().unwrap_or(""),
                         );
                         let parent_name = local_attr_val(e, b"parent-style-name");
+                        let next_style_name = local_attr_val(e, b"next-style-name");
                         let list_style_name = local_attr_val(e, b"list-style-name");
                         // COMPAT(odf): style:master-page-name on a paragraph
                         // style signals a master page transition. The new master
@@ -107,6 +108,7 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                             display_name,
                             family,
                             parent_name,
+                            next_style_name,
                             list_style_name,
                             para_props: props.para_props,
                             text_props: props.text_props,
@@ -186,6 +188,7 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                             local_attr_val(e, b"family").as_deref().unwrap_or(""),
                         );
                         let parent_name = local_attr_val(e, b"parent-style-name");
+                        let next_style_name = local_attr_val(e, b"next-style-name");
                         let list_style_name = local_attr_val(e, b"list-style-name");
                         let master_page_name = local_attr_val(e, b"master-page-name");
                         let auto = is_automatic || in_auto;
@@ -194,6 +197,7 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                             display_name,
                             family,
                             parent_name,
+                            next_style_name,
                             list_style_name,
                             para_props: None,
                             text_props: None,
