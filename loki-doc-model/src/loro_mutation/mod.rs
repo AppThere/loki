@@ -39,6 +39,7 @@ mod page_style;
 mod page_style_assign;
 mod para_mark;
 mod revision;
+mod section;
 mod selection;
 mod style;
 #[cfg(feature = "serde")]
@@ -79,6 +80,7 @@ pub use self::para_mark::{
 pub use self::revision::{
     accept_reject_all_revisions, accept_reject_revision_at, revision_at, tracked_grapheme_delete,
 };
+pub use self::section::insert_section_after;
 pub use self::selection::{delete_selection_at, tracked_delete_selection_at};
 pub use self::style::{
     clear_block_list, get_block_heading_style, get_block_list_id, get_block_style_name,
@@ -119,6 +121,9 @@ pub enum MutationError {
     /// `byte_offset` is out of range or not on a UTF-8 character boundary.
     #[error("Invalid byte offset {offset} for block split")]
     InvalidByteOffset { offset: usize },
+    /// The requested section index does not name a section (§3d).
+    #[error("Section index {0} out of range")]
+    SectionIndexOutOfRange(usize),
     /// `merge_block` was called on block 0, which has no predecessor.
     #[error("Cannot merge: no block before block 0")]
     NoPreviousBlock,

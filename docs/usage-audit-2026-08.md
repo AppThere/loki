@@ -80,12 +80,21 @@ the escape hatch.
   arise from import — named styles per section only matter for imported files
   until one is added.
 
-**Plan.** (a) Restore an opener for the style catalog editor (a Manage styles
-button; natural home: Layout tab or the paragraph dialog's breadcrumb). (b)
-Add a page-style picker + "apply to section" to the Page dialog's Page tab.
-(c) Extend `tab_columns.rs` to a stepper (model supports ≤12) + per-width
-fields, preserving imported widths. (d) `insert_section` mutation as its own
-work item. Two defects found here are listed in §B.
+**Plan.** (a) **landed earlier** (Manage styles opener restored). (b), (c),
+(d) **landed 2026-08-11**: (b) the Page dialog's Page tab grew a Sections
+block — one row per section showing its current page style, with a per-
+section "apply this style" action over `set_section_page_style` (hidden for
+the common single-section document already using the edited style). (c) the
+Columns tab's 1/2/3 segmented became a stepper over the model's full 1..=12,
+the count-change handler now *preserves* explicit widths (truncate on
+decrease, append the average on increase — it used to rebuild with an empty
+list, silently discarding imported unequal columns), and a per-column widths
+block materializes the equal split into editable fields / resets to equal.
+(d) `insert_section_after`: the new section continues the source's full page
+setup (layout + named-style reference, via the bridge's own writer) and
+starts with one empty paragraph; typed refusal on a bad index. The UI hookup
+for (d) — an Insert-tab section-break action — is the follow-up; the
+mutation is the §3d work item. Two defects found here are listed in §B.
 
 ## §4 Write tab Document group: New / Open / Save split buttons
 

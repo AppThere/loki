@@ -45,7 +45,6 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                             local_attr_val(e, b"family").as_deref().unwrap_or(""),
                         );
                         let parent_name = local_attr_val(e, b"parent-style-name");
-                    let next_style_name = local_attr_val(e, b"next-style-name");
                         let next_style_name = local_attr_val(e, b"next-style-name");
                         let list_style_name = local_attr_val(e, b"list-style-name");
                         let master_page_name = local_attr_val(e, b"master-page-name");

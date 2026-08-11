@@ -12,7 +12,7 @@ use crate::layout::header_footer::HeaderFooter;
 use crate::layout::page::{PageLayout, PageOrientation};
 use crate::loro_schema::*;
 
-pub(super) fn map_page_layout(
+pub(crate) fn map_page_layout(
     layout: &PageLayout,
     section_map: &LoroMap,
 ) -> Result<(), BridgeError> {

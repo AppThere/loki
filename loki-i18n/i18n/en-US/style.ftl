@@ -270,3 +270,17 @@ style-dialog-stops-materialise-note = These stops are inherited. Editing them co
 # Preview specimen
 style-dialog-preview-body-1 = The afternoon had the particular stillness of a room where someone has just stopped speaking, and the light came in low across the floorboards.
 style-dialog-preview-body-2 = She set the cup down without a sound and waited for the next thing to happen.
+
+# §3b — the Page dialog's Sections block
+page-dialog-sections = Sections
+page-dialog-section-row = Section { $n } — { $style }
+page-dialog-section-unstyled = no named style
+page-dialog-section-apply = Apply this style
+page-dialog-section-current = Current
+# §3c — columns stepper + per-column widths
+page-dialog-columns-fewer = −
+page-dialog-columns-more = +
+page-dialog-columns-widths = Column widths
+page-dialog-columns-width-n = Column { $n }
+page-dialog-columns-custom-widths = Set custom widths…
+page-dialog-columns-equal = Equal columns

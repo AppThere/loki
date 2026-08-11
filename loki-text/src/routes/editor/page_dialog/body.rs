@@ -70,9 +70,10 @@ pub(super) fn tab_body(
     draft: PageDraft,
     posture: DialogPosture,
     settings: &PanelSettings,
+    sync: StyleEditorSync,
 ) -> Element {
     let form = match tab {
-        PageTab::Page => tab_page::body(doc_state, draft, posture, settings),
+        PageTab::Page => tab_page::body(doc_state, draft, posture, settings, sync),
         PageTab::Margins => tab_margins::body(draft, posture, settings),
         PageTab::Columns => tab_columns::body(draft, posture, settings),
         PageTab::Header => tab_headfoot::body(draft, posture, settings, true),

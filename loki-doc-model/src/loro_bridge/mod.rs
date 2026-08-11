@@ -47,12 +47,12 @@ pub(crate) use decode::encode_col_widths;
 // `document_to_loro`).
 #[cfg(feature = "serde")]
 pub(crate) use inline_objects::insert_note_at;
+pub(crate) use page_layout::map_page_layout;
 pub(crate) use write::map_block;
 
 use crate::document::Document;
 use crate::loro_schema::*;
 use loro::{LoroDoc, LoroMap, LoroMovableList};
-use page_layout::map_page_layout;
 use read::reconstruct_blocks_from_list;
 pub(crate) use read::reconstruct_page_layout;
 use write::map_blocks_to_list;

@@ -23,6 +23,7 @@ pub(super) fn body(
     draft: PageDraft,
     posture: DialogPosture,
     settings: &PanelSettings,
+    sync: super::super::editor_style_editor::StyleEditorSync,
 ) -> Element {
     let unit = settings.unit;
     let Some(current) = draft.read().clone() else {
@@ -163,6 +164,14 @@ pub(super) fn body(
                     { fl!("page-dialog-impact", count = sections as i64) }
                 },
             }
+
+            // ── Sections (§3b): assign this style per section ─────────────────
+            { super::tab_page_sections::sections_block(
+                doc_state,
+                current.name.clone(),
+                sync,
+                posture,
+            ) }
         }
     }
 }

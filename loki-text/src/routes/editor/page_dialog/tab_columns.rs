@@ -2,9 +2,7 @@
 
 //! The **Columns** tab: count, gap, and the separator rule.
 
-use appthere_ui::{
-    AtCheckRow, AtDialogNotice, AtField, AtNoticeTone, AtSegmented, DialogPosture, tokens,
-};
+use appthere_ui::{AtCheckRow, AtDialogNotice, AtField, AtNoticeTone, DialogPosture, tokens};
 use dioxus::prelude::*;
 use loki_doc_model::layout::page::{PageLayout, SectionColumns};
 use loki_doc_model::loki_primitives::units::MeasurementUnit;
@@ -15,9 +13,8 @@ use super::super::editor_defaults::PanelSettings;
 use super::PageDialogDraft;
 use super::body::{PageDraft, grid_style, measure_field, span_all};
 
-/// The counts the layout picker offers. Higher counts stay reachable through
-/// the model; three is where a page of body text stops being readable.
-const PICKER_COUNTS: [u8; 3] = [1, 2, 3];
+/// The most columns the stepper offers — the model's own ceiling (§3c).
+const MAX_COLUMNS: u8 = 12;
 
 /// The gap a newly-columned page starts with (0.5 in), matching the Layout
 /// ribbon so a page columned either way looks the same.
@@ -38,47 +35,36 @@ pub(super) fn body(draft: PageDraft, posture: DialogPosture, settings: &PanelSet
     let separator = current.layout.columns.as_ref().is_some_and(|c| c.separator);
     let single = count <= 1;
 
-    // Hoisted: a prop value is an expression position, and an `if` is not one.
-    let imported_note: Element = if PICKER_COUNTS.contains(&count) {
-        rsx! {}
-    } else {
-        rsx! {
-            div {
-                style: format!(
-                    "font-size: {fs}px; color: {fg};",
-                    fs = tokens::FONT_SIZE_LABEL,
-                    fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
-                ),
-                { fl!("page-dialog-columns-imported", count = i64::from(count)) }
-            }
-        }
-    };
-
     rsx! {
         div {
             style: grid_style(posture),
 
+            // ── Count (§3c): a stepper over the model's full 1..=12 range ────
             AtField {
                 label: fl!("page-dialog-columns-layout"),
                 extra_style: span_all(posture),
                 control: rsx! {
-                    AtSegmented {
-                        options: PICKER_COUNTS
-                            .iter()
-                            .map(|n| fl!("page-dialog-columns-count", count = i64::from(*n)))
-                            .collect::<Vec<_>>(),
-                        selected: PICKER_COUNTS
-                            .iter()
-                            .position(|n| *n == count)
-                            .unwrap_or(usize::MAX),
-                        min_touch_px: posture.min_touch_px,
-                        on_select: move |idx: usize| {
-                            let Some(n) = PICKER_COUNTS.get(idx).copied() else { return };
-                            set_count(draft, n, unit);
-                        },
+                    div {
+                        style: format!(
+                            "display: flex; flex-direction: row; align-items: center; gap: {g}px;",
+                            g = tokens::SPACE_2,
+                        ),
+                        { step_button(fl!("page-dialog-columns-fewer"), count > 1, posture, move |()| {
+                            set_count(draft, count - 1, unit);
+                        }) }
+                        span {
+                            style: format!(
+                                "font-size: {fs}px; color: {fg}; min-width: 80px; text-align: center;",
+                                fs = tokens::FONT_SIZE_BODY,
+                                fg = tokens::COLOR_TEXT_ON_CHROME,
+                            ),
+                            { fl!("page-dialog-columns-count", count = i64::from(count)) }
+                        }
+                        { step_button(fl!("page-dialog-columns-more"), count < MAX_COLUMNS, posture, move |()| {
+                            set_count(draft, count + 1, unit);
+                        }) }
                     }
                 },
-                footnote: imported_note,
             }
 
             // Spacing and the rule are properties *between* columns, so with one
@@ -119,11 +105,44 @@ pub(super) fn body(draft: PageDraft, posture: DialogPosture, settings: &PanelSet
                 }
             }
 
+            // ── Per-column widths (§3c) ──────────────────────────────────────
+            { super::tab_columns_widths::widths_block(draft, posture, settings, &current) }
+
             AtDialogNotice {
                 tone: AtNoticeTone::Info,
                 extra_style: span_all(posture),
                 message: rsx! { { fl!("page-dialog-columns-note") } },
             }
+        }
+    }
+}
+
+/// One stepper arm.
+fn step_button(
+    label: String,
+    enabled: bool,
+    posture: DialogPosture,
+    onclick: impl FnMut(()) + 'static,
+) -> Element {
+    let mut onclick = onclick;
+    rsx! {
+        button {
+            style: format!(
+                "padding: {p}px {p2}px; min-height: {t}px; min-width: {t}px; \
+                 border-radius: 3px; cursor: pointer; font-size: {fs}px; \
+                 border: 1px solid {border}; background: {bg}; color: {fg};",
+                p = tokens::SPACE_1,
+                p2 = tokens::SPACE_2,
+                t = posture.min_touch_px,
+                fs = tokens::FONT_SIZE_BODY,
+                border = tokens::COLOR_BORDER_CHROME,
+                bg = tokens::COLOR_SURFACE_2,
+                fg = tokens::COLOR_TEXT_ON_CHROME,
+            ),
+            disabled: !enabled,
+            aria_label: label.clone(),
+            onclick: move |_| onclick(()),
+            { label.clone() }
         }
     }
 }
@@ -141,9 +160,6 @@ fn current_count(layout: &PageLayout) -> u8 {
 fn set_count(mut draft: PageDraft, count: u8, unit: MeasurementUnit) {
     let mut next = draft.read().clone();
     if let Some(d) = next.as_mut() {
-        // A no-op click must stay a no-op. The rebuild below drops `widths`,
-        // so re-picking the count a document was imported with would discard
-        // its unequal columns without the user changing anything.
         if current_count(&d.layout) == count {
             return;
         }
@@ -156,11 +172,27 @@ fn set_count(mut draft: PageDraft, count: u8, unit: MeasurementUnit) {
                 .as_ref()
                 .map_or_else(|| Points::new(DEFAULT_GAP_PT), |c| c.gap);
             let separator = d.layout.columns.as_ref().is_some_and(|c| c.separator);
+            // §3c: explicit widths survive a count change — truncate on
+            // decrease, append the average on increase (the old handler
+            // rebuilt with `Vec::new()`, silently discarding imported
+            // unequal columns). Empty stays empty: equal columns re-derive.
+            let mut widths = d
+                .layout
+                .columns
+                .as_ref()
+                .map(|c| c.widths.clone())
+                .unwrap_or_default();
+            if !widths.is_empty() {
+                let avg = Points::new(
+                    widths.iter().map(|w| w.value()).sum::<f64>() / widths.len() as f64,
+                );
+                widths.resize(usize::from(count), avg);
+            }
             d.layout.columns = Some(SectionColumns {
                 count,
                 gap,
                 separator,
-                widths: Vec::new(),
+                widths,
             });
         }
         d.buffers = PageDialogDraft::buffers_for(&d.layout, unit);

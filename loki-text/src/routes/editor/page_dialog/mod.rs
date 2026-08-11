@@ -14,9 +14,11 @@ mod body;
 mod preview;
 mod tab_borders;
 mod tab_columns;
+mod tab_columns_widths;
 mod tab_headfoot;
 mod tab_margins;
 mod tab_page;
+mod tab_page_sections;
 mod tabs;
 
 use std::sync::{Arc, Mutex};
@@ -78,6 +80,9 @@ pub(super) struct PageBuffers {
     pub footer: String,
     /// Inter-column gap.
     pub column_gap: String,
+    /// Per-column widths (§3c) — one entry per explicit width; empty for
+    /// equal columns.
+    pub column_widths: Vec<String>,
 }
 
 impl PageDialogDraft {
@@ -117,6 +122,11 @@ impl PageDialogDraft {
                 .columns
                 .as_ref()
                 .map(|c| u.format_bare(c.gap))
+                .unwrap_or_default(),
+            column_widths: layout
+                .columns
+                .as_ref()
+                .map(|c| c.widths.iter().map(|w| u.format_bare(*w)).collect())
                 .unwrap_or_default(),
         }
     }
@@ -217,7 +227,7 @@ pub(super) fn PageStyleDialog(props: PageStyleDialogProps) -> Element {
                 }
             },
 
-            body: rsx! { { body::tab_body(tab, &doc_state, draft, posture, &settings) } },
+            body: rsx! { { body::tab_body(tab, &doc_state, draft, posture, &settings, sync) } },
 
             footer: rsx! {
                 AtDialogButton {

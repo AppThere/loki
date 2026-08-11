@@ -15,7 +15,7 @@ fn make_para_style(name: &str, parent: Option<&str>, is_auto: bool) -> OdfStyle 
         display_name: None,
         family: OdfStyleFamily::Paragraph,
         parent_name: parent.map(String::from),
-            next_style_name: None,
+        next_style_name: None,
         list_style_name: None,
         para_props: None,
         text_props: None,
@@ -34,7 +34,7 @@ fn make_text_style(name: &str) -> OdfStyle {
         display_name: Some("Bold Emphasis".into()),
         family: OdfStyleFamily::Text,
         parent_name: None,
-            next_style_name: None,
+        next_style_name: None,
         list_style_name: None,
         para_props: None,
         text_props: Some(OdfTextProps {
