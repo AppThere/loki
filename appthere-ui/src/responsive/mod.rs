@@ -38,8 +38,8 @@ mod width_sensor;
 pub use breakpoint::Breakpoint;
 pub use page_fit::{page_fits, required_page_width, resolve_page_fit, PageFit};
 pub use ribbon_collapse::{
-    estimate_group_metrics, group_layout, resolve_cascade, GroupCollapse, GroupLayout,
-    GroupMetrics, RibbonCascade,
+    estimate_group_metrics, estimate_partial_metrics, group_layout, resolve_cascade, GroupCollapse,
+    GroupLayout, GroupMetrics, RibbonCascade,
 };
 pub use size_sensor::{
     use_provide_window_size, use_window_size, window_size_signal, AtWindowSizeContext,

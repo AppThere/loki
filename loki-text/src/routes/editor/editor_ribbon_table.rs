@@ -157,6 +157,7 @@ pub(super) fn table_tab_content(
     // button (priority 1 vs 0).
     let rows_cols = RibbonGroupSpec {
         metrics: estimate_group_metrics(1, 6, true),
+        partial: None,
         label: Some(fl!("ribbon-group-table-rows")),
         aria_label: fl!("ribbon-group-table-rows"),
         content: rsx! {
@@ -225,6 +226,7 @@ pub(super) fn table_tab_content(
 
     let table = RibbonGroupSpec {
         metrics: estimate_group_metrics(0, 1, true),
+        partial: None,
         label: Some(fl!("ribbon-group-table")),
         aria_label: fl!("ribbon-group-table"),
         content: rsx! {

@@ -6,7 +6,10 @@
 //! **Decision D3: collapse is width-driven, not tier-driven.** The breakpoint
 //! sets defaults, but this engine measures the available width and collapses
 //! groups by declared priority until they fit. Per group, the cascade is
-//! Full → Condensed → Overflow → (horizontal-scroll floor).
+//! Full → Condensed → *Partial* (opt-in, §11) → Overflow → (horizontal-scroll
+//! floor). Partial keeps a group's retained controls in-strip behind a
+//! per-group submenu chip; a group that declares no partial width skips the
+//! phase and goes straight from Condensed to Overflow, exactly as before.
 //!
 //! # Cascade policy
 //!
@@ -48,6 +51,10 @@ pub enum GroupCollapse {
     /// Controls pack tighter; the label may drop and low-priority controls may
     /// merge into a dropdown.
     Condensed,
+    /// Only the group's **retained** controls render in-strip, plus a
+    /// per-group submenu chip holding the rest (§11 partial overflow).
+    /// Reached only by groups that declare [`GroupMetrics::partial_px`].
+    Partial,
     /// The whole group has moved into the overflow ("More") menu.
     Overflow,
 }
@@ -69,6 +76,13 @@ pub struct GroupMetrics {
     pub full_px: f32,
     /// Width occupied in [`GroupCollapse::Condensed`].
     pub condensed_px: f32,
+    /// Width occupied in [`GroupCollapse::Partial`] — retained controls plus
+    /// the per-group submenu chip. `None` opts the group out of the Partial
+    /// phase (Condensed jumps straight to Overflow). Must be
+    /// `<= condensed_px`, or the cascade's width-per-level monotonicity (and
+    /// with it the hysteresis) breaks — [`estimate_partial_metrics`] enforces
+    /// this by construction.
+    pub partial_px: Option<f32>,
 }
 
 /// The resolved cascade for one ribbon content strip.
@@ -76,7 +90,7 @@ pub struct GroupMetrics {
 pub struct RibbonCascade {
     /// Per-group display state, in the caller's original group order.
     pub states: Vec<GroupCollapse>,
-    /// Number of collapse steps applied (0 = all Full; `2 * groups` = all
+    /// Number of collapse steps applied (0 = all Full; `3 * groups` = all
     /// overflowed). Carry this back in as `prev_level` next resize for hysteresis.
     pub level: usize,
     /// Whether the overflow ("More") menu button is shown (≥1 group overflowed).
@@ -109,7 +123,28 @@ pub fn estimate_group_metrics(priority: u8, buttons: usize, has_label: bool) -> 
         priority,
         full_px,
         condensed_px,
+        partial_px: None,
     }
+}
+
+/// [`estimate_group_metrics`] plus an opt-in Partial width for a group that
+/// keeps `retained` of its `buttons` in-strip (§11): the retained buttons at
+/// [`TOUCH_MIN`], tight padding, plus the per-group submenu chip (one more
+/// touch target). Clamped to the condensed width so the per-level strip width
+/// stays monotone — a "partial" wider than the condensed group would make
+/// collapsing *grow* the strip.
+#[must_use]
+pub fn estimate_partial_metrics(
+    priority: u8,
+    buttons: usize,
+    retained: usize,
+    has_label: bool,
+) -> GroupMetrics {
+    let mut metrics = estimate_group_metrics(priority, buttons, has_label);
+    let kept = retained.min(buttons).max(1) as f32;
+    let partial = (kept + 1.0) * TOUCH_MIN + 2.0 * SPACE_1;
+    metrics.partial_px = Some(partial.min(metrics.condensed_px));
+    metrics
 }
 
 /// The in-strip layout a group adopts for a given [`GroupCollapse`] state:
@@ -144,7 +179,7 @@ pub fn group_layout(collapse: GroupCollapse, has_label: bool) -> GroupLayout {
             gap_px: 2.0,
             show_label: has_label,
         },
-        GroupCollapse::Condensed => GroupLayout {
+        GroupCollapse::Condensed | GroupCollapse::Partial => GroupLayout {
             rendered: true,
             pad_px: SPACE_1,
             gap_px: 0.0,
@@ -168,16 +203,21 @@ fn collapse_order(metrics: &[GroupMetrics]) -> Vec<usize> {
 }
 
 /// The per-group states after applying `level` collapse steps. Steps `1..=n`
-/// condense groups in collapse order; steps `n+1..=2n` overflow them (a group is
-/// already condensed before it overflows).
+/// condense groups in collapse order; steps `n+1..=2n` take opted-in groups
+/// Partial (a no-op step for a group with no `partial_px`); steps
+/// `2n+1..=3n` overflow. A group is already condensed (and partial, if it
+/// opts in) before it overflows.
 fn states_at_level(metrics: &[GroupMetrics], order: &[usize], level: usize) -> Vec<GroupCollapse> {
     let n = metrics.len();
     let condense_count = level.min(n);
-    let overflow_count = level.saturating_sub(n).min(n);
+    let partial_count = level.saturating_sub(n).min(n);
+    let overflow_count = level.saturating_sub(2 * n).min(n);
     let mut states = vec![GroupCollapse::Full; n];
     for (rank, &idx) in order.iter().enumerate() {
         states[idx] = if rank < overflow_count {
             GroupCollapse::Overflow
+        } else if rank < partial_count && metrics[idx].partial_px.is_some() {
+            GroupCollapse::Partial
         } else if rank < condense_count {
             GroupCollapse::Condensed
         } else {
@@ -196,6 +236,8 @@ fn strip_width(metrics: &[GroupMetrics], states: &[GroupCollapse]) -> f32 {
         match s {
             GroupCollapse::Full => width += m.full_px,
             GroupCollapse::Condensed => width += m.condensed_px,
+            // A Partial state only exists for groups that declared the width.
+            GroupCollapse::Partial => width += m.partial_px.unwrap_or(m.condensed_px),
             GroupCollapse::Overflow => any_overflow = true,
         }
     }
@@ -219,7 +261,7 @@ pub fn resolve_cascade(
     prev_level: usize,
 ) -> RibbonCascade {
     let n = metrics.len();
-    let max_level = 2 * n;
+    let max_level = 3 * n;
     let order = collapse_order(metrics);
     let width_at = |level: usize| strip_width(metrics, &states_at_level(metrics, &order, level));
 
@@ -236,7 +278,7 @@ pub fn resolve_cascade(
     }
 
     let states = states_at_level(metrics, &order, level);
-    let overflow = level > n;
+    let overflow = states.contains(&GroupCollapse::Overflow);
     let scroll = level >= max_level && width_at(max_level) > available_px && available_px > 0.0;
     RibbonCascade {
         states,

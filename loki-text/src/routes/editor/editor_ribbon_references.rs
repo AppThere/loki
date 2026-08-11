@@ -59,6 +59,7 @@ pub(super) fn references_tab_content(
 
     let toc_group = RibbonGroupSpec {
         metrics: estimate_group_metrics(1, 2, true),
+        partial: None,
         label: Some(fl!("ribbon-group-toc")),
         aria_label: fl!("ribbon-group-toc"),
         content: rsx! {

@@ -112,6 +112,7 @@ pub(super) fn document_group(
     RibbonGroupSpec {
         // Six 44-px buttons (three split buttons, each a main + chevron pair).
         metrics: estimate_group_metrics(priority, 6, true),
+        partial: None,
         label: Some(fl!("ribbon-group-document")),
         aria_label: fl!("ribbon-group-document"),
         content: rsx! {

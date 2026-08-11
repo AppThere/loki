@@ -60,7 +60,8 @@ pub use components::icons::{
 pub use components::popover::{use_popover, use_provide_popover, AtPopoverHost, PopoverRequest};
 pub use components::ribbon::{
     AtRibbon, AtRibbonGroup, AtRibbonGroups, AtRibbonIconButton, AtRibbonSelect,
-    AtRibbonSplitButton, RibbonGroupSpec, RibbonTabDesc, RibbonTabIndex, SplitMenuItem,
+    AtRibbonSplitButton, RibbonGroupSpec, RibbonPartialSpec, RibbonTabDesc, RibbonTabIndex,
+    SplitMenuItem,
 };
 pub use components::{
     actual_size_zoom_percent, clamp_zoom_percent, fit_page_zoom_percent, fit_width_zoom_percent,
@@ -93,12 +94,12 @@ pub use device_profile_override::{
 };
 pub use focus_ring::focus_ring_css;
 pub use responsive::{
-    estimate_group_metrics, group_layout, page_fits, required_page_width, resolve_cascade,
-    resolve_page_fit, use_breakpoint, use_provide_responsive, use_provide_window_size,
-    use_responsive, use_ribbon_cascade, use_viewport, use_window_size, window_size_signal,
-    AtResponsiveContext, AtViewportWidthSensor, AtWindowSizeContext, AtWindowSizeSensor,
-    Breakpoint, GroupCollapse, GroupLayout, GroupMetrics, PageFit, RibbonCascade, Viewport,
-    DEFAULT_DPI,
+    estimate_group_metrics, estimate_partial_metrics, group_layout, page_fits, required_page_width,
+    resolve_cascade, resolve_page_fit, use_breakpoint, use_provide_responsive,
+    use_provide_window_size, use_responsive, use_ribbon_cascade, use_viewport, use_window_size,
+    window_size_signal, AtResponsiveContext, AtViewportWidthSensor, AtWindowSizeContext,
+    AtWindowSizeSensor, Breakpoint, GroupCollapse, GroupLayout, GroupMetrics, PageFit,
+    RibbonCascade, Viewport, DEFAULT_DPI,
 };
 pub use safe_area::{set_safe_area_insets, update_safe_area_insets, use_safe_area, SafeAreaInsets};
 pub use scroll::{

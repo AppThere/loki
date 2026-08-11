@@ -16,7 +16,10 @@ use dioxus::prelude::*;
 
 use super::button::AtRibbonIconButton;
 use super::group::AtRibbonGroup;
-use super::overflow_menu::{overflow_menu_request, OVERFLOW_POPOVER_ID};
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use super::overflow_menu::{overflow_menu_request, OVERFLOW_POPOVER_ID, PARTIAL_POPOVER_ID};
 use crate::components::icons::{AtIcon, LUCIDE_MORE_HORIZONTAL};
 use crate::components::popover::{use_popover_anchor, Rect};
 use crate::responsive::{use_ribbon_cascade, GroupCollapse, GroupMetrics};
@@ -36,6 +39,24 @@ pub struct RibbonGroupSpec {
     pub aria_label: String,
     /// The group's buttons/controls.
     pub content: Element,
+    /// §11 partial-overflow opt-in. `Some` requires
+    /// [`GroupMetrics::partial_px`] to be set (build the metrics via
+    /// [`estimate_partial_metrics`](crate::estimate_partial_metrics)) —
+    /// without it the cascade never assigns the Partial state and the spec is
+    /// inert. `None` keeps the whole-group behaviour.
+    pub partial: Option<RibbonPartialSpec>,
+}
+
+/// What a group shows in the [`GroupCollapse::Partial`] state (§11): its
+/// retained controls stay in-strip, everything else lives behind a per-group
+/// submenu chip that opens the group **in full** as a hosted popover.
+#[derive(Clone, PartialEq)]
+pub struct RibbonPartialSpec {
+    /// The retained (always-visible) controls — typically the group's two or
+    /// three most-used buttons.
+    pub retained: Element,
+    /// Accessible name for the per-group submenu chip.
+    pub more_aria_label: String,
 }
 
 /// Renders a tab's [`RibbonGroupSpec`]s through the width-driven collapse cascade.
@@ -67,6 +88,13 @@ pub fn AtRibbonGroups(
     let mut anchor = use_signal(|| Option::<MountedEvent>::None);
     let mut anchor_rect = use_signal(|| Option::<Rect>::None);
 
+    // §11 Partial submenu: at most one open at a time, keyed by group index.
+    // Chip rects are captured per group on mount (chips mount and unmount as
+    // the cascade moves groups in and out of Partial).
+    let partial_popover = use_popover_anchor(PARTIAL_POPOVER_ID);
+    let mut partial_open = use_signal(|| Option::<usize>::None);
+    let partial_rects = use_signal(HashMap::<usize, Rect>::new);
+
     // Partition into in-strip groups (with their state) and overflowed groups.
     let overflowed: Vec<RibbonGroupSpec> = groups
         .iter()
@@ -83,6 +111,15 @@ pub fn AtRibbonGroups(
     // the host's now, and the effect below dismisses on the same signal.
     if !cascade.overflow && *menu_open.peek() {
         menu_open.set(false);
+    }
+    // Same reconciliation for the partial submenu: if its group left the
+    // Partial state (widened to Condensed/Full or overflowed entirely), the
+    // chip is gone and the menu must not outlive it.
+    let stale_partial = partial_open
+        .peek()
+        .is_some_and(|idx| cascade.states.get(idx) != Some(&GroupCollapse::Partial));
+    if stale_partial {
+        partial_open.set(None);
     }
 
     // The open/dismiss write, in an effect rather than in the render — the shape
@@ -108,13 +145,48 @@ pub fn AtRibbonGroups(
                 // re-runs when the rect arrives.
                 return;
             };
+            let close: Rc<dyn Fn()> = Rc::new(move || {
+                let mut menu_open = menu_open;
+                menu_open.set(false);
+            });
             popover.open(
                 overflow_menu_request(
+                    OVERFLOW_POPOVER_ID,
                     overflowed.clone(),
                     rect,
                     anchor.peek().as_ref().map(|e: &MountedEvent| e.data()),
-                    menu_open,
+                    close,
                 ),
+                window,
+                insets,
+            );
+        });
+    }
+
+    // The partial submenu's open/dismiss effect — the same shape as the
+    // overflow menu's above, keyed by the open group index.
+    {
+        let submenu_groups: Vec<RibbonGroupSpec> = groups.clone();
+        use_effect(move || {
+            let Some(popover) = partial_popover else {
+                return;
+            };
+            let Some(idx) = partial_open() else {
+                popover.dismiss();
+                return;
+            };
+            let Some(rect) = partial_rects.read().get(&idx).copied() else {
+                return; // chip not measured yet; re-runs when the rect lands
+            };
+            let Some(spec) = submenu_groups.get(idx) else {
+                return;
+            };
+            let close: Rc<dyn Fn()> = Rc::new(move || {
+                let mut partial_open = partial_open;
+                partial_open.set(None);
+            });
+            popover.open(
+                overflow_menu_request(PARTIAL_POPOVER_ID, vec![spec.clone()], rect, None, close),
                 window,
                 insets,
             );
@@ -131,7 +203,44 @@ pub fn AtRibbonGroups(
     rsx! {
         // In-strip groups, each at its resolved collapse state.
         for (idx, (spec, state)) in groups.iter().zip(cascade.states.iter()).enumerate() {
-            if *state != GroupCollapse::Overflow {
+            if *state == GroupCollapse::Partial && spec.partial.is_some() {
+                // §11: retained controls + the per-group submenu chip. The
+                // spec carries `partial` (checked above); the fallback arm
+                // below covers the impossible None to keep this total.
+                AtRibbonGroup {
+                    key: "{spec.aria_label}",
+                    label: spec.label.clone(),
+                    aria_label: spec.aria_label.clone(),
+                    collapse: *state,
+                    show_divider: cascade.overflow || last_rendered != Some(idx),
+                    if let Some(partial) = spec.partial.as_ref() {
+                        {partial.retained.clone()}
+                        AtRibbonIconButton {
+                            aria_label: partial.more_aria_label.clone(),
+                            is_active: partial_open() == Some(idx),
+                            is_disabled: false,
+                            on_mounted: move |e: MountedEvent| {
+                                let mut rects = partial_rects;
+                                spawn(async move {
+                                    if let Ok(r) = e.get_client_rect().await {
+                                        rects.write().insert(idx, Rect {
+                                            x: r.origin.x as f32,
+                                            y: r.origin.y as f32,
+                                            width: r.size.width as f32,
+                                            height: r.size.height as f32,
+                                        });
+                                    }
+                                });
+                            },
+                            on_click: move |_| {
+                                let next = if partial_open() == Some(idx) { None } else { Some(idx) };
+                                partial_open.set(next);
+                            },
+                            AtIcon { path_d: LUCIDE_MORE_HORIZONTAL.to_string() }
+                        }
+                    }
+                }
+            } else if *state != GroupCollapse::Overflow {
                 AtRibbonGroup {
                     key: "{spec.aria_label}",
                     label: spec.label.clone(),

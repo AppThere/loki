@@ -78,6 +78,7 @@ pub(super) fn insert_tab_content(
     // Priorities (higher = kept full longer): Media/Tables over References/Links.
     let media = RibbonGroupSpec {
         metrics: estimate_group_metrics(3, 1, true),
+        partial: None,
         label: Some(fl!("ribbon-group-media")),
         aria_label: fl!("ribbon-group-media"),
         content: rsx! {
@@ -96,6 +97,7 @@ pub(super) fn insert_tab_content(
 
     let tables = RibbonGroupSpec {
         metrics: estimate_group_metrics(2, 1, true),
+        partial: None,
         label: Some(fl!("ribbon-group-tables")),
         aria_label: fl!("ribbon-group-tables"),
         content: rsx! {
@@ -117,6 +119,7 @@ pub(super) fn insert_tab_content(
 
     let references = RibbonGroupSpec {
         metrics: estimate_group_metrics(1, 1, true),
+        partial: None,
         label: Some(fl!("ribbon-group-references")),
         aria_label: fl!("ribbon-group-references"),
         content: rsx! {
@@ -147,6 +150,7 @@ pub(super) fn insert_tab_content(
 
     let links = RibbonGroupSpec {
         metrics: estimate_group_metrics(0, 1, true),
+        partial: None,
         label: Some(fl!("ribbon-group-links")),
         aria_label: fl!("ribbon-group-links"),
         content: rsx! {

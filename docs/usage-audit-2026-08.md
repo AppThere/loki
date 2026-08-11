@@ -289,10 +289,20 @@ rest droppable", one level down. Tension to resolve: the inline group has the
 *highest* priority on the Write tab (last to shrink), so partial overflow is
 an opt-in phase, not a priority tweak.
 
-**Plan.** Add an optional per-item spec (`RibbonItemSpec { retained, … }`) to
-`RibbonGroupSpec`, a `Partial` collapse state + third width, and a per-group
-submenu popover (respecting the popover singleton rule and the known
-Tab-dismiss limitation). Medium; touches the cascade tests. Reasonable to
+**Plan.** — **landed 2026-08-11.** `GroupCollapse::Partial` sits between
+Condensed and Overflow as an opt-in phase: `GroupMetrics.partial_px`
+(`estimate_partial_metrics` builds it, clamped ≤ condensed so the per-level
+strip width stays monotone for the hysteresis) plus
+`RibbonGroupSpec.partial: Option<RibbonPartialSpec { retained, more_aria }>`.
+At Partial the group renders its retained controls + a per-group submenu
+chip; the submenu reuses the overflow menu's request builder (parametrized by
+popover id + close handler — singleton rule and the Tab-dismiss degradation
+come with it) showing the whole group Full. Non-opting groups take the
+identical ladder as before, proven by a sweep test; the inline formatting
+group adopts it with B/I/U retained (the retained Element is cloned into the
+full content so the two cannot drift). Original text: add an optional
+per-item spec, a `Partial` collapse state + third width, and a per-group
+submenu popover. Medium; touches the cascade tests. Reasonable to
 defer until after §14's one-liner and the density work (§1), which may change
 the constants underneath.
 

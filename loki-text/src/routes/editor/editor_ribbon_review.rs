@@ -133,6 +133,7 @@ pub(super) fn review_tab_content(
 
     let track_group = RibbonGroupSpec {
         metrics: estimate_group_metrics(1, 1, true),
+        partial: None,
         label: Some(fl!("ribbon-group-review-track")),
         aria_label: fl!("ribbon-group-review-track"),
         content: rsx! {
@@ -151,6 +152,7 @@ pub(super) fn review_tab_content(
 
     let changes_group = RibbonGroupSpec {
         metrics: estimate_group_metrics(0, 4, true),
+        partial: None,
         label: Some(fl!("ribbon-group-review-changes")),
         aria_label: fl!("ribbon-group-review-changes"),
         content: rsx! {

@@ -10,7 +10,8 @@ use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
     AtIcon, AtRibbonIconButton, LUCIDE_BOLD, LUCIDE_ITALIC, LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT,
-    LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE, RibbonGroupSpec, estimate_group_metrics,
+    LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE, RibbonGroupSpec, RibbonPartialSpec,
+    estimate_partial_metrics,
 };
 use dioxus::prelude::*;
 use loki_i18n::fl;
@@ -76,11 +77,11 @@ pub(super) fn inline_format_group(
     let cursor = ctx.cursor_state;
     let loro = ctx.loro_doc;
 
-    RibbonGroupSpec {
-        metrics: estimate_group_metrics(priority, 6, true),
-        label: Some(fl!("ribbon-group-inline")),
-        aria_label: fl!("ribbon-group-inline"),
-        content: rsx! {
+    // §11 partial overflow: bold/italic/underline stay in-strip when the
+    // cascade takes this group Partial; the rest live behind the per-group
+    // submenu chip. The retained Element is cloned into the full content, so
+    // the two cannot drift.
+    let retained = rsx! {
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-bold-aria"),
                 is_active:   *state.bold.read(),
@@ -117,6 +118,17 @@ pub(super) fn inline_format_group(
                 },
                 AtIcon { path_d: LUCIDE_UNDERLINE.to_string() }
             }
+    };
+    RibbonGroupSpec {
+        metrics: estimate_partial_metrics(priority, 6, 3, true),
+        partial: Some(RibbonPartialSpec {
+            retained: retained.clone(),
+            more_aria_label: fl!("ribbon-inline-more-aria"),
+        }),
+        label: Some(fl!("ribbon-group-inline")),
+        aria_label: fl!("ribbon-group-inline"),
+        content: rsx! {
+            {retained}
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-strikethrough-aria"),
                 is_active:   *state.strikethrough.read(),

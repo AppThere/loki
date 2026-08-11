@@ -57,6 +57,11 @@ use crate::tokens;
 /// Identifies the overflow menu to the popover singleton rule.
 pub(super) const OVERFLOW_POPOVER_ID: PopoverId = PopoverId(0x0_5044);
 
+/// Identifies the §11 per-group Partial submenu. One id for all chips: the
+/// strip opens at most one submenu at a time (the singleton rule would
+/// enforce it anyway; a single id makes the intent structural).
+pub(super) const PARTIAL_POPOVER_ID: PopoverId = PopoverId(0x0_5045);
+
 /// Clear space between the More button and the menu.
 const ANCHOR_GAP_PX: f32 = 4.0;
 
@@ -133,28 +138,27 @@ pub(super) fn overflow_menu_placement(anchor: Rect, size: (f32, f32)) -> Placeme
     }
 }
 
-/// The popover request for the overflow menu.
+/// The popover request for the overflow menu — also reused by the §11
+/// per-group Partial submenu (same content model: whole groups rendered Full
+/// in a hosted panel), which passes its own `id` and close handler.
 ///
 /// `overflowed` is cloned into the content closure rather than borrowed: the
 /// closure is invoked during the **host's** render, which outlives this call.
 pub(super) fn overflow_menu_request(
+    id: PopoverId,
     overflowed: Vec<RibbonGroupSpec>,
     anchor_rect: Rect,
     anchor_el: Option<Rc<MountedData>>,
-    open: Signal<bool>,
+    close: Rc<dyn Fn()>,
 ) -> PopoverRequest {
     let size = overflow_menu_size(&overflowed.iter().collect::<Vec<_>>());
     let content_groups = overflowed;
+    let key_close = Rc::clone(&close);
 
     PopoverRequest {
-        id: OVERFLOW_POPOVER_ID,
+        id,
         placement: overflow_menu_placement(anchor_rect, size),
-        on_dismiss: Rc::new(move || {
-            // Re-bound inside: `Signal` is `Copy`, which gives an `Fn` closure
-            // the mutable handle it cannot capture.
-            let mut open = open;
-            open.set(false);
-        }),
+        on_dismiss: close,
         anchor: anchor_el,
         // The groups' buttons tint themselves from their own
         // `onmouseenter`/`onmouseleave`, so nothing here needs to learn the
@@ -172,8 +176,7 @@ pub(super) fn overflow_menu_request(
                 action,
                 KeyAction::FocusNextControl | KeyAction::FocusPrevControl
             ) {
-                let mut open = open;
-                open.set(false);
+                key_close();
             }
         })),
         content: Rc::new(move || {

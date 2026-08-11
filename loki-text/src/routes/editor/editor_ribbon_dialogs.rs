@@ -33,6 +33,7 @@ pub(super) fn dialog_label(text: &str) -> Element {
 pub(super) fn character_group(mut open: Signal<bool>, priority: u8) -> RibbonGroupSpec {
     RibbonGroupSpec {
         metrics: estimate_group_metrics(priority, 1, true),
+        partial: None,
         label: Some(fl!("ribbon-group-character")),
         aria_label: fl!("ribbon-group-character"),
         content: rsx! {

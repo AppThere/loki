@@ -141,6 +141,7 @@ fn trigger_group(
 ) -> RibbonGroupSpec {
     RibbonGroupSpec {
         metrics: estimate_group_metrics(priority, 1, true),
+        partial: None,
         label: Some(group_label.clone()),
         aria_label: group_label,
         content: rsx! {

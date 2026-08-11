@@ -68,7 +68,9 @@ pub(super) fn format_tab_content(
             priority: 3,
             full_px: tokens::RIBBON_SELECT_WIDTH_PX + 2.0 * tokens::SPACE_2,
             condensed_px: tokens::RIBBON_SELECT_WIDTH_CONDENSED_PX + 2.0 * tokens::SPACE_1,
+            partial_px: None,
         },
+        partial: None,
         label: Some(fl!("ribbon-group-char-style")),
         aria_label: fl!("ribbon-group-char-style"),
         content: rsx! {

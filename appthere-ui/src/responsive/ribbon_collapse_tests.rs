@@ -3,7 +3,10 @@
 
 //! Tests for the width-driven ribbon collapse cascade (Spec 04 M3 §7).
 
-use super::{estimate_group_metrics, group_layout, resolve_cascade, GroupCollapse, GroupMetrics};
+use super::{
+    estimate_group_metrics, estimate_partial_metrics, group_layout, resolve_cascade, GroupCollapse,
+    GroupMetrics,
+};
 use crate::tokens::layout::{RIBBON_COLLAPSE_HYSTERESIS_PX, RIBBON_OVERFLOW_BUTTON_PX};
 use crate::tokens::spacing::{SPACE_1, SPACE_2, TOUCH_MIN};
 
@@ -15,16 +18,19 @@ fn groups() -> Vec<GroupMetrics> {
             priority: 0,
             full_px: 100.0,
             condensed_px: 50.0,
+            partial_px: None,
         },
         GroupMetrics {
             priority: 1,
             full_px: 100.0,
             condensed_px: 50.0,
+            partial_px: None,
         },
         GroupMetrics {
             priority: 2,
             full_px: 100.0,
             condensed_px: 50.0,
+            partial_px: None,
         },
     ]
 }
@@ -88,7 +94,7 @@ fn scroll_floor_when_even_full_overflow_does_not_fit() {
     let avail = RIBBON_OVERFLOW_BUTTON_PX - 10.0;
     let c = resolve_cascade(&groups(), avail, 0);
     assert_eq!(c.states, vec![GroupCollapse::Overflow; 3]);
-    assert_eq!(c.level, 6); // 2 × 3 groups = fully collapsed
+    assert_eq!(c.level, 9); // 3 × 3 groups = fully collapsed
     assert!(c.overflow);
     assert!(c.scroll);
 }
@@ -145,11 +151,13 @@ fn priority_ties_break_left_to_right() {
             priority: 5,
             full_px: 100.0,
             condensed_px: 50.0,
+            partial_px: None,
         },
         GroupMetrics {
             priority: 5,
             full_px: 100.0,
             condensed_px: 50.0,
+            partial_px: None,
         },
     ];
     let c = resolve_cascade(&equal, 160.0, 0);
@@ -216,4 +224,76 @@ fn estimated_metrics_never_underflow_for_an_empty_group() {
     let m = estimate_group_metrics(0, 0, false);
     assert_eq!(m.full_px, TOUCH_MIN + 2.0 * SPACE_2);
     assert!(m.condensed_px > 0.0);
+}
+
+// ── §11 Partial phase ─────────────────────────────────────────────────────────
+
+/// The `groups()` fixture with the *middle* group (priority 1) opted into
+/// Partial at 30 px. Widths per level (collapse order: g0, g1, g2):
+/// full 100 each, condensed 50 each, partial(g1) 30.
+fn groups_with_partial() -> Vec<GroupMetrics> {
+    let mut gs = groups();
+    gs[1].partial_px = Some(30.0);
+    gs
+}
+
+#[test]
+fn opted_in_group_passes_through_partial_before_overflowing() {
+    let gs = groups_with_partial();
+    // All condensed = 150. The partial phase can shave exactly 20 more
+    // (g1: 50 → 30); ask for 130 and that is where the cascade must land —
+    // levels 4 (g0 no-op) and 5 (g1 partial) applied, nothing overflowed.
+    let c = resolve_cascade(&gs, 130.0, 0);
+    assert_eq!(
+        c.states,
+        vec![
+            GroupCollapse::Condensed,
+            GroupCollapse::Partial,
+            GroupCollapse::Condensed,
+        ]
+    );
+    assert!(!c.overflow, "partial is not overflow");
+    assert!(!c.scroll);
+
+    // One pixel less than 130 cannot be served by the partial phase; the
+    // overflow phase must begin (g0 out; its 50 px leaves g1 partial + g2
+    // condensed + the More button).
+    let c = resolve_cascade(&gs, 129.0, 0);
+    assert_eq!(c.states[0], GroupCollapse::Overflow);
+    assert!(c.overflow);
+}
+
+#[test]
+fn partial_width_is_counted_and_is_never_wider_than_condensed() {
+    let m = estimate_partial_metrics(1, 6, 3, true);
+    let partial = m.partial_px.expect("opted in");
+    // Retained 3 + the submenu chip at TOUCH_MIN, tight padding.
+    assert_eq!(partial, 4.0 * TOUCH_MIN + 2.0 * SPACE_1);
+    assert!(partial <= m.condensed_px, "monotonicity invariant");
+    // A retained count near the button count clamps to condensed instead of
+    // growing the strip (retained 2 of 2 + chip would exceed condensed).
+    let clamped = estimate_partial_metrics(1, 2, 2, false);
+    assert_eq!(
+        clamped.partial_px.expect("opted"),
+        clamped.condensed_px,
+        "clamped to condensed"
+    );
+}
+
+#[test]
+fn non_opting_groups_never_show_partial_and_ladder_ends_unchanged() {
+    // No opt-in anywhere: sweep the whole ladder by walking prev_level over
+    // every level at an unfittable width — Partial must never appear, and the
+    // floor is still all-Overflow.
+    let gs = groups();
+    for prev in 0..=(3 * gs.len()) {
+        let c = resolve_cascade(&gs, 1.0, prev);
+        assert!(
+            !c.states.contains(&GroupCollapse::Partial),
+            "prev {prev} produced Partial without opt-in"
+        );
+    }
+    let floor = resolve_cascade(&gs, 1.0, 0);
+    assert_eq!(floor.states, vec![GroupCollapse::Overflow; 3]);
+    assert!(floor.scroll);
 }

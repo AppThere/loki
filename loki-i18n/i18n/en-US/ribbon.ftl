@@ -37,6 +37,7 @@ ribbon-save-as-template-label = Save as Template…
 
 # Lists group (Write tab)
 ribbon-group-lists = Lists
+ribbon-inline-more-aria = More text formatting
 ribbon-list-bullet-aria = Bullet list
 ribbon-list-numbered-aria = Numbered list
 ribbon-list-indent-aria = Increase list level (Tab)

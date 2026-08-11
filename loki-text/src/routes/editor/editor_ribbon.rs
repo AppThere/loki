@@ -91,6 +91,7 @@ pub(super) fn write_tab_content(
 
     let history = RibbonGroupSpec {
         metrics: estimate_group_metrics(3, 2, true),
+        partial: None,
         label: Some(fl!("ribbon-group-history")),
         aria_label: fl!("ribbon-group-history"),
         content: rsx! {
@@ -142,7 +143,9 @@ pub(super) fn write_tab_content(
             priority: 5,
             full_px: tokens::RIBBON_SELECT_WIDTH_PX + 2.0 * tokens::SPACE_2,
             condensed_px: tokens::RIBBON_SELECT_WIDTH_CONDENSED_PX + 2.0 * tokens::SPACE_1,
+            partial_px: None,
         },
+        partial: None,
         label: Some(fl!("ribbon-group-styles")),
         aria_label: fl!("ribbon-group-styles"),
         content: rsx! {
@@ -160,6 +163,7 @@ pub(super) fn write_tab_content(
 
     let paragraph = RibbonGroupSpec {
         metrics: estimate_group_metrics(1, 1, true),
+        partial: None,
         label: Some(fl!("ribbon-group-paragraph")),
         aria_label: fl!("ribbon-group-paragraph"),
         content: rsx! {

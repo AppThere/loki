@@ -35,6 +35,7 @@ pub(super) fn publish_tab_content(
     // Export (PDF/X + EPUB) is kept full longer than the single Metadata button.
     let export = RibbonGroupSpec {
         metrics: estimate_group_metrics(1, 2, true),
+        partial: None,
         label: Some(fl!("publish-group-export")),
         aria_label: fl!("publish-group-export"),
         content: rsx! {
@@ -63,6 +64,7 @@ pub(super) fn publish_tab_content(
 
     let metadata_group = RibbonGroupSpec {
         metrics: estimate_group_metrics(0, 1, true),
+        partial: None,
         label: Some(fl!("publish-group-metadata")),
         aria_label: fl!("publish-group-metadata"),
         content: rsx! {

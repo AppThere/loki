@@ -58,6 +58,7 @@ pub(super) fn lists_group(
 
     RibbonGroupSpec {
         metrics: estimate_group_metrics(priority, 4, true),
+        partial: None,
         label: Some(fl!("ribbon-group-lists")),
         aria_label: fl!("ribbon-group-lists"),
         content: rsx! {

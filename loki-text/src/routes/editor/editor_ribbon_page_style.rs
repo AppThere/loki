@@ -75,6 +75,7 @@ pub(super) fn page_style_group(
 
     RibbonGroupSpec {
         metrics: estimate_group_metrics(priority, 2, true),
+        partial: None,
         label: Some(fl!("ribbon-group-page-style")),
         aria_label: fl!("ribbon-group-page-style"),
         content: rsx! {
