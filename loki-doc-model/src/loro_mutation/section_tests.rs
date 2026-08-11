@@ -7,7 +7,7 @@
 
 use loro::LoroDoc;
 
-use super::insert_section_after;
+use super::{insert_section_after, section_of_block};
 use crate::content::block::Block;
 use crate::content::inline::Inline;
 use crate::document::Document;
@@ -50,4 +50,14 @@ fn out_of_range_source_is_a_typed_refusal() {
     assert!(insert_section_after(&loro, 5).is_err());
     let doc = loro_to_document(&loro).expect("derive");
     assert_eq!(doc.sections.len(), 1, "a refusal must not write");
+}
+
+#[test]
+fn section_of_block_walks_the_global_index() {
+    let loro = two_page_doc();
+    insert_section_after(&loro, 0).expect("insert");
+    // Section 0 has one block ("body"); the new section 1 has one empty para.
+    assert_eq!(section_of_block(&loro, 0), Some(0));
+    assert_eq!(section_of_block(&loro, 1), Some(1));
+    assert_eq!(section_of_block(&loro, 2), None, "past the last block");
 }

@@ -92,9 +92,12 @@ list, silently discarding imported unequal columns), and a per-column widths
 block materializes the equal split into editable fields / resets to equal.
 (d) `insert_section_after`: the new section continues the source's full page
 setup (layout + named-style reference, via the bridge's own writer) and
-starts with one empty paragraph; typed refusal on a bad index. The UI hookup
-for (d) — an Insert-tab section-break action — is the follow-up; the
-mutation is the §3d work item. Two defects found here are listed in §B.
+starts with one empty paragraph; typed refusal on a bad index. The UI hookup for (d)
+landed in the same pass's follow-up: the Insert tab's Page group has a
+Section-break button that resolves the caret's section
+(`section_of_block`, the global-index walk `resolve_section_blocks` uses)
+and inserts after it, with the tab's standard relayout/undo/status-banner
+outcome shape. §3 is closed. Two defects found here are listed in §B.
 
 ## §4 Write tab Document group: New / Open / Save split buttons
 

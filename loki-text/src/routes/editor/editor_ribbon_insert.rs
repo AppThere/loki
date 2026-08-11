@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex};
 use super::editor_state::SaveStatus;
 use appthere_ui::{
     AtIcon, AtRibbonGroups, AtRibbonIconButton, LUCIDE_FOOTNOTE, LUCIDE_IMAGE, LUCIDE_LINK,
-    LUCIDE_TABLE, RibbonGroupSpec, estimate_group_metrics,
+    LUCIDE_SEPARATOR_HORIZONTAL, LUCIDE_TABLE, RibbonGroupSpec, estimate_group_metrics,
 };
 use dioxus::prelude::*;
 use loki_doc_model::MutationError;
@@ -38,8 +38,12 @@ use super::editor_keydown_text::set_collapsed_cursor;
 use super::editor_ribbon_insert_image::spawn_pick_and_insert_image;
 use super::link_dialog::LinkDraft;
 use super::table_dialog::TableSpec;
+
+#[path = "editor_ribbon_insert_section.rs"]
+mod insert_section;
 use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
+use insert_section::insert_section_break;
 
 /// Live-document handles the Insert tab needs to create objects at the cursor.
 #[derive(Clone)]
@@ -91,6 +95,28 @@ pub(super) fn insert_tab_content(
                     move |_| spawn_pick_and_insert_image(ctx.clone())
                 },
                 AtIcon { path_d: LUCIDE_IMAGE.to_string() }
+            }
+        },
+    };
+
+    // §3d hookup: the section-break action over insert_section_after. The new
+    // section continues the caret section's page setup; reassignment is the
+    // Page dialog's Sections block.
+    let page = RibbonGroupSpec {
+        metrics: estimate_group_metrics(1, 1, true),
+        partial: None,
+        label: Some(fl!("ribbon-group-page-insert")),
+        aria_label: fl!("ribbon-group-page-insert"),
+        content: rsx! {
+            AtRibbonIconButton {
+                aria_label:  fl!("ribbon-insert-section-break-aria"),
+                is_active:   false,
+                is_disabled: false,
+                on_click: {
+                    let ctx = ctx.clone();
+                    move |_| insert_section_break(&ctx)
+                },
+                AtIcon { path_d: LUCIDE_SEPARATOR_HORIZONTAL.to_string() }
             }
         },
     };
@@ -173,7 +199,7 @@ pub(super) fn insert_tab_content(
     rsx! {
         AtRibbonGroups {
             overflow_aria_label: fl!("ribbon-overflow-aria"),
-            groups: vec![media, tables, references, links],
+            groups: vec![media, tables, page, references, links],
         }
     }
 }

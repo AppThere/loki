@@ -52,6 +52,10 @@ pub const LUCIDE_DOWNLOAD: &str = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 1
 /// "Save as Template" to distinguish it from the plain Save / Save As actions.
 pub const LUCIDE_LAYOUT_TEMPLATE: &str = "M3 3h18v7H3zM3 14h9v7H3zM16 14h5v7h-5z";
 
+/// Lucide `separator-horizontal` — a rule with arrows either side. The
+/// Insert tab's section-break action.
+pub const LUCIDE_SEPARATOR_HORIZONTAL: &str = "M3 12h18M16 16l-4 4-4-4M8 8l4-4 4 4";
+
 /// Lucide `list` — three lines with leading dots. The bullet-list toggle.
 pub const LUCIDE_LIST: &str = "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01";
 

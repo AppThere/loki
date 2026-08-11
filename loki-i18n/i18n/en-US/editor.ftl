@@ -176,3 +176,4 @@ editor-insert-failed = Could not insert here
 # between fitting it to the column and letting it scroll at its own width.
 editor-oversized-expand = Expand
 editor-oversized-fit = Fit to column
+editor-insert-section-ok = Section inserted

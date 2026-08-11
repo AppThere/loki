@@ -63,6 +63,31 @@ pub fn insert_section_after(loro: &LoroDoc, section_index: usize) -> Result<usiz
     Ok(section_index + 1)
 }
 
+/// The section containing the global top-level `block_index`, mirroring
+/// [`resolve_section_blocks`](super::resolve_section_blocks)'s walk — the UI
+/// resolves the caret's section with this before calling
+/// [`insert_section_after`]. `None` when the index is past the last block.
+#[must_use]
+pub fn section_of_block(loro: &LoroDoc, block_index: usize) -> Option<usize> {
+    let sections = loro.get_list(KEY_SECTIONS);
+    let mut base = 0usize;
+    for s in 0..sections.len() {
+        let Some(section) = section_at(&sections, s) else {
+            continue;
+        };
+        let len = section
+            .get(KEY_BLOCKS)
+            .and_then(|v| v.into_container().ok())
+            .and_then(|c| c.into_movable_list().ok())
+            .map_or(0, |l| l.len());
+        if block_index < base + len {
+            return Some(s);
+        }
+        base += len;
+    }
+    None
+}
+
 #[cfg(test)]
 #[path = "section_tests.rs"]
 mod tests;

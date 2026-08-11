@@ -80,7 +80,7 @@ pub use self::para_mark::{
 pub use self::revision::{
     accept_reject_all_revisions, accept_reject_revision_at, revision_at, tracked_grapheme_delete,
 };
-pub use self::section::insert_section_after;
+pub use self::section::{insert_section_after, section_of_block};
 pub use self::selection::{delete_selection_at, tracked_delete_selection_at};
 pub use self::style::{
     clear_block_list, get_block_heading_style, get_block_list_id, get_block_style_name,
