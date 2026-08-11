@@ -12,16 +12,12 @@ mod actions;
 mod body;
 mod char_browser;
 mod draft_table;
+mod handles;
+mod list_form;
+mod list_form_draft;
 
-/// `use_signal` initialiser for the table draft (keeps the draft type private
-/// to this module — `editor_inner` only threads the signal through).
-pub(super) fn table_draft_none() -> Option<draft_table::TableStyleDraft> {
-    None
-}
-
-/// The table-draft signal's payload, named so a module that only *threads* the
-/// signal through can write its type without reaching into `draft_table`.
-pub(super) type TableStyleDraftHandle = draft_table::TableStyleDraft;
+#[rustfmt::skip]
+pub(super) use handles::{ListLevelDraftHandle, TableStyleDraftHandle, list_level_draft_none, table_draft_none};
 mod char_form;
 mod draft;
 mod family_inspector;
@@ -64,8 +60,7 @@ use provenance::StyleProvenanceList;
 pub(super) use draft::style_to_draft;
 pub(super) use sync::StyleEditorSync;
 
-/// Height of the open style editor panel in CSS pixels.
-pub(super) const STYLE_EDITOR_HEIGHT_PX: f32 = 360.0;
+pub(super) use posture::STYLE_EDITOR_HEIGHT_PX;
 
 /// Renders the inline style catalog editor panel.
 ///
@@ -82,6 +77,7 @@ pub(super) fn style_editor_panel(
     editing_table_style: Signal<Option<String>>,
     editing_table_draft: Signal<Option<draft_table::TableStyleDraft>>,
     editing_list_style: Signal<Option<String>>,
+    editing_list_level: Signal<Option<list_form_draft::ListLevelDraft>>,
     editing_page_style: Signal<Option<String>>,
     style_panel_inspect: Signal<bool>,
     breakpoint: Breakpoint,
@@ -112,6 +108,10 @@ pub(super) fn style_editor_panel(
     let list_selected = editing_list_style.read().clone();
     let (list_list, list_selected_rows) =
         panel_data::list_data(&doc_state, list_selected.as_deref());
+    let list_draft = editing_list_level.read().clone();
+    let ds_list_form = Arc::clone(&doc_state);
+    let on_edit_list_level =
+        list_form::seed_level_handler(&doc_state, list_selected.clone(), editing_list_level);
     // The app-scoped settings, read **once** per render — and reading them here
     // is what subscribes this scope to `settings_generation`, so writing a
     // setting redraws the panel (T6.3/T6.4). Every length on screen and the
@@ -289,7 +289,10 @@ pub(super) fn style_editor_panel(
                     if let Some((pname, playout)) = page_edit {
                         { page_form::page_style_form(&ds_page_form, pname, playout, editing_page_style, sync, &settings) }
                     }
-                    { family_inspector::family_inspector_columns(char_selected_rows, list_selected_rows, page_selected_rows, posture) }
+                    if let Some(ldraft) = list_draft {
+                        { list_form::list_level_form(ds_list_form, editing_list_level, ldraft, sync) }
+                    }
+                    { family_inspector::family_inspector_columns(char_selected_rows, list_selected_rows, page_selected_rows, posture, on_edit_list_level) }
                 }
             }
         }

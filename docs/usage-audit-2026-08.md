@@ -270,9 +270,13 @@ list item; otherwise the default focus traversal proceeds). Still open:
 ~~(4) ODT import convergence~~ (**landed 2026-08-11** — see above; the same
 pass taught EPUB export to render path-A runs as nested `<ul>`/`<ol>`, which
 the convergence would otherwise have silently downgraded to plain
-paragraphs). (5)
-Per-level list-style editor form in the style panel. (6) Refinements: label
-alignment, `lvlText` restarts, `"- "` autoformat (greenfield).
+paragraphs). ~~(5) Per-level list-style editor form in the style panel~~
+(**landed 2026-08-11**: the inspector's level rows are now buttons seeding a
+per-level draft; the form edits kind, bullet char, scheme, `%N` format,
+start, and both indents — unexposed fields pass through — and Apply commits
+through the new `set_list_style_level` mutation + the page family's `commit`
+pipeline, so referencing paragraphs re-derive on relayout). (6) Refinements:
+label alignment, `lvlText` restarts, `"- "` autoformat (greenfield).
 
 ## §11 Inline formatting overflow on small screens
 

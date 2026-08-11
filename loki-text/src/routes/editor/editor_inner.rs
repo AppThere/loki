@@ -139,6 +139,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     let editing_table_draft = use_signal(super::editor_style_editor::table_draft_none);
     // List / page styles browsed in the style panel (Spec 05 M6): read-only.
     let editing_list_style = use_signal(|| Option::<String>::None);
+    let editing_list_level = use_signal(super::editor_style_editor::list_level_draft_none);
     let editing_page_style = use_signal(|| Option::<String>::None);
     // Compact style-panel pane (Spec 05 M7 §11): Inspect vs Edit; ignored ≥Medium.
     let style_panel_inspect = use_signal(|| false);
@@ -577,6 +578,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         editing_char_draft,
         editing_table_style,
         editing_list_style,
+        editing_list_level,
         editing_page_style,
         style_panel_inspect,
     };

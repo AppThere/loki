@@ -26,6 +26,7 @@ pub(super) fn family_inspector_columns(
     list_selected_rows: ListSelection,
     page_selected_rows: PageSelection,
     posture: StylePanelPosture,
+    on_edit_list_level: EventHandler<u8>,
 ) -> Element {
     rsx! {
         // ── Character inspector (read-only; §9 character family) ────────────
@@ -47,10 +48,23 @@ pub(super) fn family_inspector_columns(
                     ),
                     { name }
                 }
+                // §10 tier 5: each level row is a button that seeds the
+                // per-level edit form (right of this column).
                 for lvl in rows.into_iter() {
-                    div {
+                    button {
                         key: "list-level-{lvl.level}",
-                        style: format!("display: flex; flex-direction: column; margin-bottom: {}px;", tokens::SPACE_1),
+                        style: format!(
+                            "display: flex; flex-direction: column; align-items: flex-start; \
+                             margin-bottom: {m}px; min-height: {t}px; text-align: left; \
+                             background: transparent; border: 1px solid transparent; \
+                             border-radius: 3px; cursor: pointer; padding: 2px;",
+                            m = tokens::SPACE_1,
+                            t = tokens::TOUCH_MIN,
+                        ),
+                        onclick: {
+                            let level = lvl.level;
+                            move |_| on_edit_list_level.call(level)
+                        },
                         span {
                             style: format!(
                                 "font-size: {fs}px; color: {fg}; font-weight: {fw};",

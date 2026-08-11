@@ -51,6 +51,8 @@ pub(super) struct StylePanelState {
     pub editing_table_style: Signal<Option<String>>,
     /// Selected list style in the family browser.
     pub editing_list_style: Signal<Option<String>>,
+    /// Per-level list-style draft (§10 tier 5) — `Some` mounts the level form.
+    pub editing_list_level: Signal<Option<super::editor_style_editor::ListLevelDraftHandle>>,
     /// Selected page style in the family browser.
     pub editing_page_style: Signal<Option<String>>,
     /// Compact-only Edit/Inspect switch position.
@@ -112,6 +114,7 @@ pub(super) fn style_panels(
                 state.editing_table_style,
                 editing_table_draft,
                 state.editing_list_style,
+                state.editing_list_level,
                 state.editing_page_style,
                 state.style_panel_inspect,
                 breakpoint,

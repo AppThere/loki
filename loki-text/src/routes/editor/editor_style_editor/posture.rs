@@ -81,3 +81,7 @@ impl StylePanelPosture {
 #[cfg(test)]
 #[path = "posture_tests.rs"]
 mod tests;
+
+/// Height of the open style editor panel in CSS pixels. (Moved here from
+/// `mod.rs` to hold that file under the 300-line ceiling.)
+pub(in crate::routes::editor) const STYLE_EDITOR_HEIGHT_PX: f32 = 360.0;

@@ -70,6 +70,15 @@ style-page-margin-right = Right
 style-page-margins-apply = Set
 # One indent level of a list style
 style-list-level-label = Level { $n }
+# §10 tier 5 — the per-level list edit form
+style-list-form-heading = Edit level { $n }
+style-list-kind-bullet = Bullet
+style-list-kind-numbered = Numbered
+style-list-format-label = Format
+style-list-start-label = Start
+style-list-bullet-label = Character
+style-list-indent-label = Indent (pt)
+style-list-hanging-label = Hanging (pt)
 # A list level's label kind and geometry (non-inheriting; shown read-only)
 style-list-level-detail = { $label } · indent { $indent } · hanging { $hanging } · { $alignment }
 # Compact (< 600 px) segmented switcher between the edit and inspect panes (§11)
