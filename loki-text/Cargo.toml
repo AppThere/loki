@@ -41,6 +41,8 @@ loki-ooxml      = { path = "../loki-ooxml" }
 # ODT/ODF import — converts OpenDocument Text files to loki_doc_model::Document.
 loki-markdown    = { path = "../loki-markdown" }
 loki-odf        = { path = "../loki-odf" }
+loki-print      = { path = "../loki-print" }
+loki-print-dialog = { path = "../loki-print-dialog" }
 # VBA source extraction (source only, never p-code) for the read-only macro viewer.
 loki-vba        = { path = "../loki-vba" }
 # Macro trust store + capability broker (macro spec Phase 4). Provided into

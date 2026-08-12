@@ -115,6 +115,7 @@ mod font_family_list;
 mod link_dialog;
 mod meta_dialog;
 mod page_dialog;
+mod print_dialog;
 mod publish_dialog;
 mod span_dialog;
 mod style_char_inspector;

@@ -177,3 +177,20 @@ editor-insert-failed = Could not insert here
 editor-oversized-expand = Expand
 editor-oversized-fit = Fit to column
 editor-insert-section-ok = Section inserted
+
+# §6 — the Print dialog
+print-dialog-title = Print
+print-dialog-close-aria = Close print dialog
+print-dialog-cancel = Cancel
+print-system-hint = Print through your system's print dialog — choose the printer, pages, and copies there.
+print-system-button = Print…
+print-ipp-hint = Or send directly to a network printer (IPP).
+print-ipp-uri-label = Printer URI
+print-ipp-copies = Copies
+print-ipp-pages = Pages
+print-ipp-duplex = Print on both sides
+print-ipp-button = Send to printer
+print-ipp-sent = Job { $job } sent to printer
+print-sent = Sent to the system print service
+print-cancelled = Printing cancelled
+print-error = Could not print: { $reason }

@@ -39,6 +39,8 @@ pub(super) struct DocShortcuts {
     pub on_new: Callback<String>,
     /// The platform open picker.
     pub on_open: Callback<()>,
+    /// Ctrl/Cmd+P — the Print dialog (§6).
+    pub on_print: Callback<()>,
 }
 
 /// Builds the `onkeydown` closure for the document canvas scroll container.
@@ -83,6 +85,10 @@ pub(super) fn make_keydown_handler(
             }
             if matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("o")) {
                 shortcuts.on_open.call(());
+                return;
+            }
+            if matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("p")) {
+                shortcuts.on_print.call(());
                 return;
             }
             handle_ctrl_keys(

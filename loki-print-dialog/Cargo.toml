@@ -1,0 +1,22 @@
+[package]
+name = "loki-print-dialog"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "System print-dialog capability for the Loki suite (per-platform, portal-first)"
+repository = "https://github.com/appthere/loki"
+keywords = ["print", "portal", "dialog", "loki"]
+categories = ["gui"]
+
+[dependencies]
+thiserror = "2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Already in the workspace dependency tree via rfd's XDG portal backend, so
+# this adds no new transitive weight. async-io flavour (the default): the
+# returned futures are runtime-agnostic, which is what lets the app await
+# them on the Dioxus executor.
+# default-features = false: ashpd defaults to its tokio flavour, while rfd
+# (via loki-file-access) enables async-std — the two are mutually exclusive
+# inside ashpd, so this crate must pick the same one the tree already uses.
+ashpd = { version = "0.11", default-features = false, features = ["async-std"] }

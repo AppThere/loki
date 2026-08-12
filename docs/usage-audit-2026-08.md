@@ -157,16 +157,25 @@ CLI. The document side is solved: `loki_pdf::build_pdf` explicitly accepts the
 editor's already-computed layout, and `editor_publish.rs::serialize` produces
 the bytes today.
 
-**Plan.** New capability crate mirroring `loki-file-access`'s per-platform
-shape (`rfd`-style portal on Linux — `org.freedesktop.portal.Print` keeps
-Flatpak working; `NSPrintOperation` on macOS; `PrintDlgEx`/WinRT printing on
-Windows; `PrintManager` over the existing JNI trampoline pattern on Android;
-`UIPrintInteractionController` on iOS when the harness exists). Publish-tab
-Print button + `dialogs.print` signal + Ctrl+P; render via `build_pdf` from
-the live layout; optionally keep an "IPP printer URI" path reusing
-`loki-print` for office deployments. `PrintOptions` lacks page-ranges — add
-before UI. Spreadsheet/presentation printing is blocked on their nonexistent
-PDF export and should be scoped out initially.
+**Plan.** — **desktop-Linux slice landed 2026-08-12** (page-ranges landed
+earlier). `loki-print-dialog` is the capability crate, mirroring
+`loki-file-access`'s per-platform shape: the Linux backend drives
+`org.freedesktop.portal.Print` via ashpd (fd handover, so Flatpak keeps
+working; ashpd was already in the tree through rfd — pinned to the same
+async-std flavour, since ashpd's runtime features are mutually exclusive and
+rfd chose first). Every other platform is a **typed** `Unsupported` naming
+itself, with in-code TODO(print-macos/windows/android/ios) markers. The
+editor gained `dialogs.print` + a Print dialog (mounted from
+`editor_modals`) with both routes: the system dialog (render → portal — the
+portal owns printer/copies/pages, so the dialog offers no competing knobs)
+and the IPP office-deployment route (URI/copies/pages/duplex over
+`loki-print`; malformed ranges are refused by the downstream validator, a
+coupling the tests pin). Publish-tab Print button + Ctrl+P land it. Both
+routes render through the Publish serializer (PDF/X-3), so what prints is
+what an export would contain. **Not verifiable headless**: the portal call
+itself needs a session bus + portal implementation — first run on a desktop
+should confirm the dialog appears and a job reaches CUPS. Spreadsheet/
+presentation printing stays scoped out (no PDF export there).
 
 ## §7 Template modifications
 

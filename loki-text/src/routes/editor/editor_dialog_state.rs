@@ -36,6 +36,8 @@ pub(in crate::routes::editor) struct DialogSignals {
     pub insert_table: Signal<Option<TableSpec>>,
     /// Publish EPUB 3 (section 7). `true` while open.
     pub publish_epub: Signal<bool>,
+    /// The Print dialog (§6). `true` while open.
+    pub print: Signal<bool>,
 }
 
 /// Initialises every dialog's open state, all closed.
@@ -50,5 +52,6 @@ pub(in crate::routes::editor) fn use_dialog_signals() -> DialogSignals {
         insert_link: use_signal(|| None),
         insert_table: use_signal(|| None),
         publish_epub: use_signal(|| false),
+        print: use_signal(|| false),
     }
 }

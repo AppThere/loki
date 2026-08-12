@@ -20,4 +20,4 @@ mod options;
 
 pub use client::{IppPrinter, PrintJobState};
 pub use error::PrintError;
-pub use options::{ColorMode, Duplex, PrintOptions};
+pub use options::{ColorMode, Duplex, PrintOptions, parse_page_ranges};

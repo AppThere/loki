@@ -192,7 +192,10 @@ pub(super) fn run_export(
 }
 
 /// Serialises `doc` into the chosen format's bytes.
-fn serialize(doc: &loki_doc_model::Document, format: PublishFormat) -> Result<Vec<u8>, String> {
+pub(super) fn serialize(
+    doc: &loki_doc_model::Document,
+    format: PublishFormat,
+) -> Result<Vec<u8>, String> {
     match format {
         PublishFormat::Pdf(level) => {
             let opts = PdfXOptions {

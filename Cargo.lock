@@ -4917,6 +4917,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "loki-print-dialog"
+version = "0.1.0"
+dependencies = [
+ "ashpd",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "loki-render-cpu"
 version = "0.1.0"
 dependencies = [
@@ -5149,6 +5157,8 @@ dependencies = [
  "loki-odf",
  "loki-ooxml",
  "loki-pdf",
+ "loki-print",
+ "loki-print-dialog",
  "loki-renderer",
  "loki-templates",
  "loki-vba",

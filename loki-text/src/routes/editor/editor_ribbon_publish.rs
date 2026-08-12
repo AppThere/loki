@@ -31,10 +31,11 @@ pub(super) fn publish_tab_content(
 ) -> Element {
     let mut publish_epub = dialogs.publish_epub;
     let mut metadata = dialogs.metadata;
+    let mut print_open = dialogs.print;
 
     // Export (PDF/X + EPUB) is kept full longer than the single Metadata button.
     let export = RibbonGroupSpec {
-        metrics: estimate_group_metrics(1, 2, true),
+        metrics: estimate_group_metrics(1, 3, true),
         partial: None,
         label: Some(fl!("publish-group-export")),
         aria_label: fl!("publish-group-export"),
@@ -48,6 +49,16 @@ pub(super) fn publish_tab_content(
                     is_publish_panel_open.set(!open);
                 },
                 {label_node(&fl!("publish-export-pdf-label"))}
+            }
+            AtRibbonIconButton {
+                aria_label: fl!("publish-print-aria"),
+                is_active: print_open(),
+                is_disabled: false,
+                on_click: move |_| {
+                    let is_open = print_open();
+                    print_open.set(!is_open);
+                },
+                {label_node(&fl!("publish-print-label"))}
             }
             AtRibbonIconButton {
                 aria_label: fl!("publish-export-epub-aria"),

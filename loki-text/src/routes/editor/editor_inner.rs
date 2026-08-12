@@ -623,6 +623,10 @@ pub(super) fn EditorInner(path: String) -> Element {
                 super::editor_keydown::DocShortcuts {
                     on_new: document_actions.on_new,
                     on_open: document_actions.on_open,
+                    on_print: {
+                        let mut print_open = dialogs.print;
+                        Callback::new(move |()| print_open.set(!print_open()))
+                    },
                 },
                 path_signal,
                 document_load,

@@ -165,6 +165,18 @@ pub(super) fn editor_modals(
 
         // Publish EPUB 3 (design section 7). Its preflight links to the
         // properties dialog above, so it carries that dialog's open signal.
+        // Print (§6): the system-dialog and IPP routes.
+        {dialogs.print.cloned().then(|| rsx! {
+            super::print_dialog::PrintDialog {
+                ..super::print_dialog::PrintDialogProps {
+                    doc_state: Arc::clone(&doc_state),
+                    open: dialogs.print,
+                    path,
+                    save_message: sync.save_message,
+                }
+            }
+        })}
+
         {dialogs.publish_epub.cloned().then(|| rsx! {
             PublishEpubDialog {
                 ..PublishEpubDialogProps {
