@@ -164,6 +164,150 @@ fn preserve_flag_is_part_of_key() {
     );
 }
 
+/// Text of the `i`th stable body paragraph in the typing-burst fixtures.
+fn stable(i: usize) -> String {
+    format!("Stable body paragraph number {i} with enough words to shape a line or two.")
+}
+
+/// Lays out the 40-paragraph stable body, as a full layout pass would.
+fn lay_stable_body(r: &mut FontResources) {
+    for i in 0..40 {
+        let t = stable(i);
+        lay(r, &t, &[span(&t)], 400.0);
+    }
+}
+
+/// Types `keystrokes` characters into one paragraph, re-laying the whole
+/// document each time — the editor's per-keystroke behaviour.
+fn typing_burst(r: &mut FontResources, keystrokes: usize) {
+    let mut typed = String::new();
+    for step in 0..keystrokes {
+        typed.push(if step.is_multiple_of(7) { ' ' } else { 'a' });
+        lay_stable_body(r);
+        lay(r, &typed, &[span(&typed)], 400.0);
+    }
+}
+
+/// A typing burst must not grow the cache without bound.
+///
+/// The key is a hash of the paragraph *text*, so every keystroke mints an entry
+/// and the superseded versions stay resident; because each version is longer
+/// than the last, the retained bytes grew with the **square** of the burst.
+/// Measured before the byte bound: 100 keystrokes → 0.4 MiB, 600 → 8.0 MiB
+/// (6× the keystrokes, 21.7× the bytes) against a working set of 41 entries,
+/// with the entry cap unable to intervene until 2048.
+#[test]
+fn a_typing_burst_stays_within_the_byte_bound() {
+    let mut r = resources();
+    lay_stable_body(&mut r);
+    typing_burst(&mut r, 3000);
+
+    let (_, bytes) = r.para_cache_stats();
+    let ceiling = 2 * crate::para_cache::GENERATION_BYTE_CAP;
+    assert!(
+        bytes <= ceiling,
+        "cache retained {bytes} bytes, above the two-generation ceiling {ceiling}"
+    );
+}
+
+/// The bound must be met by evicting **garbage**, not by starving the cache.
+///
+/// This is the inversion the byte assertion alone cannot make: a `put` that
+/// dropped everything, or a `clear()` on every insert, would satisfy the
+/// ceiling perfectly while destroying the cache's whole purpose. So after a
+/// burst long enough to have forced rotations, a paragraph from the stable body
+/// must still be served **without** re-shaping — no new entry appears.
+#[test]
+fn the_working_set_survives_the_evictions_that_enforce_the_bound() {
+    let mut r = resources();
+    lay_stable_body(&mut r);
+    typing_burst(&mut r, 3000);
+
+    // The only paragraphs that should ever have been shaped are the 40 stable
+    // ones (once, at the start) and one new version per keystroke. Anything
+    // beyond that is the stable body being re-shaped because eviction threw it
+    // away — 40 more for every rotation that did.
+    //
+    // Two weaker drafts of this assertion were passed by a `clear()`-on-rotate
+    // mutant: re-laying the body before measuring made it trivially true, and
+    // even measuring residency straight after the burst did not discriminate,
+    // because the pass following any clear refills the cache — so it looks
+    // populated whenever it is sampled. The re-shape count over the whole burst
+    // is the instrument that can actually speak.
+    let expected = 40 + 3000;
+    assert!(
+        r.para_cache.misses <= expected,
+        "shaped {} paragraphs where {expected} were unavoidable — the bound is \
+         being met by starving the working set rather than by evicting garbage",
+        r.para_cache.misses
+    );
+}
+
+/// The maintained byte counters must equal an independent walk of the entries.
+///
+/// `stats()` returns running totals rather than walking (the walk is O(glyphs)
+/// per entry and ran on every call), so the two derivations are pinned
+/// together here: promotion, replacement and rotation each move bytes between
+/// the generations, and a counter that drifted would silently move the bound.
+#[test]
+fn maintained_byte_total_matches_a_full_walk() {
+    let mut r = resources();
+    lay_stable_body(&mut r);
+    // Long enough to force several rotations: the debits and credits only run
+    // when there *is* an older generation to promote out of, so a burst that
+    // stays under the cap exercises none of the bookkeeping this pins down.
+    typing_burst(&mut r, 3000);
+    lay_stable_body(&mut r);
+
+    let (_, maintained) = r.para_cache_stats();
+    assert_eq!(
+        maintained,
+        r.para_cache.walked_byte_total(),
+        "running byte total drifted from the walked sum"
+    );
+}
+
+/// The retained Parley layout must be part of the accounting.
+///
+/// Every editor entry keeps one (`preserve_for_editing`), and it is ~26 B/char
+/// against ~18.5 B/char for everything else the accounting walks — so a bound
+/// computed without it would be budgeting against a third of the object. The
+/// discriminating comparison is the same paragraph cached with and without the
+/// retained layout.
+#[test]
+fn the_retained_parley_layout_is_counted() {
+    let text = "A paragraph with enough text to shape several clusters and a line.";
+
+    let mut with = resources();
+    let _ = layout_paragraph(
+        &mut with,
+        text,
+        &[span(text)],
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        true,
+    );
+    let mut without = resources();
+    let _ = layout_paragraph(
+        &mut without,
+        text,
+        &[span(text)],
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+
+    let (_, kept) = with.para_cache_stats();
+    let (_, dropped) = without.para_cache_stats();
+    assert!(
+        kept > dropped,
+        "entry retaining a Parley layout ({kept} B) must count more than one \
+         without ({dropped} B)"
+    );
+}
+
 /// The §15/A1 instrumentation: entries and the byte floor must track the
 /// cache's real residency — grow on distinct layouts, report non-zero bytes
 /// for glyph-bearing entries, and drop to zero on clear (the inversion: a

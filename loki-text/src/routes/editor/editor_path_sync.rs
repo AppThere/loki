@@ -98,7 +98,33 @@ pub(super) fn stash_outgoing(
     };
     let undo_manager = sig.undo_manager.write().take();
     if !tabs.peek().iter().any(|t| t.path == old_path) {
-        return; // tab closed or Save-As-repointed — do not resurrect on reopen
+        // Tab closed or Save-As-repointed — do not resurrect on reopen, and
+        // drop the shaped paragraphs with the session.
+        //
+        // The shaping cache lives on the *app-root* `SharedFontResources`, so
+        // nothing else releases it: closing the last tab left a whole
+        // document's glyph runs and Parley layouts resident behind the Home
+        // screen (measured on Windows — WorkingSet did not move at all across
+        // the close). Every document *activation* already clears the cache, so
+        // this is the missing half of that pair rather than a new policy, and
+        // the cache is single-document by construction either way.
+        //
+        // This is the one predicate that distinguishes closed from merely
+        // switched-away, which is why the clear lives here instead of in the
+        // several independent close paths. It does also catch Save-As, where
+        // the document is still open under a new path; that costs one re-shape
+        // on an explicit user action, and only when the repoint does not
+        // already re-seed.
+        let fonts = doc_state
+            .lock()
+            .ok()
+            .map(|s| s.shared_font_resources.clone());
+        // Taken after the state guard is released: the layout path holds these
+        // two locks in this order and never nests them.
+        if let Some(fonts) = fonts {
+            fonts.lock().clear_paragraph_cache();
+        }
+        return;
     }
     // The layout is deliberately NOT stashed (memory F3 / plan 6.1): it is
     // recomputed from `document` on restore, so an inactive tab retains only

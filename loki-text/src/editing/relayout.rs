@@ -32,6 +32,15 @@ pub(crate) struct LaidOut {
     /// under-count on incremental runs (cache hits skip resolution) — callers
     /// extend `DocumentState::font_substitutions` rather than replace it.
     pub substitutions: std::collections::HashMap<String, Option<String>>,
+    /// Whether the incremental path produced this layout (`false` = a full
+    /// pass ran).
+    ///
+    /// Reported by the `loki_text::mem` counters because the two paths visit
+    /// very different fractions of the document: a full pass looks up *every*
+    /// live paragraph in the shaping cache, an incremental one only the
+    /// re-flowed span. Which of those is the steady state during typing decides
+    /// what can bound that cache, so it is measured rather than assumed.
+    pub incremental: bool,
 }
 
 /// Lays out `doc` (paginated), reusing `prev` incrementally when the edit is
@@ -53,6 +62,7 @@ pub(crate) fn relayout_paginated(
             layout,
             reuse,
             substitutions,
+            incremental: true,
         };
     }
     let (layout, reuse) = layout_paginated_full(fr, doc, 1.0, &opts);
@@ -61,6 +71,7 @@ pub(crate) fn relayout_paginated(
         layout,
         reuse,
         substitutions,
+        incremental: false,
     }
 }
 

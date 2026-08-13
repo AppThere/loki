@@ -86,6 +86,7 @@ pub fn apply_mutation_and_relayout(
         relayout_paginated(&mut fr, &doc, prev)
     };
     let (page_count, page_width_px, page_height_px) = page_metrics(&laid_out.layout);
+    let incremental = laid_out.incremental;
 
     // Step 4: Publish.
     let block_count: usize = doc.sections.iter().map(|s| s.blocks.len()).sum();
@@ -103,7 +104,7 @@ pub fn apply_mutation_and_relayout(
     state.generation = state.generation.wrapping_add(1);
     drop(state);
 
-    log_memory_counters(loro_doc, &fr_arc, page_count, block_count);
+    log_memory_counters(loro_doc, &fr_arc, page_count, block_count, incremental);
     true
 }
 
@@ -125,15 +126,22 @@ pub fn apply_mutation_and_relayout(
 ///
 /// - `loro_ops`/`loro_changes` climbing while `pages`/`blocks` stay flat →
 ///   history growth (Finding 6).
-/// - `para_cache_entries`/`para_cache_bytes` (A1): one new entry per keystroke
-///   is the cache's text-keyed growth; the bytes are a floor (glyph vectors +
-///   index maps; the retained Parley layouts are opaque and uncounted).
+/// - `para_cache_entries`/`para_cache_bytes` (A1): the cache is text-keyed, so
+///   a keystroke mints an entry; both figures now **sawtooth** rather than
+///   climb, because the cache is bounded by retained bytes and rotation drops
+///   the superseded versions. A monotonic climb here is the regression. The
+///   bytes include the retained Parley layout (the dominant term) and remain a
+///   floor only for parley's unreadable capacity slack.
 /// - `loro_history_cache` (A2): `true` between the first post-load mutation
 ///   and the next save (`free_history_cache` runs on the save path only) —
 ///   an RSS step-down at save while this flips to `false` confirms A2.
 /// - `texture_resident`/`texture_peak` (A3): the residency counter's live and
 ///   peak bytes beside RSS; RSS growth these do **not** show is off-budget
 ///   (the Vello atlas ratchet is the candidate).
+/// - `incremental`: whether the layout came from the incremental path or a
+///   full pass. The two visit different fractions of the document, so this is
+///   what says whether a full pass (which looks up *every* live paragraph, and
+///   so can serve as a cache epoch) is the steady state while typing.
 ///
 /// Throttled to one log per 64 mutations to stay cheap.
 fn log_memory_counters(
@@ -141,6 +149,7 @@ fn log_memory_counters(
     fonts: &loki_layout::SharedFontResources,
     page_count: usize,
     block_count: usize,
+    incremental: bool,
 ) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static MUTATIONS: AtomicU64 = AtomicU64::new(0);
@@ -165,6 +174,7 @@ fn log_memory_counters(
         texture_peak = textures.peak,
         pages = page_count,
         blocks = block_count,
+        incremental,
         "edit-session memory counters",
     );
 }

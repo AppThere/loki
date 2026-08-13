@@ -425,6 +425,79 @@ none yet run — this environment has no GPU/display):
   layout churn (glibc arenas hold the high-water mark; zero leaked bytes under
   heaptrack). *Settle it:* heaptrack peak-vs-RSS; `MALLOC_ARENA_MAX=2` run.
 
+**Measured on Windows (2026-08-13), and A1 is confirmed and fixed.** The four
+mechanisms above were ranked by reading; three have now been run on the
+RTX 3050 box against the 15-page/260-block Iris Blueprint, typing ~2 100
+characters into one paragraph with `RUST_LOG=loki_text::mem=info`.
+
+- **A1 — confirmed, and the shape was worse than predicted.** `para_cache_entries`
+  grew *exactly* 1:1 with keystrokes (363 → 2 283 over 1 920 mutations) and
+  nothing was ever evicted. But the bytes grew **quadratically**, not linearly:
+  each keystroke re-keys the *whole* paragraph, and each successive version is
+  longer than the last, so a burst retains O(length²). Reproduced headlessly
+  (`para_cache_tests::measure`-derived fixture): 6× the keystrokes for 21.7× the
+  bytes, against a live working set of 41 entries. The derived ceiling in the
+  bullet above (20–270 MiB) assumed linear growth and so understated it.
+- **The byte figure was also a floor missing its dominant term.** Every editor
+  entry retains a `parley::Layout` (`preserve_for_editing`), which
+  `layout_bytes` did not count. Measured against parley 0.10's struct
+  definitions it is ~26 B/char live (~41 B/char retained, the difference being
+  `push`-grown capacity parley exposes no way to compact) against ~18.5 B/char
+  for everything that *was* counted — so the reported figure was roughly a third
+  of the object, and 34 MB reported meant ~90 MB real.
+- **A2 — not confirmed.** `loro_history_cache` stayed `false` for all 1 920
+  mutations, contradicting the prediction that it flips `true` on the first
+  post-load mutation and stays there until save. Either plain insert edits do
+  not take the `diff` path that builds it, or a different trigger (undo,
+  cross-tab) is needed. *What would settle it:* drive undo and a second tab.
+- **A3 — not implicated by typing.** `texture_resident`/`texture_peak` did not
+  move at all across the burst (no scrolling, so no new tiles). Untested for
+  the scroll workload it was actually proposed for.
+- **A4 — now the dominant remaining term.** On tab close, *private/commit* fell
+  287 MB while *working set* fell only 35 MB: the memory is being freed and the
+  pages are not being returned. That is allocator retention, and it is why the
+  per-workload working-set delta improved far less than the cache residency did
+  (see the fix below). Not yet run: `MALLOC_ARENA_MAX` has no Windows analogue,
+  so the falsification script in `scripts/heaptrack-typing-scenario.sh` is
+  Linux-only. *What would settle it:* a mimalloc/jemalloc build measured on the
+  same workload.
+
+**A fact that changed the design: typing uses the *incremental* layout path.**
+Added to the counters as `incremental`, it reads `true` for every keystroke
+after the first. That rules out using a full layout pass as a cache epoch (an
+exact GC, since a full pass looks up every live paragraph and so promotes
+exactly the live set) — it would essentially never fire. The bound had to be
+byte-based instead. It also means the cache's *hit* value while typing is
+limited to the re-flowed span; whole-document residency pays off only on a
+mid-session fallback to a full pass, since open and tab-switch already clear it.
+
+**Fixed (2026-08-13).** (1) `ParaCache` is now bounded by retained bytes per
+generation (8 MiB, which is where the 2048-entry cap already put the cliff at a
+measured ~3.7 KiB/paragraph — so large-document behaviour is unchanged and what
+is new is that a *typing burst* now has a ceiling too). Rotation is the
+eviction: superseded versions are never looked up again, so they are what the
+older generation drops, while the live set is promoted back on its next hit.
+(2) `layout_bytes` now counts the retained parley layout, so the bound and the
+instrumentation mean what they say. (3) The cache is cleared when a document is
+**closed**, not only when one is opened — the clear lives on the one predicate
+that distinguishes closed from merely switched-away (`stash_outgoing`).
+
+On-device result, same document and workload: cache residency went from
+monotonic and unbounded (34 MB reported ≈ 90 MB real, still climbing) to a
+sawtooth between 10.0 and 15.8 MB against the 16 MiB ceiling; working set during
+typing 507 → 450 MB; and closing the last tab released 35 MB where it had
+released **zero**. Guarded by four mutation-tested regression tests — including
+the inversion that a cache meeting the bound by *starving itself* must fail,
+which needed a re-shape counter over the whole burst to detect (two weaker
+drafts, both sampling end-state residency, were passed by a `clear()`-on-rotate
+mutant, because the pass after any clear refills the cache).
+
+**Not established:** the working-set delta for the burst improved only 240 → 222
+MB, far less than the cache reduction, which is A4 above and is now the next
+target. No large-document (>200-page) measurement was taken, so the claim that
+the byte cap leaves the existing cliff where it was rests on the per-paragraph
+arithmetic rather than an observation.
+
 **Windows/macOS higher baseline**: dual/triple system-font scans + ~16 MB
 embedded-font copies are platform-neutral; the standout suspect is **budget
 derivation asymmetry** — the memory probe uses different sources per platform
@@ -441,13 +514,19 @@ the dirty-indicator checkpoint logic documents that it relies on no
 merge-interval/grouping, and stack eviction bypasses the `on_pop` mirror.
 
 **Plan.** Phase 1 (instrumentation, cheap): the three loggers above + the
-heaptrack scenario script. Phase 2 (act on what the numbers say), likely:
-byte-bound + close-time clear for `ParaCache`; periodic
-`free_history_cache`/compaction between saves (respecting the saved-state
-coupling); revisit the r15 survival ceiling if A3 confirms; jemalloc/mimalloc
-or `MALLOC_ARENA_MAX` guidance if A4 dominates. Phase 3: fix the two stale
-docs (done in this audit's follow-up), add a typing-workload bench that does
-*not* pre-clear the cache (the current one deliberately excludes it).
+heaptrack scenario script — **landed**, and Phase 2 acted on what they said.
+Phase 2: byte-bound + close-time clear for `ParaCache` — **landed 2026-08-13**,
+see the measured block above. Still open from Phase 2: periodic
+`free_history_cache`/compaction between saves is **not** justified by the
+numbers (A2 did not reproduce — establish the trigger first); the r15 survival
+ceiling is untouched because A3 did not move under typing. **A4 is now the
+ranked-first mechanism** on the strength of the 287 MB commit vs 35 MB
+working-set split at close, so allocator guidance (mimalloc/jemalloc — note
+`MALLOC_ARENA_MAX` is glibc-only and this is a Windows finding) is the next
+measurement rather than a fallback. Phase 3: fix the two stale docs (done in
+this audit's follow-up); a typing-workload bench that does *not* pre-clear the
+cache is still unwritten — the headless burst fixture in `para_cache_tests`
+covers the regression but is a test, not a tracked benchmark.
 
 ---
 

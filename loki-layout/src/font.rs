@@ -122,10 +122,10 @@ impl FontResources {
     }
 
     /// `(entries, approximate heap bytes)` resident in the paragraph shaping
-    /// cache — the usage-audit §15/A1 instrumentation (the cache lives on the
-    /// app-root shared resources, so it is the candidate for "memory stays
-    /// high after closing every tab"). The byte figure is a floor; see
-    /// `ParaCache::stats`.
+    /// cache — the usage-audit §15/A1 instrumentation. The cache lives on the
+    /// app-root shared resources, which is why it was the mechanism behind
+    /// "memory stays high after closing every tab"; it is now cleared on close
+    /// as well as on load. The byte figure is a floor; see `ParaCache::stats`.
     #[must_use]
     pub fn para_cache_stats(&self) -> (usize, usize) {
         self.para_cache.stats()
