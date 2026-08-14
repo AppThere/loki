@@ -10,11 +10,9 @@
 
 use dioxus::prelude::*;
 use dioxus_router::Navigator;
-use loki_file_access::FileAccessToken;
 
 use super::Route;
-use super::editor::{DocumentFormat, detect_format};
-use super::home_util::{opens_as_detached_copy, push_new_tab, push_or_switch_tab};
+use super::home_util::{push_new_tab, push_or_switch_tab};
 use crate::new_document::new_import_tab;
 use crate::recent_documents::RecentDocuments;
 use crate::tabs::OpenTab;
@@ -33,7 +31,23 @@ pub(super) struct StartupCandidate {
 /// (token construction canonicalizes) and carry a supported extension.
 /// Unopenable arguments are skipped with a log line — at launch there is no
 /// surface to report to yet, and refusing to boot over a typo would be worse.
+///
+/// # Desktop only
+///
+/// The cfg mirrors `FileAccessToken::from_path`'s own (see docs/patches.md) —
+/// **that** is the source of truth for which platforms can turn a bare path
+/// into a token, and this list must follow it if it changes. Elsewhere, file
+/// access arrives as a platform grant object (Android content URIs, Apple
+/// security-scoped bookmarks) that a path cannot represent.
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub(super) fn tokenize_candidates(paths: Vec<String>) -> Vec<StartupCandidate> {
+    // Imported here rather than at module scope: these are the *only* uses, so
+    // at module scope they would be unused imports on every other platform,
+    // needing a second copy of the cfg above to silence.
+    use super::editor::{DocumentFormat, detect_format};
+    use super::home_util::opens_as_detached_copy;
+    use loki_file_access::FileAccessToken;
+
     paths
         .into_iter()
         .filter_map(|p| {
@@ -54,6 +68,23 @@ pub(super) fn tokenize_candidates(paths: Vec<String>) -> Vec<StartupCandidate> {
             })
         })
         .collect()
+}
+
+/// No launch path can become a token on this platform, so nothing is seeded.
+///
+/// This is a **deferral, not a gap being papered over**: the stash it would
+/// drain is filled by `main` from argv, and the Android entry point is the
+/// `cdylib`'s `android_main`, which has no argv and never populates it — so
+/// this arm returns empty for a stash that is already always empty. Android's
+/// route to the same feature is the VIEW intent-filter plus a content-URI
+/// token, which is §13 layer 3 and unbuilt.
+///
+/// TODO(startup-android-intent): seed from the launch Intent's data URI once
+/// the manifest declares the VIEW filter and the vendored patch grows
+/// `from_content_uri`.
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+pub(super) fn tokenize_candidates(_paths: Vec<String>) -> Vec<StartupCandidate> {
+    Vec::new()
 }
 
 /// Drains the startup stash and opens each candidate, navigating to the

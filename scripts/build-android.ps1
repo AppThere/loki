@@ -217,12 +217,36 @@ if (-not $SkipCargoApk) {
     if ($Gpu) {
         Write-Host "    GPU renderer enabled (RUSTFLAGS: $env:RUSTFLAGS)"
     }
+    # Stamp the moment the build starts, so "did this run produce an APK?" can
+    # be answered by the artifact's own mtime rather than by its existence.
+    $buildStarted = Get-Date
     & cargo @buildArgs
     # cargo-apk may exit non-zero due to a post-build artifact-check panic in
     # cargo-subcommand (Bin vs Cdylib confusion) even when the APK was built
-    # successfully.  Check for the APK directly instead of trusting exit code.
-    if ($LASTEXITCODE -ne 0 -and -not (Test-Path $apkSrc)) {
-        throw "cargo apk build failed and APK not found at $apkSrc"
+    # successfully, so a non-zero exit alone cannot fail the build.
+    #
+    # But "the APK exists" cannot stand in for "the APK was built" either: on a
+    # tree that fails to compile, the *previous* run's APK is still sitting
+    # there, and this script would go on to re-sign and install it. That is
+    # exactly what happened on 2026-08-13 — a real compile error
+    # (`FileAccessToken::from_path` missing on Android) was swallowed and a
+    # three-day-old APK was reported as "APK ready". A freshness check is the
+    # difference between the two questions.
+    if ($LASTEXITCODE -ne 0) {
+        if (-not (Test-Path $apkSrc)) {
+            throw "cargo apk build failed and APK not found at $apkSrc"
+        }
+        $apkAge = (Get-Item $apkSrc).LastWriteTime
+        if ($apkAge -lt $buildStarted) {
+            throw @"
+cargo apk build FAILED.
+
+The APK at $apkSrc is stale (written $apkAge, this build started $buildStarted),
+so it is a previous build's output, not this one's. Refusing to package and
+sign it — scroll up for the compiler error.
+"@
+        }
+        Write-Host "    (cargo exited $LASTEXITCODE but produced a fresh APK — known cargo-subcommand artifact-check panic)"
     }
 }
 
