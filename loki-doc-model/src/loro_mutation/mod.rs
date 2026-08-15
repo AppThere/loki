@@ -35,6 +35,7 @@ mod nested;
 #[cfg(feature = "serde")]
 mod objects;
 mod page;
+mod page_break;
 mod page_style;
 mod page_style_assign;
 mod para_mark;
@@ -72,6 +73,7 @@ pub use self::page::{
     document_column_count, document_is_landscape, document_margins, document_page_size,
     set_document_columns, set_document_margins, set_document_orientation, set_document_page_size,
 };
+pub use self::page_break::{get_block_page_break_before, set_block_page_break_before};
 pub use self::page_style::{rename_page_style, set_page_style_geometry};
 pub use self::page_style_assign::{create_page_style, delete_page_style, set_section_page_style};
 pub use self::para_mark::{

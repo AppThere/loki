@@ -81,7 +81,7 @@ pub(super) fn insert_tab_content(
     let mut insert_link = dialogs.insert_link;
     // Priorities (higher = kept full longer): Media/Tables over References/Links.
     let media = RibbonGroupSpec {
-        metrics: estimate_group_metrics(3, 1, true),
+        metrics: estimate_group_metrics(5, 1, true),
         partial: None,
         label: Some(fl!("ribbon-group-media")),
         aria_label: fl!("ribbon-group-media"),
@@ -103,7 +103,7 @@ pub(super) fn insert_tab_content(
     // section continues the caret section's page setup; reassignment is the
     // Page dialog's Sections block.
     let page = RibbonGroupSpec {
-        metrics: estimate_group_metrics(1, 1, true),
+        metrics: estimate_group_metrics(2, 1, true),
         partial: None,
         label: Some(fl!("ribbon-group-page-insert")),
         aria_label: fl!("ribbon-group-page-insert"),
@@ -122,7 +122,7 @@ pub(super) fn insert_tab_content(
     };
 
     let tables = RibbonGroupSpec {
-        metrics: estimate_group_metrics(2, 1, true),
+        metrics: estimate_group_metrics(3, 1, true),
         partial: None,
         label: Some(fl!("ribbon-group-tables")),
         aria_label: fl!("ribbon-group-tables"),
@@ -199,7 +199,14 @@ pub(super) fn insert_tab_content(
     rsx! {
         AtRibbonGroups {
             overflow_aria_label: fl!("ribbon-overflow-aria"),
-            groups: vec![media, tables, page, references, links],
+            groups: vec![
+                media,
+                super::editor_ribbon_insert_breaks::breaks_group(ctx.clone()),
+                tables,
+                page,
+                references,
+                links,
+            ],
         }
     }
 }

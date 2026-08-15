@@ -79,6 +79,7 @@ mod editor_ribbon_dialogs;
 mod editor_ribbon_document;
 mod editor_ribbon_format;
 mod editor_ribbon_insert;
+mod editor_ribbon_insert_breaks;
 mod editor_ribbon_insert_image;
 mod editor_ribbon_layout;
 mod editor_ribbon_lists;

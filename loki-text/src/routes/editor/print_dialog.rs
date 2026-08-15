@@ -19,52 +19,16 @@ use std::sync::{Arc, Mutex};
 use appthere_ui::{AtCheckRow, AtDialogButton, AtDialogShell, AtField, DialogWidth, tokens};
 use dioxus::prelude::*;
 use loki_i18n::fl;
-use loki_print::{Duplex, IppPrinter, PrintOptions};
+use loki_print::IppPrinter;
 use loki_print_dialog::{PrintDialogOutcome, SystemPrintDialog};
 
-use super::editor_publish::{PdfXLevelChoice, PublishFormat, serialize};
 use super::editor_state::SaveStatus;
 use crate::editing::state::DocumentState;
 use crate::utils::display_title_from_path;
 
-/// Builds the IPP job options from the dialog's field strings. Pure, so the
-/// mapping is testable: copies parse loosely (blank = 1), the page-range
-/// string is passed through verbatim — `loki-print` validates it segment by
-/// segment at attribute-build time and refuses the job with a typed error
-/// before any bytes reach a printer.
-pub(super) fn build_ipp_options(
-    copies: &str,
-    pages: &str,
-    duplex: bool,
-    job_title: String,
-) -> PrintOptions {
-    PrintOptions {
-        copies: copies.trim().parse().unwrap_or(1),
-        duplex: if duplex {
-            Duplex::LongEdge
-        } else {
-            Duplex::Simplex
-        },
-        media: None,
-        color: loki_print::ColorMode::Auto,
-        job_title: Some(job_title),
-        page_ranges: {
-            let trimmed = pages.trim();
-            (!trimmed.is_empty()).then(|| trimmed.to_string())
-        },
-    }
-}
-
-/// Renders the current document to print-ready PDF bytes (PDF/X-3, the
-/// Publish tab's default level).
-fn render_pdf(doc_state: &Arc<Mutex<DocumentState>>) -> Result<Vec<u8>, String> {
-    let doc = doc_state
-        .lock()
-        .ok()
-        .and_then(|s| s.document.clone())
-        .ok_or_else(|| "no document".to_string())?;
-    serialize(&doc, PublishFormat::Pdf(PdfXLevelChoice::X3))
-}
+#[path = "print_dialog_support.rs"]
+mod support;
+use support::{build_ipp_options, render_pdf};
 
 /// Props for [`PrintDialog`].
 #[derive(Clone, Props)]

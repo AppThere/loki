@@ -52,6 +52,19 @@ pub const LUCIDE_DOWNLOAD: &str = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 1
 /// "Save as Template" to distinguish it from the plain Save / Save As actions.
 pub const LUCIDE_LAYOUT_TEMPLATE: &str = "M3 3h18v7H3zM3 14h9v7H3zM16 14h5v7h-5z";
 
+/// Page break: two page halves separated by a dashed gap (custom, follows
+/// the AT_MARGIN family's hand-drawn style).
+pub const AT_PAGE_BREAK: &str = "M6 3h12v5H6zM6 16h12v5H6zM4 12h3M10 12h4M17 12h3";
+
+/// Lucide `corner-down-left` — the enter-arrow. A soft line break.
+pub const LUCIDE_CORNER_DOWN_LEFT: &str = "M9 10L4 15l5 5M20 4v7a4 4 0 0 1-4 4H4";
+
+/// Non-breaking space: a space-bar bracket with tie marks (custom).
+pub const AT_NBSP: &str = "M6 13v4h12v-4M9 8h6";
+
+/// Lucide `minus` — the horizontal rule.
+pub const LUCIDE_MINUS: &str = "M5 12h14";
+
 /// Lucide `separator-horizontal` — a rule with arrows either side. The
 /// Insert tab's section-break action.
 pub const LUCIDE_SEPARATOR_HORIZONTAL: &str = "M3 12h18M16 16l-4 4-4-4M8 8l4-4 4 4";

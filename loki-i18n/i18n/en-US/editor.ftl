@@ -194,3 +194,4 @@ print-ipp-sent = Job { $job } sent to printer
 print-sent = Sent to the system print service
 print-cancelled = Printing cancelled
 print-error = Could not print: { $reason }
+editor-page-break-nested = Page breaks only apply to top-level paragraphs
