@@ -27,13 +27,11 @@ impl LokiPageSource {
     pub(crate) fn new(
         source: Arc<DocPageSource>,
         page_index: usize,
-        renderer: Arc<Mutex<Option<vello::Renderer>>>,
         cursor_holder: Arc<Mutex<Option<RendererSelection>>>,
     ) -> Self {
         Self {
             source,
             page_index,
-            renderer,
             device: None,
             wgpu_queue: None,
             texture_handle: None,
@@ -63,8 +61,12 @@ impl LokiPageSource {
         }
     }
 
-    /// `CustomPaintSource::resume` — take the device, record what GPU we landed
-    /// on, and make sure the shared Vello renderer exists.
+    /// `CustomPaintSource::resume` — take the device and record what GPU we
+    /// landed on.
+    ///
+    /// Builds no renderer. Tiles render on Blitz's, borrowed per-paint from
+    /// `CustomPaintCtx::renderer_mut()`, so there is no per-document renderer to
+    /// construct here or to keep alive between paints.
     pub(super) fn on_resume(&mut self, device_handle: &DeviceHandle) {
         self.device = Some(device_handle.device.clone());
         self.wgpu_queue = Some(device_handle.queue.clone());
@@ -75,24 +77,12 @@ impl LokiPageSource {
         crate::gpu_probe::record(crate::gpu_probe::kind_of(
             device_handle.adapter.get_info().device_type,
         ));
-
-        let mut guard = self.renderer.lock().unwrap_or_else(|p| p.into_inner());
-        if guard.is_none() {
-            match crate::vello_init::create_vello_renderer(&device_handle.device) {
-                Ok(r) => *guard = Some(r),
-                Err(e) => tracing::warn!(
-                    page = self.page_index,
-                    error = %e,
-                    "LokiPageSource: vello renderer init failed",
-                ),
-            }
-        }
     }
 
     /// `CustomPaintSource::suspend` — the app is going away.
     pub(super) fn on_suspend(&mut self) {
-        // Renderer intentionally not dropped on suspend — shared across all page
-        // sources; dropped when RendererState is dropped.
+        // No renderer to drop: tiles borrow Blitz's per paint, and its lifetime
+        // is the window renderer's, not ours.
         //
         // The texture handle is cleared here without unregistering it from the
         // renderer because suspend() has no CustomPaintCtx. That is safe for the

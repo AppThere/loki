@@ -28,7 +28,6 @@ pub(crate) struct PageTileProps {
     /// `1.0` is full resolution; a reduced tile occupies the same on-screen box
     /// and is sampled up, so nothing about hit-testing or layout changes.
     pub(crate) raster_scale: f32,
-    pub(crate) shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
     pub(crate) cursor_holder: Arc<Mutex<Option<RendererSelection>>>,
     pub(crate) selection: Option<RendererSelection>,
     /// Document generation — incremented on every mutation so that style
@@ -73,7 +72,6 @@ impl PartialEq for PageTileProps {
 pub(crate) fn PageTile(props: PageTileProps) -> Element {
     let source = props.source.clone();
     let page_index = props.page_index;
-    let shared_renderer = props.shared_renderer.clone();
     let cursor_holder = props.cursor_holder.clone();
     let cursor_holder_wgpu = props.cursor_holder.clone();
     let on_tile_click = props.on_tile_click;
@@ -94,9 +92,7 @@ pub(crate) fn PageTile(props: PageTileProps) -> Element {
         .source
         .set_raster_permille(page_index, raster_permille);
 
-    let canvas_id = use_wgpu(move || {
-        LokiPageSource::new(source, page_index, shared_renderer, cursor_holder_wgpu)
-    });
+    let canvas_id = use_wgpu(move || LokiPageSource::new(source, page_index, cursor_holder_wgpu));
 
     // Marks the canvas dirty (so Blitz re-invokes the paint source) on caret,
     // selection, or document changes. When a range selection is active it is

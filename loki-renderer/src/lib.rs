@@ -25,16 +25,29 @@ pub mod document_view;
 // not. On the Android CPU path it simply always answers `None`, which is true.
 pub mod dpr_probe;
 pub mod gpu_probe;
-#[cfg(any(not(target_os = "android"), android_gpu))]
+// The CPU-renderer gate: Android emulator (no android_gpu flag) and iOS
+// Simulator both use VelloCpuWindowRenderer and have no use_wgpu hook.
+// The GPU-renderer gate is the complement of this condition.
+#[cfg(not(any(
+    all(target_os = "android", not(android_gpu)),
+    all(target_os = "ios", target_abi = "sim"),
+)))]
 pub mod page_paint_source;
 pub(crate) mod page_source_impl;
-#[cfg(any(not(target_os = "android"), android_gpu))]
+#[cfg(not(any(
+    all(target_os = "android", not(android_gpu)),
+    all(target_os = "ios", target_abi = "sim"),
+)))]
 pub(crate) mod page_tile;
 mod view_types;
-// The HTML-flow fallback view is only compiled on the Android CPU path; GPU
-// targets render reflow mode through the layout engine (RenderMode::Reflow).
+// The HTML-flow fallback view is compiled on the CPU-renderer path: Android
+// emulator and iOS Simulator. GPU targets render reflow mode through the real
+// layout engine (RenderMode::Reflow).
 pub mod measure;
-#[cfg(all(target_os = "android", not(android_gpu)))]
+#[cfg(any(
+    all(target_os = "android", not(android_gpu)),
+    all(target_os = "ios", target_abi = "sim"),
+))]
 pub(crate) mod reflow_view;
 pub mod render_layout;
 pub mod renderer_state;
@@ -43,12 +56,21 @@ pub mod revision;
 // from, and whose only caller is `document_view`'s GPU branch. Ungated, it broke
 // the Android CPU build — the same "a module was ungated and its import was
 // not" shape this file warns about above, repeated in the module added for T5.4.
-#[cfg(any(not(target_os = "android"), android_gpu))]
+#[cfg(not(any(
+    all(target_os = "android", not(android_gpu)),
+    all(target_os = "ios", target_abi = "sim"),
+)))]
 mod scale_resolve;
 pub mod spell;
-#[cfg(any(not(target_os = "android"), android_gpu))]
+#[cfg(not(any(
+    all(target_os = "android", not(android_gpu)),
+    all(target_os = "ios", target_abi = "sim"),
+)))]
 pub(crate) mod tile_key;
-#[cfg(any(not(target_os = "android"), android_gpu))]
+#[cfg(not(any(
+    all(target_os = "android", not(android_gpu)),
+    all(target_os = "ios", target_abi = "sim"),
+)))]
 pub(crate) mod tile_plan;
 pub(crate) mod vello_init;
 pub mod zoom_capability;

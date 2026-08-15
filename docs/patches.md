@@ -870,9 +870,16 @@ driver r54p2) that killed the Vulkan device at startup with
    `use_cpu: true` (compute stages run on the CPU; fine rasterization and
    the surface presentation stay on the GPU) and area-only antialiasing
    (`AaSupport::area_only()` / `AaConfig::Area`). The same settings are
-   applied to the workspace's own Vello renderers in
-   `loki-renderer/src/page_paint_source.rs` and `doc_page_source.rs`
+   applied to the workspace's own Vello renderer construction in
+   `loki-renderer/src/vello_init.rs`, and to the AA method each page tile
+   requests in `loki-renderer/src/page_paint_source.rs`
    (COMPAT(android-mali) comments).
+
+   *As of 2026-08-15 `vello_init.rs` has one caller — the standalone
+   `PageSource` impl in `page_source_impl.rs`. Page tiles no longer construct a
+   renderer at all; they borrow Blitz's, which carries these same Android
+   settings. See "`CustomPaintCtx::renderer_mut`" below, including the AA
+   coupling that now spans the two crates.*
 
 **Root cause:** Arm Mali driver bugs with Vulkan compute — the same driver
 family produces device-lost crashes in other engines (e.g. Godot) on
@@ -959,6 +966,80 @@ compensate when they differ.
   when the tests above were written.*
 
 **Updated:** 2026-07-27
+
+**Additional change (`CustomPaintCtx::renderer_mut` — a custom source may render
+on the window's renderer):** `CustomPaintCtx` gained
+`pub fn renderer_mut(&mut self) -> &mut VelloRenderer`, exposing the renderer it
+already holds.
+
+- *Why:* every `vello::Renderer` allocates a fixed set of GPU scratch buffers at
+  construction — `lines` 48 MiB, `segments` 48 MiB, `ptcl` 32 MiB, `tiles` and
+  `seg_counts` 16 MiB each, `blend_spill` 4 MiB, `bin_data` 1 MiB = **165 MiB**
+  (`vello_encoding-0.6.0/src/config.rs`, `BufferSizes::new`). Those sizes are
+  scene-**independent**; upstream's own comment says they were "hand picked to
+  accommodate the vello test scenes as well as paris-30k" and "should instead get
+  derived from the scene layout". A word-processor page needs a small fraction of
+  that, but a second `Renderer` pays all of it, for the life of the process, from
+  the first tile paint onward.
+- *Loki consumer:* `LokiPageSource` (`loki-renderer/src/page_paint_source.rs`)
+  used to build its own renderer in `resume()` — one per document, shared across
+  that document's tiles — via `loki-renderer/src/vello_init.rs`. It now borrows
+  Blitz's in `render()` through `ctx.renderer_mut()` and builds none.
+  `RendererState::shared_renderer` and the `Arc<Mutex<Option<vello::Renderer>>>`
+  threaded through `PageTileProps` were removed with it.
+- *Measured* (macOS, 8 GB, `loki-text-desktop`, 24 KB DOCX, release):
+  480 MB → **307 MB** physical footprint with a document open, peak 586 MB →
+  417 MB. GPU-owned memory 365 MB → 200 MB — a 165 MB drop, matching the
+  arithmetic above exactly. Launch with no document is unchanged (273 MB): no
+  tile has painted, so the second renderer did not exist yet either.
+- *Why it is sound to render here:* `VelloWindowRenderer::render` invokes custom
+  paint sources from inside `draw_fn`, which returns **before** the window's own
+  `render_to_texture`. There is no open render pass to nest inside, and
+  `render_to_texture` is a self-contained encode-and-submit, so a tile render is
+  sequenced ahead of the window render rather than re-entering it.
+- **Coupling this introduces — the borrowed renderer must have compiled the AA
+  variant the tile asks for.** A `vello::Renderer` only compiles the pipelines its
+  `AaSupport` names. Today the two sides agree on both platforms by accident of
+  matching COMPAT flags: desktop compiles `AaSupport::all()` and tiles request
+  `AaConfig::Msaa16`; Android compiles `area_only()` and tiles request
+  `AaConfig::Area`. Changing either side alone breaks tile rendering at runtime,
+  and the two live in different crates (`patches/anyrender_vello/src/window_renderer.rs`
+  and `page_paint_source.rs`). Nothing enforces the agreement yet — see the
+  removal condition.
+- *Upstream status:* candidate upstream fix. The custom-paint API already hands a
+  source a `&mut VelloRenderer` internally; withholding it forces every source
+  that renders its own scenes into a second 165 MiB allocation, which no source
+  wants.
+- *Removal condition:* an anyrender_vello release that either exposes the window
+  renderer to custom paint sources or offers a render-scene-to-texture call on
+  `CustomPaintCtx`. The AA coupling above should be closed first — ideally by
+  having the ctx report its renderer's `AaSupport` (or take the `AaConfig` and
+  reject an uncompiled one) rather than by a comment on each side.
+- *Verified 2026-08-15 (macOS desktop, release, 24 KB / 14-page DOCX,
+  `AppThere_Iris_Blueprint.docx`)* — window-ID screen capture (`screencapture
+  -l<id>`, which reads the occluded window's own buffer) plus synthetic
+  CGEvent scroll/click driving, one process throughout:
+  - *Multi-tile lifecycle:* scroll page 1 → 14 → 1 (tiles mount/unmount and
+    re-mount), zoom 100 % → 150 % → 600 % (crosses into reflow mode) → 25 %
+    (three pages mounted at once) → 100 %, window resize 1440×870 → 900×700 →
+    1440×870 (ribbon re-flows to its Compact posture), and minimise/restore.
+    Every capture painted full page content — no blank, black, or stale tile,
+    no error, warning, or panic in the log across the whole run.
+  - *Pixel-level output:* page 1 at 100 % re-captured **after** all of the
+    above is pixel-identical to its first render (`compare -metric AE`: the
+    only differing components are the text caret at its old and new positions,
+    the scrollbar, and two ribbon/status controls whose state changed —
+    0 differing pixels anywhere else in the page raster). Two consecutive
+    captures of one steady frame differ by 0 pixels, so the repaint itself is
+    deterministic.
+  - *Memory held:* GPU-owned footprint stayed at 198–218 MB through the churn
+    (one renderer's 165 MB plus live tiles under the 92 MB tile budget), i.e.
+    no second renderer appeared and no texture leak accumulated.
+- *Still not verified:* Android on device — both the `area_only()` AA coupling
+  and the real suspend/resume (macOS minimise does not tear the surface down
+  the way an Android activity stop does).
+
+**Updated:** 2026-08-15
 
 ---
 

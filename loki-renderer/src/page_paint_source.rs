@@ -13,6 +13,10 @@
 //!
 //! Every mounted tile renders at full resolution; virtualization only mounts
 //! pages near the viewport, so texture memory is bounded by mounting.
+//!
+//! Tiles render on **Blitz's** `vello::Renderer`, borrowed from the paint
+//! context, not one of their own — see the render path's Step 8 for why that is
+//! both sound and worth ~165 MiB.
 
 use std::sync::{Arc, Mutex};
 
@@ -42,9 +46,6 @@ pub(crate) struct LokiPageSource {
     source: Arc<DocPageSource>,
     /// 0-based page index this source renders.
     page_index: usize,
-    // COMPAT(loki): the first page source to resume creates the shared Vello
-    // renderer; subsequent sources find it populated and skip creation.
-    renderer: Arc<Mutex<Option<vello::Renderer>>>,
     /// wgpu device from the last `resume()`.
     device: Option<anyrender_vello::wgpu::Device>,
     /// wgpu queue from the last `resume()`.
@@ -205,14 +206,21 @@ impl CustomPaintSource for LokiPageSource {
         let scene_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
         let render_start = std::time::Instant::now();
 
-        // Step 8: render scene to texture.
-        // AUDIT: Mutex poisoning on render — lock is held for the duration of
-        // render_to_texture; poisoning here would mean the renderer is unusable.
-        let mut guard = self.renderer.lock().unwrap_or_else(|p| p.into_inner());
-        let Some(renderer) = guard.as_mut() else {
-            abandon();
-            return None;
-        };
+        // Step 8: render scene to texture, on **Blitz's** renderer.
+        //
+        // Not a renderer of our own, and the distinction is worth ~165 MiB: a
+        // `vello::Renderer` allocates a fixed set of scratch buffers at
+        // construction (`vello_encoding::BufferSizes::new` — sized for the
+        // `paris-30k` stress scene, independent of what is actually drawn), so a
+        // second instance cost that much flat, from the first tile paint to
+        // process exit, to render a page of text. Measured on an 8 GB machine:
+        // 480 MB → 307 MB with a document open.
+        //
+        // Sound at this point in the frame because Blitz invokes custom paint
+        // sources from inside `draw_fn`, which completes before the window's own
+        // `render_to_texture`; there is no open pass to nest inside. See
+        // `CustomPaintCtx::renderer_mut` and `docs/patches.md`.
+        let renderer = ctx.renderer_mut();
         let params = RenderParams {
             base_color: vello::peniko::Color::WHITE,
             width: w_phys,
@@ -232,7 +240,6 @@ impl CustomPaintSource for LokiPageSource {
             abandon();
             return None;
         }
-        drop(guard);
 
         // Open-path timing: the first tile rendered carries Vello's one-time
         // pipeline/shader compilation, so it dwarfs later tiles. Logged once so

@@ -1,11 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! Shared Vello renderer construction.
+//! Vello renderer construction for the standalone `PageSource` impl.
 //!
-//! Both render paths (`LokiPageSource` for Blitz canvases and the standalone
-//! `PageSource` impl) need a `vello::Renderer` configured with the same
-//! Android workarounds; this helper keeps the COMPAT flags in one place.
+//! **One caller, deliberately.** `LokiPageSource` — the Blitz canvas path, and
+//! the one that actually runs in the apps — used to build a renderer through
+//! here too. It now borrows Blitz's own renderer during the paint callback
+//! (`CustomPaintCtx::renderer_mut`), because each `vello::Renderer` carries
+//! ~165 MiB of fixed scratch buffers regardless of scene complexity and a second
+//! instance bought nothing for that. What remains is
+//! `page_source_impl.rs`'s standalone `impl PageSource for DocPageSource`, which
+//! has no Blitz context to borrow from.
+//!
+//! The helper stays because that caller still needs the Android COMPAT flags in
+//! one place.
 
 use std::num::NonZeroUsize;
 

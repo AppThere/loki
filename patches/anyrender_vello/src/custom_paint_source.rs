@@ -44,4 +44,22 @@ impl CustomPaintCtx<'_> {
     pub fn unregister_texture(&mut self, handle: TextureHandle) {
         self.renderer.unregister_texture(handle.0);
     }
+
+    /// SPIKE(mem): the window's `vello::Renderer`, so a custom paint source can
+    /// render its own scenes on it rather than constructing a second one.
+    ///
+    /// Each `vello::Renderer` allocates ~165 MiB of fixed-size scratch buffers
+    /// (`vello_encoding::BufferSizes::new` — hand-picked for the `paris-30k`
+    /// stress scene, independent of the actual scene), so a second instance is
+    /// a flat 165 MiB cost regardless of what it draws.
+    ///
+    /// Sound at this point in the frame: `VelloWindowRenderer::render` invokes
+    /// custom sources from inside `draw_fn`, which completes *before* the
+    /// window's own `render_to_texture`. There is no open render pass, and
+    /// `render_to_texture` is a self-contained encode-and-submit, so a tile
+    /// render here is sequenced before the window render rather than nested in
+    /// it.
+    pub fn renderer_mut(&mut self) -> &mut VelloRenderer {
+        self.renderer
+    }
 }

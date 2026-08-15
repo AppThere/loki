@@ -12,15 +12,22 @@ use dioxus::prelude::*;
 
 // PageTile (and the wgpu paint path under it) is enabled on: desktop, and
 // Android devices built with RUSTFLAGS='--cfg android_gpu' (Vulkan-capable
-// physical devices). The Android emulator uses SwiftShader which lacks Vello's
-// compute pipeline, so it falls through to the CPU-renderer path below.
-#[cfg(any(not(target_os = "android"), android_gpu))]
+// physical devices). The Android emulator (SwiftShader) and iOS Simulator both
+// lack Vello's compute pipeline, so they fall through to the CPU-renderer path.
+#[cfg(not(any(
+    all(target_os = "android", not(android_gpu)),
+    all(target_os = "ios", target_abi = "sim"),
+)))]
 use crate::page_tile::PageTile;
 use crate::renderer_state::RendererState;
 
-// The HTML-flow fallback is only used on the Android CPU path; GPU targets
-// render reflow mode through the real layout engine (RenderMode::Reflow).
-#[cfg(all(target_os = "android", not(android_gpu)))]
+// The HTML-flow fallback is used on the CPU-renderer path: Android emulator and
+// iOS Simulator. GPU targets render reflow mode through the real layout engine
+// (RenderMode::Reflow — full font/size/alignment fidelity).
+#[cfg(any(
+    all(target_os = "android", not(android_gpu)),
+    all(target_os = "ios", target_abi = "sim"),
+))]
 use crate::reflow_view::ReflowDocView;
 
 pub use crate::view_types::{
@@ -44,16 +51,25 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
     // LokiPageSource during the GPU paint call.  Declared on all paths to
     // keep hook indices stable; the CPU path uses an _ prefix to suppress
     // the unused-variable lint.
-    #[cfg(any(not(target_os = "android"), android_gpu))]
+    #[cfg(not(any(
+        all(target_os = "android", not(android_gpu)),
+        all(target_os = "ios", target_abi = "sim"),
+    )))]
     let cursor_holder: Arc<Mutex<Option<RendererSelection>>> =
         use_hook(|| Arc::new(Mutex::new(None)));
-    #[cfg(all(target_os = "android", not(android_gpu)))]
+    #[cfg(any(
+        all(target_os = "android", not(android_gpu)),
+        all(target_os = "ios", target_abi = "sim"),
+    ))]
     let _cursor_holder: Arc<Mutex<Option<RendererSelection>>> =
         use_hook(|| Arc::new(Mutex::new(None)));
 
-    // ── Android CPU: flat web-style renderer ─────────────────────────────────
+    // ── CPU path (Android emulator / iOS Simulator): flat web-style renderer ──
     // All hooks have been called above; early return is safe.
-    #[cfg(all(target_os = "android", not(android_gpu)))]
+    #[cfg(any(
+        all(target_os = "android", not(android_gpu)),
+        all(target_os = "ios", target_abi = "sim"),
+    ))]
     {
         let doc_gen = renderer.source.current_generation();
         return rsx! {
@@ -65,7 +81,10 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
     }
 
     // ── GPU / desktop ─────────────────────────────────────────────────────────
-    #[cfg(any(not(target_os = "android"), android_gpu))]
+    #[cfg(not(any(
+        all(target_os = "android", not(android_gpu)),
+        all(target_os = "ios", target_abi = "sim"),
+    )))]
     {
         // Render mode, zoom, and the residency capability cap — one cluster,
         // because they must happen in that order and the read-back at the end
@@ -199,7 +218,6 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                                 h: tile.h,
                                 raster_scale,
                                 zoom,
-                                shared_renderer: renderer.shared_renderer.clone(),
                                 cursor_holder: cursor_holder.clone(),
                                 selection,
                                 doc_gen,

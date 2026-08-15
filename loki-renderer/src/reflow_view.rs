@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! HTML-flow fallback document view for the Android CPU path.
+//! HTML-flow fallback document view for the CPU-renderer path.
 //!
 //! Renders the document as one scrollable column of HTML elements that wraps to
-//! the viewport width.  Only compiled on Android without `android_gpu`, where
-//! Vello's compute pipeline (and therefore the GPU tile renderer) is
-//! unavailable.  All GPU targets render reflow mode through the real layout
-//! engine instead (`RenderMode::Reflow` — full font/size/alignment fidelity);
-//! see `render_layout.rs`.
+//! the viewport width.  Compiled on Android without `android_gpu` (emulator /
+//! SwiftShader) and on the iOS Simulator, where Vello's compute pipeline (and
+//! therefore the GPU tile renderer) is unavailable.  All GPU targets render
+//! reflow mode through the real layout engine instead (`RenderMode::Reflow` —
+//! full font/size/alignment fidelity); see `render_layout.rs`.
 //!
 //! Formatting fidelity here is intentionally limited — inline
 //! bold/italic/strikeout are preserved; exact glyph positions, fonts, images,
