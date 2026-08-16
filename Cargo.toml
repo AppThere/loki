@@ -14,6 +14,21 @@ members = ["loki-doc-model","loki-sheet-model","loki-opc","loki-primitives","lok
 # re-vendor the two patches: their upstream `src/` was byte-identical 0.7.4→0.7.9,
 # so re-vendoring was only a manifest version bump — re-check that on the next bump.
 dioxus    = { version = "=0.7.9", features = ["native"] }
+
+# Declared **for feature selection only** — nothing imports `dioxus_native`
+# directly; `dioxus::native` is the path used in code.
+#
+# `dioxus/native` pulls `dioxus-native` in with its *default* features, and the
+# meta crate offers no way to add one. Naming the same package here unions
+# `autofocus` into that resolution, which is what makes `autofocus="true"` (the
+# editor canvas, the popover host, the calibrate dialog) actually take focus at
+# mount. Before this, the only way to get it was to add `autofocus` to the
+# vendored patch's own default list — i.e. a patch whose reason was a feature
+# flag rather than a defect.
+#
+# Keep it: dropping this line silently returns the editor canvas to
+# needs-a-click-before-typing, with no build error to say so.
+dioxus-native = { version = "=0.7.9", features = ["autofocus"] }
 thiserror = "2"
 appthere-canvas = { path = "appthere-canvas", features = ["gpu", "font-cache"] }
 loki-file-access = { git = "https://github.com/appthere/loki-file-access", branch = "main" }

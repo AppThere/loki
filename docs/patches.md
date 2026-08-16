@@ -515,15 +515,25 @@ checking `get_node`, then polls and requests a redraw so the focus ring and any
 `onfocus` handler land in the same frame. Same shape as `ScrollNode`, deliberately:
 one transport, one place a node id is validated.
 
-**`autofocus` enabled by default (PATCH(loki), 2026-06-20).** `autofocus` is
-added to the `default` feature set in `patches/dioxus-native/Cargo.toml` (it
-forwards to `blitz-dom/autofocus`). Upstream ships this feature **off**, and the
-`dioxus` meta crate's `native` feature does not turn it on, so an element with
-`autofocus="true"` was never focused on mount. The Loki editor canvas declares
-`autofocus="true"` so the user can type — and scroll with the wheel — the moment
-a document opens, without clicking first; this re-enables that intended
-behaviour. When re-vendoring the manifest during a Dioxus upgrade, preserve this
-addition (it is a loki customisation, like the Android `softbuffer` deps).
+**`autofocus` — no longer part of this patch (2026-08-16).** This used to be a
+manifest customisation: `autofocus` was added to the `default` feature set in
+`patches/dioxus-native/Cargo.toml` (it forwards to `blitz-dom/autofocus`),
+because upstream ships the feature **off** and the `dioxus` meta crate's
+`native` feature does not turn it on — so an element with `autofocus="true"` was
+never focused on mount, and the editor canvas needed a click before it would
+accept typing or wheel input.
+
+It is now done **without a patch**: the workspace names `dioxus-native` as a
+direct dependency with `features = ["autofocus"]` (root `Cargo.toml`, plus
+`appthere-ui` and `loki-text`, the two crates whose RSX carries the attribute),
+and Cargo unions that feature into the resolution `dioxus/native` produces. The
+patch's `[features]` block is now upstream's, unmodified.
+
+This matters beyond tidiness: a patch that exists to set a feature flag is a
+patch with no removal condition, and it had to be re-applied by hand at every
+re-vendor. The Dioxus 0.8 survey found `autofocus` is still non-default there,
+so this arrangement carries forward unchanged — see
+[dioxus-0.8-migration.md](dioxus-0.8-migration.md) §6 Phase 0.1.
 
 **Bundled-font pre-registration (PATCH(loki), 2026-06-27).** `Config` gains a
 `font_blobs: Vec<Vec<u8>>` field and a `with_fonts(..)` builder; `launch_cfg_with_props`

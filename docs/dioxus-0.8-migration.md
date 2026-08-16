@@ -265,10 +265,12 @@ of migrating early rather than at rc.
 **R-4 — CSS/layout regressions are invisible until run.** §3.5. The confirmed-CSS
 list and `docs/fidelity-status.md` are the affected records.
 
-**R-5 — the ACID fidelity harness is the only real acceptance gate.** Whether
-`loki-acid`'s page-count/glyph-coverage canaries and SSIM comparisons still pass
-after a parley 0.6 → 0.10 shaper change on the Blitz side is unknown and cannot
-be predicted from source reading.
+**R-5 — the ACID fidelity harness is the only real acceptance gate, and half of
+it is empty.** Whether `loki-acid`'s page-count/glyph-coverage canaries still
+pass after a parley 0.6 → 0.10 shaper change on the Blitz side is unknown and
+cannot be predicted from source reading. The SSIM half is worse than unknown:
+§8 (0.4) establishes that it asserts nothing today, because no goldens exist.
+Populating them is a Phase 0 prerequisite, not a Phase 3 activity.
 
 ---
 
@@ -277,14 +279,15 @@ be predicted from source reading.
 ### Phase 0 — preparation (can start now, no 0.8 dependency)
 
 Everything here is useful even if 0.8 slips, and each item shrinks the eventual
-port.
+port. **Status is tracked in §8** — two of the five items turned out to be
+mis-scoped when attempted, and §8 records what replaced them.
 
-- **0.1** Take a **direct `dioxus-native` dependency** with an explicit feature
-  list instead of relying on `dioxus/native` defaults. Retires the `autofocus`
+- **0.1** Take a **direct `dioxus-native` dependency** for feature selection
+  instead of relying on `dioxus/native` defaults. Retires the `autofocus`
   half of the `dioxus-native` patch today.
-- **0.2** Bump `loki-vello` to vello 0.9 / peniko 0.6 / kurbo 0.13 / wgpu 29 in
-  isolation. It has no Blitz dependency, so this is independently landable and
-  measures §3.4's unknown.
+- **0.2** Establish the vello 0.6 → 0.9 / wgpu 26 → 29 / peniko 0.5 → 0.6 /
+  kurbo 0.12 → 0.13 API delta for the surface Loki actually uses, so §3.4 stops
+  being an unknown.
 - **0.3** Raise R-1 with upstream Blitz/Dioxus (expose the `Renderer` to custom
   widgets, or document the intended zero-copy path).
 - **0.4** Write down the current runtime-probe baselines (CSS probes, texture
@@ -347,7 +350,152 @@ would make the regression surface unattributable.
 
 ---
 
-## 7. What this survey did not check
+## 8. Phase 0 progress (2026-08-16)
+
+### 0.1 — direct `dioxus-native` dependency · **done**
+
+`dioxus-native = { version = "=0.7.9", features = ["autofocus"] }` is declared in
+`[workspace.dependencies]` and taken by `appthere-ui` and `loki-text` — the two
+crates whose RSX carries the `autofocus` attribute. `dioxus/native` still pulls
+the same package with its default features; Cargo unions the two requirements,
+so `autofocus` is on without touching the vendored manifest.
+
+`autofocus` has been removed from `patches/dioxus-native/Cargo.toml`'s `default`
+list, which is now upstream's, unmodified. `docs/patches.md` records the change.
+
+Nothing imports `dioxus_native` — the dependency exists purely for feature
+selection, and the comment at each site says so, because a future "remove unused
+dependency" pass would otherwise silently return the editor canvas to
+needs-a-click-before-typing with no build error to mark it.
+
+### 0.2 — graphics-crate delta · **measured; the plan's premise was wrong**
+
+**The claim that this was independently landable does not hold.** `loki-vello`
+has no *Blitz* dependency, but it shares the `vello::Scene` **type** with
+`loki-renderer`: `loki_vello::paint_single_page(scene: &mut vello::Scene, …)` is
+called from `RenderLayout::paint_tile`, on a `Scene` that
+`page_paint_source.rs:186` constructs and hands to Blitz's renderer. `loki-vello`
+and `loki-renderer` must therefore agree on a vello version, and `loki-renderer`
+must agree with `anyrender_vello` — which is on vello 0.6 until the whole Blitz
+stack moves. Bumping `loki-vello` alone breaks the workspace.
+
+So 0.2 was done as a measurement instead, from upstream source. The result is
+much better than §3.4 assumed:
+
+| Crate | Delta for Loki's surface |
+|---|---|
+| `peniko` 0.5.0 → 0.6.0 | **Zero** public symbol removals or renames. |
+| `kurbo` 0.12.0 → 0.13.1 | **Zero** public symbol removals or renames. |
+| `vello` 0.6.0 → 0.9.0 | `Scene` is **additive only** (`brush_transform`, `font_embolden` added; `push_*_layer` generics widened). `Renderer::new`, `render_to_texture`, `RenderParams`, `RendererOptions`, `AaConfig`, `AaSupport` are unchanged in shape. |
+| `wgpu` 26 → 29 | The only real work — but Loki's whole wgpu surface is `Device`, `Queue`, `Texture`, `TextureDescriptor`, `TextureViewDescriptor`, `TextureFormat`, `TextureDimension`, `TextureUsages`, `Extent3d`, `Instance`, `DeviceType`. Texture creation and device handles, i.e. the most stable part of the API. |
+
+*Instrument note:* the first symbol diff reported ~30 removals from kurbo,
+including `Rect::min_x`. That was the instrument, not the library — the regex
+did not match `pub const fn`, and kurbo 0.13 made those methods `const`. Re-run
+with a `const`-aware pattern, both diffs are empty. Recorded because a
+"30 removals" figure would have inflated this workstream's estimate on the
+strength of a broken grep.
+
+**Revised read:** §3.4 is not a risk area. Fold the graphics bump into Phase 1
+as a single mechanical step, and drop it as a separate workstream.
+
+### 0.5 — scrollport anchor · **reclassified to Phase 2, do not do this**
+
+The intent was to remove Loki's last reason to patch `dioxus-native-dom` by
+deriving the wheel-zoom anchor from public geometry instead of the patch-carried
+`NativeWheelData.scrollport`.
+
+It is *arithmetically* possible — `scrollport_x = client_x − client_rect.x`, and
+the scroll container's `MountedData` is already captured (`editor_state.rs:134`).
+It should still not be done:
+
+1. **`get_client_rect` is async.** It returns
+   `Pin<Box<dyn Future<Output = MountedResult<PixelsRect>>>>`, so it cannot be
+   read inside a synchronous `onwheel` handler. The rect would have to be cached
+   and invalidated on resize, zoom, and layout change.
+2. **That is a second derivation of one fact** (rule 4). The patch computes the
+   scrollport frame from live layout at dispatch time; a cached rect is the same
+   fact, derived differently, and free to drift. A stale rect does not fail — it
+   anchors the zoom to the wrong point, which reads as "zoom feels off" and is
+   almost impossible to attribute.
+
+The patch-carried value is the *better* engineering, and trading it away to
+lower the patch count would be optimising the wrong number. In 0.8 this becomes
+a genuinely small patch: `blitz-dom` already needs `scrollport_origin` for other
+reasons (§4), so carrying the scrollport frame onto the wheel event costs one
+extra field on top of a patch that has to exist anyway.
+
+### 0.4 — baselines · **partly done, and it found a hole in the gate**
+
+`loki-acid/examples/structural_baseline.rs` prints the structural numbers as a
+stable, diffable table (`cargo run -p loki-acid --example structural_baseline`).
+The canaries assert the numbers are *acceptable* — a ceiling; this records what
+they actually are — a floor. Baseline on `1.97.1`, this container:
+
+```
+fixture                            pages sheets slides  glyphs  coverage
+acid_docx.docx                        19      -      -    6115    1.0000
+acid_odt.odt                           2      -      -    2179    1.0000
+acid_xlsx.xlsx                         -      9      -       -         -
+acid_pptx.pptx                         -      -      3       -         -
+acid_ods.ods                           -      1      -       -         -
+acid_odp.odp                           -      -      -       -         -
+acid_odg.odg                           -      -      -       -         -
+```
+
+**The pixel gate does not currently exist.** R-5 called the ACID harness "the
+only real acceptance gate" for the migration. That is only true of its
+*structural* half:
+
+- `golden_pixel::golden_pages_match_within_ssim_threshold` **passes in 0.00 s**.
+  `loki-acid/goldens/` contains a `README.md` and nothing else, and
+  `loki-acid/renders/` is empty, so the test iterates zero pages. It is green
+  today and would be equally green after a rendering regression of any size —
+  an instrument that cannot speak where the hazard is.
+- `structural::no_tofu_glyphs` is `#[ignore]`d (host-font-dependent), so the
+  strict tofu check does not run here either.
+
+What *does* gate: import success, page/sheet/slide counts, and glyph coverage
+(1.0000 on both paginated fixtures) — six passing canaries. Those would catch a
+pagination or shaping collapse, which is the most likely parley 0.6 → 0.10
+failure mode, but not a paint regression.
+
+**Consequence for the plan:** populate `goldens/` before Phase 2, or accept
+explicitly that the migration has no pixel-fidelity net and say so in the PR.
+This is a prerequisite discovered by Phase 0, not an optional extra — and it is
+worth doing while the *current* stack is still buildable, because goldens
+captured after the migration prove nothing about it.
+
+### 0.3 — outstanding
+
+Needs an upstream conversation; the question to ask is drafted in §9 so it does
+not have to be re-derived.
+
+---
+
+## 9. The question for upstream (R-1)
+
+To be raised on the Blitz repo before Phase 2 starts. Stated here so it does not
+get re-derived:
+
+> In 0.7's `anyrender_vello`, a `CustomPaintSource` could be handed the window's
+> `vello::Renderer` and record its own scenes onto it. In 0.8 the equivalent is a
+> `blitz_dom::Widget`, and the only renderer-specific handle reachable from
+> `RenderContext::renderer_specific_context()` is a `DeviceHandle`;
+> `VelloScenePainter::renderer` is `pub(crate)`.
+>
+> A widget that renders a large GPU scene therefore has to construct its own
+> `vello::Renderer`. That is a flat ~165 MiB — `vello_encoding::BufferSizes::new`
+> allocates fixed-size scratch buffers sized for a stress scene, independent of
+> what is actually drawn — on top of the one the window already owns.
+>
+> Is exposing the `Renderer` (or a scene-recording entry point) to custom widgets
+> something you'd take a PR for, or is there an intended path for this that we've
+> missed?
+
+---
+
+## 10. What this survey did not check
 
 Stated plainly so the gaps are not mistaken for clean results:
 

@@ -12,6 +12,10 @@ path = "src/lib.rs"
 
 [dependencies]
 dioxus     = { workspace = true }
+# Feature selection only (see the root Cargo.toml entry) — turns on
+# `dioxus-native/autofocus`, which `popover::component_host` and
+# `calibrate_dialog` need for their `autofocus` attribute to take effect.
+dioxus-native = { workspace = true }
 loki-i18n  = { path = "../loki-i18n" }
 # Smooth-scroll animation ticks: a worker thread sleeps and signals the UI task
 # through an mpsc channel, because dioxus-native has no async timer and Blitz
