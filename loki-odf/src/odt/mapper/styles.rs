@@ -124,26 +124,46 @@ pub(crate) fn map_stylesheet(sheet: &OdfStylesheet) -> StyleCatalog {
 
         // ODF 1.3 §16.2: a `style:style` that omits `style:parent-style-name`
         // inherits from its family's `style:default-style` — the default is the
-        // root of the family's inheritance tree, not merely a fallback for
-        // paragraphs that name no style at all.
+        // root of the family's inheritance tree, not merely a fallback that
+        // individual resolvers may or may not remember to consult.
         //
-        // `StyleCatalog::effective_paragraph_style` is `explicit.or(default)`,
-        // so a paragraph *with* a style bypassed the default entirely. The
-        // visible symptom: a document whose only font declaration is on
-        // `style:default-style` rendered its styled paragraphs in Loki's own
-        // fallback face while every unstyled one (table cells, list items,
-        // header/footer) picked up the document font — the same page, two
-        // different families.
+        // That last clause is the point. Every family's default was reachable
+        // by *some* path and unreachable by another:
         //
-        // Fixed here rather than in `effective_paragraph_style` because this is
-        // an ODF rule: OOXML's `w:docDefaults` reaches a paragraph by a
-        // different route, and widening the shared resolver would change DOCX
-        // behaviour too.
-        let paragraph_parent = || {
-            parent
-                .clone()
-                .or_else(|| catalog.default_paragraph_style.clone())
+        // - paragraph: `effective_paragraph_style` is `explicit.or(default)`,
+        //   so a paragraph *with* a style bypassed the default entirely. The
+        //   visible symptom was a document whose only font declaration sat on
+        //   `style:default-style` rendering its styled paragraphs in Loki's own
+        //   fallback face while every unstyled one (table cells, list items,
+        //   header/footer) picked up the document font — one page, two families.
+        // - text: `StyleCatalog::resolve_char_chain` falls through to
+        //   `default_character_style`, but `loki-layout`'s own
+        //   `resolve_char_style_chain` walks `parent` links only and consults no
+        //   family default — so the two answer the same question differently,
+        //   and the one that renders is the one that misses it.
+        // - table: `resolve_table` falls through, and `loki-layout`'s
+        //   `table_shading` does a bare `table_styles.get(..)` with no walk at
+        //   all.
+        //
+        // Re-rooting in the data makes the default reachable by a plain parent
+        // walk, so a consumer cannot miss it by forgetting a special case —
+        // including consumers not written yet.
+        //
+        // Done here rather than in the shared resolvers because this is an ODF
+        // rule: OOXML's `w:docDefaults` reaches a style by a different route,
+        // and widening `loki-doc-model` would change DOCX behaviour too.
+        //
+        // NOTE: every writer that emits `style:parent-style-name` must filter
+        // synthetic ids (`super::super::write::is_synthetic_style_id`), or these
+        // links serialise as references to styles the package never defines.
+        let default_for_family = |family: OdfStyleFamily| match family {
+            OdfStyleFamily::Paragraph => catalog.default_paragraph_style.clone(),
+            OdfStyleFamily::Text => catalog.default_character_style.clone(),
+            OdfStyleFamily::Table => catalog.default_table_style.clone(),
+            _ => None,
         };
+        let rooted_parent =
+            |family: OdfStyleFamily| parent.clone().or_else(|| default_for_family(family));
 
         match s.family {
             OdfStyleFamily::Paragraph => {
@@ -164,7 +184,7 @@ pub(crate) fn map_stylesheet(sheet: &OdfStylesheet) -> StyleCatalog {
                 let style = ParagraphStyle {
                     id: id.clone(),
                     display_name,
-                    parent: paragraph_parent(),
+                    parent: rooted_parent(OdfStyleFamily::Paragraph),
                     linked_char_style: None,
                     // B8: `style:next-style-name` round-trips (the writer
                     // already emitted it; the importer used to drop it).
@@ -186,7 +206,7 @@ pub(crate) fn map_stylesheet(sheet: &OdfStylesheet) -> StyleCatalog {
                 let style = CharacterStyle {
                     id: id.clone(),
                     display_name,
-                    parent,
+                    parent: rooted_parent(OdfStyleFamily::Text),
                     char_props,
                     extensions: ExtensionBag::default(),
                 };
@@ -196,7 +216,7 @@ pub(crate) fn map_stylesheet(sheet: &OdfStylesheet) -> StyleCatalog {
                 let style = TableStyle {
                     id: id.clone(),
                     display_name,
-                    parent,
+                    parent: rooted_parent(OdfStyleFamily::Table),
                     table_props: s
                         .table_props
                         .as_ref()
