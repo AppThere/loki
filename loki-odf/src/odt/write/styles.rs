@@ -99,7 +99,14 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
             attr(&mut out, "style:display-name", name);
         }
         attr(&mut out, "style:family", "text");
-        if let Some(parent) = &style.parent {
+        // Synthetic parents are what an absent attribute means (see the
+        // paragraph writer below); emitting one names a style the package
+        // never defines.
+        if let Some(parent) = &style
+            .parent
+            .as_ref()
+            .filter(|p| !is_synthetic_style_id(p.as_str()))
+        {
             attr(&mut out, "style:parent-style-name", parent.as_str());
         }
         out.push('>');
