@@ -179,7 +179,7 @@ fn continuous_all_items_count() {
 fn para(text: &str, block_index: usize, origin: (f32, f32)) -> PageParagraphData {
     use crate::font::FontResources;
     use crate::para::{ResolvedParaProps, StyleSpan, layout_paragraph};
-    let mut resources = FontResources::new();
+    let mut resources = FontResources::with_bundled_fonts_only();
     let layout = layout_paragraph(
         &mut resources,
         text,

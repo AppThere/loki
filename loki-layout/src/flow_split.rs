@@ -40,6 +40,23 @@ pub(super) fn split_and_place_loop(
 
     loop {
         let frag_height = para_layout.height - frag_start;
+
+        // Nothing left to place. Reachable because the two quantities compared
+        // here come from **different derivations of the same fact**:
+        // `height` is Parley's `Layout::height()`, while `frag_start` is a line's
+        // `block_max_coord` from `line_boundaries`, and the last line's max can
+        // sit a fraction of a point *below* or *above* the layout height (with
+        // Carlito at the default size: height 14.648, last boundary 15.0).
+        // Without this guard the loop fell into the continuation arm with a
+        // negative `frag_height`, emitting a `ClippedGroup` of negative height
+        // that still carried the paragraph's glyph runs — the paragraph was
+        // painted a second time, at a negative y, and `cursor_y` was moved
+        // backwards for whatever followed. Caught by the two-column balancing
+        // test once its font was pinned; before that the ambient face happened to
+        // divide the column evenly and never landed here.
+        if frag_height <= 0.0 {
+            return;
+        }
         // Break against the footnote-reserved content limit so lines stop above
         // this page's footnote band instead of overlapping it.
         let page_remaining = state.content_bottom() - state.cursor_y;

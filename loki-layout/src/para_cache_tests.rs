@@ -8,7 +8,7 @@ use crate::font::FontResources;
 use crate::para::{ResolvedParaProps, StyleSpan, layout_paragraph};
 
 fn resources() -> FontResources {
-    let mut r = FontResources::new();
+    let mut r = FontResources::with_bundled_fonts_only();
     for p in [
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",

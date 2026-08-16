@@ -49,6 +49,22 @@ use crate::items::{DecorationKind, PositionedItem};
 use crate::mode::LayoutMode;
 use crate::{FlowOutput, flow_section};
 
+/// The one fixture in this crate still built on host fonts, deliberately.
+///
+/// Everything else moved to [`FontResources::with_bundled_fonts_only`] so that
+/// page counts and glyph positions stop depending on the machine. This sweep
+/// resists that move and is worth a note rather than a silent exception:
+/// switching it to the bundled faces makes `Exact(12pt)` at 14pt report a
+/// 0.9999962pt cut, i.e. a full clip-floor point. Unresolved which of two things
+/// that is — a real gap in the I-06 guarantee under Carlito's metrics, or the
+/// sweep counting a squiggle that belongs to the *next* line and rode into this
+/// fragment's group on `items_in_y_range`'s conservative slop, which the clip is
+/// supposed to mask. Both are plausible from the numbers to hand, and picking
+/// one by adjusting the emitter would be guessing.
+///
+/// So: still host-dependent, and still able to differ between this machine and
+/// CI. TODO(i06-sweep): resolve the 14pt/`Exact(12pt)` case and move this to the
+/// bundled faces with the rest.
 fn test_resources() -> FontResources {
     let mut r = FontResources::new();
     for p in [

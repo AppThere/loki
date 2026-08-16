@@ -3,12 +3,23 @@
 
 //! Tests for [`super`] (`font.rs`) — extracted per the file-ceiling
 //! convention (CLAUDE.md technique 1).
+//!
+//! # Every case here builds [`FontResources::without_system_fonts`]
+//!
+//! Substitution is only observable when the requested family is *missing*, so a
+//! context that scanned the host would be asserting a fact about the host: a
+//! bare CI container lacks Courier and substitutes, while any macOS machine
+//! ships Courier, Courier New, Arial, Times New Roman and Georgia and correctly
+//! returns them unchanged. Four of these tests failed on macOS for exactly that
+//! reason while passing in CI. With no system fonts the premise holds
+//! everywhere, which is also what lets the Carlito branches below be
+//! assertions rather than `if available` hedges.
 
 use super::*;
 
 #[test]
 fn test_font_resolution_fallback() {
-    let mut r = FontResources::new();
+    let mut r = FontResources::without_system_fonts();
 
     // Aptos should be missing (not installed in typical environments)
     let resolved = r.resolve_font_name("Aptos");
@@ -16,39 +27,29 @@ fn test_font_resolution_fallback() {
     assert!(r.substitutions.contains_key("Aptos"));
     assert_eq!(r.substitutions.get("Aptos"), Some(&None));
 
-    // Test standard substitute: Calibri -> Carlito (if Carlito is missing, it should resolve to Calibri and track as None)
+    // Standard substitute: Calibri -> Carlito, which the bundled blobs supply
+    // on demand, so this is unconditional rather than "if Carlito happens to be
+    // installed" — the hedge hid whether the lazy registration ran at all.
     let resolved = r.resolve_font_name("Calibri");
-    if r.font_cx.collection.family_id("Carlito").is_some() {
-        assert_eq!(resolved, "Carlito");
-        assert_eq!(
-            r.substitutions.get("Calibri"),
-            Some(&Some("Carlito".to_string()))
-        );
-    } else {
-        assert_eq!(resolved, "Calibri");
-        assert_eq!(r.substitutions.get("Calibri"), Some(&None));
-    }
+    assert_eq!(resolved, "Carlito");
+    assert_eq!(
+        r.substitutions.get("Calibri"),
+        Some(&Some("Carlito".to_string()))
+    );
 
-    // Test case-insensitive behavior: calibri -> Carlito or calibri
+    // Case-insensitive: calibri -> Carlito, recorded under the name as written.
     let resolved = r.resolve_font_name("calibri");
-    if r.font_cx.collection.family_id("Carlito").is_some() {
-        assert_eq!(resolved, "Carlito");
-        assert_eq!(
-            r.substitutions.get("calibri"),
-            Some(&Some("Carlito".to_string()))
-        );
-    } else {
-        assert_eq!(resolved, "calibri");
-        assert_eq!(r.substitutions.get("calibri"), Some(&None));
-    }
+    assert_eq!(resolved, "Carlito");
+    assert_eq!(
+        r.substitutions.get("calibri"),
+        Some(&Some("Carlito".to_string()))
+    );
 
     // "Calibri Light" (Word's default heading face) must resolve to the same
     // metric-compatible substitute as Calibri — otherwise headings/titles
     // fall back to a wider face and wrap differently from Word.
     let resolved = r.resolve_font_name("Calibri Light");
-    if r.font_cx.collection.family_id("Carlito").is_some() {
-        assert_eq!(resolved, "Carlito", "Calibri Light must map to Carlito");
-    }
+    assert_eq!(resolved, "Carlito", "Calibri Light must map to Carlito");
 }
 
 // Regression guard: the embedded metric-compatible faces must be available on
@@ -69,7 +70,7 @@ fn fallback_font_blobs_embedded_on_all_targets() {
 // font, so list markers and Calibri text rendered `.notdef`.
 #[test]
 fn substituted_family_is_actually_available() {
-    let mut r = FontResources::new();
+    let mut r = FontResources::without_system_fonts();
     for requested in ["Calibri", "Arial", "Times New Roman", "Cambria", "Georgia"] {
         let resolved = r.resolve_font_name(requested);
         assert!(
@@ -81,7 +82,7 @@ fn substituted_family_is_actually_available() {
 
 #[test]
 fn run_recording_reports_only_fonts_touched_since_begin() {
-    let mut r = FontResources::new();
+    let mut r = FontResources::without_system_fonts();
 
     // A missing font resolved during the run is recorded.
     r.begin_substitution_run();
@@ -108,7 +109,7 @@ fn run_recording_re_records_memo_hits() {
     // The property per-document reporting depends on: a font already in the
     // resolve memo (from an earlier document) must still be recorded when a
     // later run requests it again.
-    let mut r = FontResources::new();
+    let mut r = FontResources::without_system_fonts();
     r.begin_substitution_run();
     r.resolve_font_name("Courier New");
     let first = r.take_substitution_run();
@@ -130,7 +131,7 @@ fn a_bundled_family_requested_by_name_always_resolves() {
     // embedded faces must be registered and the name answered as-is — not
     // recorded as missing (`None`), which is what happened when only the
     // proprietary-name substitute arms triggered registration.
-    let mut r = FontResources::new();
+    let mut r = FontResources::without_system_fonts();
     r.begin_substitution_run();
     let resolved = r.resolve_font_name("Courier Prime");
     assert_eq!(resolved, "Courier Prime");
@@ -150,7 +151,7 @@ fn a_bundled_family_requested_by_name_always_resolves() {
 #[test]
 fn bare_courier_substitutes_to_courier_prime() {
     // Screenplays from other tools commonly name plain "Courier".
-    let mut r = FontResources::new();
+    let mut r = FontResources::without_system_fonts();
     r.begin_substitution_run();
     assert_eq!(r.resolve_font_name("Courier"), "Courier Prime");
 }

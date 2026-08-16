@@ -16,7 +16,7 @@ use loki_primitives::units::Points as DocPoints;
 /// Build a `FontResources` with Liberation Sans registered so tests are not
 /// dependent on fontconfig auto-discovery.
 fn test_resources() -> FontResources {
-    let mut r = FontResources::new();
+    let mut r = FontResources::with_bundled_fonts_only();
     for p in [
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",

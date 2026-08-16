@@ -63,7 +63,7 @@ use crate::mode::LayoutMode;
 use crate::{FlowOutput, flow_section};
 
 fn test_resources() -> FontResources {
-    let mut r = FontResources::new();
+    let mut r = FontResources::with_bundled_fonts_only();
     for p in ["/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"] {
         if let Ok(data) = std::fs::read(p) {
             r.register_font(data);

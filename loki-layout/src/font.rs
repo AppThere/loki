@@ -9,6 +9,12 @@ use std::sync::Arc;
 use crate::color::LayoutColor;
 use crate::para_cache::ParaCache;
 
+// Test-only constructors (hermetic font collections) live in a sibling file to
+// keep this one under the 300-line ceiling.
+#[cfg(test)]
+#[path = "font_test_ctx.rs"]
+mod font_test_ctx;
+
 /// Shared font and layout context.
 ///
 /// Construct once per application (or once per document if memory is

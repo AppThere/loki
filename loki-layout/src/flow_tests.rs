@@ -77,14 +77,19 @@ fn flow_paginated(
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
+/// Fixtures here assert glyph positions, page counts and rule heights, so the
+/// face they are measured against has to come from this repository.
+///
+/// The previous version registered
+/// `/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf` if it
+/// happened to exist — a path absent on macOS and on the `ubuntu-latest` runner
+/// alike, and inert even where it exists, because *registering* a family does
+/// not make it the default and these paragraphs name no family. What they
+/// actually measured was the host's default sans: 12.0pt per line on macOS, so
+/// seven lines fitted a column calibrated to hold six, and five assertions in
+/// this crate failed there while passing in CI.
 fn test_resources() -> FontResources {
-    let mut r = FontResources::new();
-    for p in ["/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"] {
-        if let Ok(data) = std::fs::read(p) {
-            r.register_font(data);
-        }
-    }
-    r
+    FontResources::with_bundled_fonts_only()
 }
 
 fn make_para(text: &str) -> StyledParagraph {
@@ -121,16 +126,23 @@ fn tiny_layout() -> PageLayout {
 
 /// Collects the x-origins of every glyph run in a page's content items.
 fn glyph_x_origins(page: &crate::result::LayoutPage) -> Vec<f32> {
-    page.content_items
-        .iter()
-        .filter_map(|i| {
-            if let PositionedItem::GlyphRun(run) = i {
-                Some(run.origin.x)
-            } else {
-                None
+    // Recurses into `ClippedGroup`: a paragraph split across a column or page
+    // boundary keeps its runs inside one, and a helper named for *every* glyph
+    // origin that silently skipped them let a duplicated paragraph read as a
+    // missing one (the count was short, not long, so the failure pointed at the
+    // wrong half of `no paragraph may be lost or duplicated`).
+    fn walk(items: &[PositionedItem], out: &mut Vec<f32>) {
+        for item in items {
+            match item {
+                PositionedItem::GlyphRun(run) => out.push(run.origin.x),
+                PositionedItem::ClippedGroup { items, .. } => walk(items, out),
+                _ => {}
             }
-        })
-        .collect()
+        }
+    }
+    let mut out = Vec::new();
+    walk(&page.content_items, &mut out);
+    out
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -379,6 +391,64 @@ fn multi_page_two_column_section_balances_only_the_last_page() {
     assert!(
         xs0.iter().any(|&x| x >= 99.0),
         "a full first page uses both columns: {xs0:?}"
+    );
+}
+
+/// A paragraph is never emitted twice, and no fragment clip may be empty.
+///
+/// `flow_split` compared two derivations of the same fact: `ParagraphLayout::height`
+/// (Parley's `Layout::height()`) against a line's `block_max_coord` from
+/// `line_boundaries`. For a single-line paragraph in Carlito at the default size
+/// those are 14.648 and 15.0, so splitting at the line boundary left `frag_start`
+/// *past* the paragraph's own height and the loop went round once more with a
+/// negative remainder — emitting a `ClippedGroup` of height −0.4 that still
+/// carried the paragraph's glyph runs (drawn a second time, at a negative y) and
+/// moved `cursor_y` backwards for whatever came next.
+///
+/// Asserted as an invariant over the whole page set rather than at the one
+/// arithmetic point, because the trigger is the *phase* between line height and
+/// column height: any fixture whose column boundary lands on a last line
+/// reproduces it, and which one that is depends on the face.
+#[test]
+fn a_column_break_on_a_last_line_emits_no_empty_fragment() {
+    let mut r = test_resources();
+    // 14 single-line paragraphs in two columns: the break lands on a line whose
+    // `block_max_coord` sits above the paragraph height.
+    let paras: Vec<_> = (0..14).map(|i| make_para(&format!("Line {i}"))).collect();
+    let n = paras.len();
+    let two_col = PageLayout {
+        columns: Some(SectionColumns {
+            count: 2,
+            gap: Points::new(18.0),
+            separator: false,
+            widths: Vec::new(),
+        }),
+        ..tiny_layout()
+    };
+    let (pages, _) = flow_paginated(&mut r, &section_of(paras, two_col));
+
+    fn check(items: &[PositionedItem]) {
+        for item in items {
+            if let PositionedItem::ClippedGroup { clip_rect, items } = item {
+                assert!(
+                    clip_rect.size.height > 0.0,
+                    "a fragment clip must enclose something, got height {}",
+                    clip_rect.size.height
+                );
+                check(items);
+            }
+        }
+    }
+    for page in &pages {
+        check(&page.content_items);
+    }
+
+    // Inversion: the count is what tells duplication from loss, so assert it
+    // over *every* glyph run, nested ones included.
+    let runs: usize = pages.iter().map(|p| glyph_x_origins(p).len()).sum();
+    assert_eq!(
+        runs, n,
+        "one glyph run per paragraph, no duplicate fragment"
     );
 }
 

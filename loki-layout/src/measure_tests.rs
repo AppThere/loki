@@ -18,7 +18,7 @@ use crate::font::FontResources;
 /// tests then skip rather than assert against an empty font collection, which
 /// would be a null result dressed as a pass.
 fn resources() -> Option<FontResources> {
-    let mut r = FontResources::new();
+    let mut r = FontResources::with_bundled_fonts_only();
     for p in [
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",

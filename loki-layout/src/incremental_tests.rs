@@ -178,7 +178,7 @@ fn check_edit(
 
 #[test]
 fn same_height_edits_match_full_layout() {
-    let mut fonts = FontResources::new();
+    let mut fonts = FontResources::with_bundled_fonts_only();
     let doc = base_doc();
     let prev = layout_paginated_full(&mut fonts, &doc, 1.0, &opts());
     assert!(prev.0.pages.len() > 2, "fixture should span multiple pages");
@@ -212,7 +212,7 @@ fn same_height_edits_match_full_layout() {
 
 #[test]
 fn height_changing_edits_match_full_layout() {
-    let mut fonts = FontResources::new();
+    let mut fonts = FontResources::with_bundled_fonts_only();
     let doc = base_doc();
     let prev = layout_paginated_full(&mut fonts, &doc, 1.0, &opts());
 
@@ -234,7 +234,7 @@ fn height_changing_edits_match_full_layout() {
 
 #[test]
 fn block_insert_delete_match_full_layout() {
-    let mut fonts = FontResources::new();
+    let mut fonts = FontResources::with_bundled_fonts_only();
     let doc = base_doc();
     let prev = layout_paginated_full(&mut fonts, &doc, 1.0, &opts());
 
@@ -257,7 +257,7 @@ fn block_insert_delete_match_full_layout() {
 
 #[test]
 fn multi_section_block_insert_delete_match_full() {
-    let mut fonts = FontResources::new();
+    let mut fonts = FontResources::with_bundled_fonts_only();
     let doc = multi_section_doc();
     let prev = layout_paginated_full(&mut fonts, &doc, 1.0, &opts());
 
@@ -276,7 +276,7 @@ fn multi_section_block_insert_delete_match_full() {
 
 #[test]
 fn multi_section_edits_match_full_layout() {
-    let mut fonts = FontResources::new();
+    let mut fonts = FontResources::with_bundled_fonts_only();
     let doc = multi_section_doc();
     let prev = layout_paginated_full(&mut fonts, &doc, 1.0, &opts());
     assert!(prev.0.pages.len() > 3, "fixture should span multiple pages");
@@ -316,7 +316,7 @@ fn multi_section_edits_match_full_layout() {
 
 #[test]
 fn sequential_edits_keep_matching() {
-    let mut fonts = FontResources::new();
+    let mut fonts = FontResources::with_bundled_fonts_only();
     let doc = base_doc();
     let mut cur_doc = doc.clone();
     let mut cur = layout_paginated_full(&mut fonts, &cur_doc, 1.0, &opts());
@@ -365,7 +365,7 @@ fn sequential_edits_keep_matching() {
 /// catches it. If it does not, the top-ranked hazard has no net beneath it.
 #[test]
 fn the_property_tests_only_ever_resume_from_block_zero() {
-    let mut fonts = FontResources::new();
+    let mut fonts = FontResources::with_bundled_fonts_only();
     let doc = base_doc();
     let (layout, reuse) = layout_paginated_full(&mut fonts, &doc, 1.0, &opts());
 
@@ -424,7 +424,7 @@ fn multi_section_header_variants_match_full_layout() {
         })
     };
 
-    let mut fonts = FontResources::new();
+    let mut fonts = FontResources::with_bundled_fonts_only();
     let mut doc = multi_section_doc();
     for (i, s) in doc.sections.iter_mut().enumerate() {
         s.layout.header_first = Some(HeaderFooter {
