@@ -466,6 +466,9 @@ This is a prerequisite discovered by Phase 0, not an optional extra — and it i
 worth doing while the *current* stack is still buildable, because goldens
 captured after the migration prove nothing about it.
 
+**Follow-up (same day): a pixel gate does exist — it is not `loki-acid`'s.**
+See §10.
+
 ### 0.3 — outstanding
 
 Needs an upstream conversation; the question to ask is drafted in §9 so it does
@@ -495,7 +498,95 @@ get re-derived:
 
 ---
 
-## 10. What this survey did not check
+## 10. Goldens: what was found when we went to populate them (2026-08-16)
+
+The instruction was "populate the goldens before we go further". The result is
+better than expected in one direction and blocked in another.
+
+### A working pixel gate already exists
+
+`loki-render-cpu/tests/visual_golden.rs` compares Loki's deterministic
+`vello_cpu` candidate render against committed LibreOffice goldens in
+`appthere-conformance/goldens/odt/`, at a calibrated SSIM/ΔE tolerance, with no
+GPU. **Three ODT fixtures, all passing, in 1.53 s** — a real gate, unlike
+`loki-acid`'s 0.00 s no-op.
+
+Its golden pipeline was verified rather than assumed: regenerating
+`para-carlito` through `soffice --convert-to pdf` + `rasterize_pdf` reproduced
+the committed PNG **bit-for-bit**. (Environment needed fixing first — this
+container had `libreoffice-core` without `libreoffice-writer`, so *no* document
+filter could load *any* file. A control conversion of an unrelated file failed
+identically, which is what separated "broken install" from "bad fixture".)
+
+### `loki-acid`'s golden tree is a duplicate, and populating it creates no gate
+
+Its `renders/` side has no in-repo producer, so `golden_pixel` compares zero
+pages regardless of how many goldens are added. `loki-acid/goldens/README.md`
+now records this and points at the working harness. Two golden systems for one
+fact is the drift this suite exists to catch.
+
+### The acid fixtures cannot join the working gate as they stand
+
+Measured with the new `loki-render-cpu/examples/measure_odf_golden` instrument:
+
+| fixture | worst region | verdict |
+|---|---|---|
+| `styles-tinos.odt` (conformance, font-pinned) — control | ssim 0.6603, ΔE 7.854 | **passes** |
+| `acid_odt.odt` page 1 | ssim 0.0845, ΔE 22.115 | fails |
+| `acid_odt.odt` page 2 | ssim 0.2188, ΔE 14.753 | fails |
+
+Page counts and dimensions agree, the import is clean, and Loki reports **no
+font substitutions**. The cause is that `acid_odt.odt` declares no
+`<style:default-style>`: its only font declaration sits on the named style
+`BaseBody`, so paragraphs not inheriting from it fall back to each
+*application's own* default face — Liberation Serif in LibreOffice, a sans face
+in Loki. That repaints nearly every glyph, for a reason about the fixture rather
+than either renderer. The conformance fixtures are font-pinned by name for
+exactly this reason.
+
+*Correction:* the first hypothesis here was a missing "Liberation Serif" alias in
+`loki-layout`'s substitute table. That was wrong — `resolve_font_name` returns
+`Liberation Serif` unchanged, and the substitution run is empty. Loki's own
+instrument settled it; the pixels alone would not have.
+
+### OOXML goldens are blocked by design, not by this environment
+
+`acid_docx` / `acid_xlsx` / `acid_pptx` and the three pending
+`appthere-conformance/goldens/docx/` fixtures require **Microsoft 365 desktop**,
+which cannot be automated headlessly. Substituting LibreOffice would be actively
+wrong: every `TC-DOCX-*` row in `loki-acid/TEST_PLAN.md` names LibreOffice's
+divergence as the thing under test, so a LibreOffice "golden" would enshrine the
+known-wrong render as the reference. These need a Windows/macOS capture via
+`scripts/generate-office-goldens.sh`.
+
+### But note what this gate does and does not cover for *this* migration
+
+The CPU conformance path renders `loki_layout` output. `loki-layout` is on
+**parley 0.10 already**, while the Blitz stack is on the patched 0.6 — the two
+shapers are deliberately independent (root `Cargo.toml`). So the parley
+0.6 → 0.10 change this migration brings **does not touch the document layout
+path at all**; it affects Blitz-rendered surfaces: UI chrome and the
+`dom_reflow` view.
+
+That is the uncomfortable part: the gate that exists covers the path the
+migration barely changes, and the path the migration *does* change — Blitz's own
+CSS/paint — has no golden harness, because it is GPU-only and there is no GPU
+here. Populating more goldens does not close that gap.
+
+**Recommended next step**, in preference order:
+
+1. Capture the Word goldens on a Windows/macOS box — unblocks the DOCX axis and
+   is valuable independently of Dioxus 0.8.
+2. Font-pin `acid_odt.odt` (add an explicit `<style:default-style>`), regenerate
+   its golden, re-measure. Note `loki-render-cpu` still paints a grey placeholder
+   for embedded images (`TODO(conformance-render)`), which caps the achievable
+   score for image-bearing fixtures.
+3. For the Blitz-side risk specifically, accept that the net is manual: the
+   runtime CSS probes in §6 Phase 3.2 plus a device pass, not a pixel diff.
+
+---
+
+## 11. What this survey did not check
 
 Stated plainly so the gaps are not mistaken for clean results:
 
