@@ -31,27 +31,13 @@ pub fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
 /// A heading as the styled paragraph the resolver understands. `pub` for the
 /// same reason as [`synthesize_plain_para`].
 pub fn synthesize_heading_para(level: u8, attr: &NodeAttr, inlines: &[Inline]) -> StyledParagraph {
+    use loki_doc_model::content::heading::heading_style_id;
     use loki_doc_model::style::catalog::StyleId;
     use loki_doc_model::style::props::para_props::{ParaProps, ParagraphAlignment};
-    // Prefer the style name carried in NodeAttr (set by the ODF mapper from
+    // The style name carried in NodeAttr (set by the ODF mapper from
     // text:style-name so the catalog can resolve ODF heading properties like
-    // font-size and bold). Fall back to the canonical OOXML/internal names.
-    let style_id: StyleId = attr
-        .kv
-        .iter()
-        .find(|(k, _)| k == "style")
-        .map(|(_, v)| StyleId::new(v.as_str()))
-        .unwrap_or_else(|| {
-            let hardcoded = match level {
-                1 => "Heading1",
-                2 => "Heading2",
-                3 => "Heading3",
-                4 => "Heading4",
-                5 => "Heading5",
-                _ => "Heading6",
-            };
-            StyleId::new(hardcoded)
-        });
+    // font-size and bold), else the canonical OOXML/internal name.
+    let style_id: StyleId = heading_style_id(level, attr);
     let direct_alignment =
         attr.kv
             .iter()

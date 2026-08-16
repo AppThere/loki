@@ -6,6 +6,7 @@
 //! [`super::inlines`].
 
 use loki_doc_model::content::block::{Block, StyledParagraph};
+use loki_doc_model::content::heading::heading_style_id;
 use loki_doc_model::document::Document;
 use loki_doc_model::style::catalog::StyleId;
 use loki_doc_model::style::props::char_props::CharProps;
@@ -123,10 +124,16 @@ pub(crate) fn content_xml(doc: &Document) -> Rendered {
 pub(super) fn write_block(out: &mut String, block: &Block, cx: &mut Cx) {
     match block {
         Block::Para(inl) | Block::Plain(inl) => paragraph(out, None, inl, "", cx),
-        Block::Heading(level, _, inl) => {
+        // `hattr`, not `attr` — the latter is this module's attribute writer.
+        Block::Heading(level, hattr, inl) => {
             let lvl = (*level).clamp(1, 6);
+            // The heading's own style name, not one synthesised from the level:
+            // an imported `Heading_20_1` is what `styles.xml` declares, so
+            // writing `Heading{lvl}` here leaves the reference dangling.
+            let style = heading_style_id(*level, hattr);
             out.push_str(&format!(
-                "<text:h text:style-name=\"Heading{lvl}\" text:outline-level=\"{lvl}\">"
+                "<text:h text:style-name=\"{}\" text:outline-level=\"{lvl}\">",
+                escape(style.as_str())
             ));
             write_inlines(out, inl, cx);
             out.push_str("</text:h>");
@@ -206,11 +213,11 @@ fn write_block_with_master(out: &mut String, block: &Block, master: &str, cx: &m
             let suffix = revisions::para_mark_change(sp, cx);
             paragraph(out, Some(&style), &sp.inlines, &suffix, cx);
         }
-        Block::Heading(level, _, inl) => {
+        Block::Heading(level, hattr, inl) => {
             let lvl = (*level).clamp(1, 6);
-            let parent = format!("Heading{lvl}");
+            let parent = heading_style_id(*level, hattr);
             let style = cx.auto.para_style_master(
-                Some(&parent),
+                Some(parent.as_str()),
                 &ParaProps::default(),
                 &CharProps::default(),
                 master,

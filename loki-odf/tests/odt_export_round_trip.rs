@@ -1470,3 +1470,173 @@ fn the_selecting_usages_round_trip_without_becoming_mirrored() {
         );
     }
 }
+
+/// Gap #1 — headings: a heading's own style name must survive ODT export.
+///
+/// `Block::Heading` names its style in `NodeAttr` under `"style"` (the ODF
+/// mapper puts `text:style-name` there), not in a typed field. The ODT writer
+/// ignored it and synthesised `Heading{level}` from the level instead, so an
+/// imported `Heading_20_1` came back out as `Heading1` — a name the written
+/// `styles.xml` does not declare. The reference dangled and the heading lost
+/// its formatting (18 pt bold → nothing) on every save.
+///
+/// The discriminating assertion is the last one: the style the body references
+/// must actually be present in the catalog that ships with it.
+#[test]
+fn gap1_heading_style_survives_odt_export() {
+    let mut doc = sample_doc();
+    doc.styles.paragraph_styles.insert(
+        StyleId::new("Heading_20_1"),
+        para_style(
+            "Heading_20_1",
+            "Heading 1",
+            CharProps {
+                font_size: Some(Points::new(18.0)),
+                bold: Some(true),
+                ..Default::default()
+            },
+            ParaProps::default(),
+        ),
+    );
+    let mut attr = NodeAttr::default();
+    attr.kv
+        .push(("style".to_string(), "Heading_20_1".to_string()));
+    doc.sections[0].blocks.insert(
+        0,
+        Block::Heading(1, attr, vec![Inline::Str("Chapter One".into())]),
+    );
+
+    let back = round_trip(&doc);
+
+    let (level, attr) = back.sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            Block::Heading(l, a, _) => Some((*l, a.clone())),
+            _ => None,
+        })
+        .expect("heading must survive export");
+    assert_eq!(level, 1);
+
+    let referenced = attr
+        .kv
+        .iter()
+        .find(|(k, _)| k == "style")
+        .map(|(_, v)| v.clone())
+        .expect("heading must carry a style name");
+    assert_eq!(
+        referenced, "Heading_20_1",
+        "the heading's own style name must be written, not one synthesised \
+         from the outline level"
+    );
+
+    // The property that actually broke: the reference must resolve.
+    let style = back
+        .styles
+        .paragraph_styles
+        .get(&StyleId::new(&referenced))
+        .unwrap_or_else(|| {
+            panic!("body references '{referenced}', which styles.xml does not declare")
+        });
+    assert_eq!(style.char_props.bold, Some(true), "heading must stay bold");
+    let pt = style.char_props.font_size.map(|p| p.value() as f32);
+    assert!(
+        pt.is_some_and(|v| (v - 18.0).abs() < 0.5),
+        "heading must stay 18 pt, got {pt:?}"
+    );
+}
+
+/// Gap #1, fallback half: a heading that carries no style name still gets the
+/// canonical `Heading{level}` — the in-app-authored case, whose output must
+/// not change.
+#[test]
+fn gap1_heading_without_a_carried_style_falls_back_to_the_canonical_name() {
+    let mut doc = sample_doc();
+    doc.sections[0].blocks.insert(
+        0,
+        Block::Heading(
+            2,
+            NodeAttr::default(),
+            vec![Inline::Str("Plain Heading".into())],
+        ),
+    );
+
+    let back = round_trip(&doc);
+    let attr = back.sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            Block::Heading(2, a, _) => Some(a.clone()),
+            _ => None,
+        })
+        .expect("heading must survive export");
+    let referenced = attr
+        .kv
+        .iter()
+        .find(|(k, _)| k == "style")
+        .map(|(_, v)| v.as_str().to_string());
+    assert_eq!(
+        referenced.as_deref(),
+        Some("Heading2"),
+        "an unstyled heading keeps the canonical fallback name"
+    );
+}
+
+/// Gap #1, second writer path: a heading that opens a non-first section is
+/// written by `write_block_with_master` (it carries `style:master-page-name`),
+/// which had the same synthesised-name bug and its own code path.
+#[test]
+fn gap1_heading_style_survives_when_it_opens_a_later_section() {
+    let mut doc = sample_doc();
+    doc.styles.paragraph_styles.insert(
+        StyleId::new("SceneHeading"),
+        para_style(
+            "SceneHeading",
+            "Scene Heading",
+            CharProps {
+                bold: Some(true),
+                ..Default::default()
+            },
+            ParaProps::default(),
+        ),
+    );
+    let mut attr = NodeAttr::default();
+    attr.kv
+        .push(("style".to_string(), "SceneHeading".to_string()));
+
+    let second = Section::with_layout_and_blocks(
+        doc.sections[0].layout.clone(),
+        vec![Block::Heading(
+            1,
+            attr,
+            vec![Inline::Str("Scene Two".into())],
+        )],
+    );
+    doc.sections.push(second);
+
+    let back = round_trip(&doc);
+
+    // The heading's automatic style must inherit from SceneHeading, so the
+    // name has to appear somewhere in the resolved parent chain.
+    let found = back.sections.iter().flat_map(|s| s.blocks.iter()).any(|b| {
+        let (a, _) = match b {
+            Block::Heading(_, a, i) => (a, i),
+            _ => return false,
+        };
+        a.kv.iter().any(|(k, v)| {
+            k == "style"
+                && (v == "SceneHeading"
+                    || back
+                        .styles
+                        .paragraph_styles
+                        .get(&StyleId::new(v.as_str()))
+                        .and_then(|p| p.parent.as_ref())
+                        .is_some_and(|p| p.as_str() == "SceneHeading"))
+        })
+    });
+    assert!(
+        found,
+        "a heading opening a later section must still resolve through \
+         SceneHeading, not a name synthesised from its level"
+    );
+}
