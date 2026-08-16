@@ -7,6 +7,7 @@ use loki_doc_model::content::table::row::Cell;
 use loki_doc_model::content::table::{Row, Table};
 use loki_doc_model::style::catalog::StyleId;
 use loki_doc_model::style::table_banding::resolve_cell_shading_cnf;
+use loki_doc_model::style::table_borders::{CellEdges, effective_cell_edges, resolve_cell_borders};
 use loki_doc_model::style::{TableCnf, TableLook, resolve_cell_shading};
 use loki_primitives::color::DocumentColor;
 
@@ -33,15 +34,18 @@ pub(super) fn table(out: &mut String, t: &Table, cx: &mut Cx) {
     let rows = flatten_rows(t);
     let col_count = grid_col_count(&rows, t.col_specs.len());
     let cell_cols = assign_grid_columns(&rows, col_count);
-    // Phase 1: resolve every cell's effective background (immutable borrow of
-    // the style catalog), so phase 2 can borrow `cx.auto` mutably.
+    // Phase 1: resolve every cell's effective background *and borders*
+    // (immutable borrow of the style catalog), so phase 2 can borrow `cx.auto`
+    // mutably. ODF represents both per cell, so both must be resolved here —
+    // a table-level border set has no ODF-native form to defer to.
     let backgrounds = resolve_backgrounds(t, cx, &rows, &cell_cols, col_count);
+    let borders = resolve_borders(t, cx, &rows, &cell_cols, col_count);
 
     // Phase 2: emit rows/cells, minting the per-cell automatic styles.
     for (r, row) in rows.iter().enumerate() {
         out.push_str("<table:table-row>");
         for (ci, cell) in row.cells.iter().enumerate() {
-            table_cell(out, cell, backgrounds[r][ci].as_ref(), cx);
+            table_cell(out, cell, backgrounds[r][ci].as_ref(), &borders[r][ci], cx);
         }
         out.push_str("</table:table-row>");
     }
@@ -146,9 +150,54 @@ fn resolve_backgrounds(
         .collect()
 }
 
-fn table_cell(out: &mut String, cell: &Cell, background: Option<&DocumentColor>, cx: &mut Cx) {
+/// The effective `(top, right, bottom, left)` borders for every cell: its
+/// direct edges, else the referenced table style's edge for that grid
+/// position. Resolved per edge by the same helper the paint path uses, so an
+/// exported table draws the grid it drew on screen.
+fn resolve_borders(
+    t: &Table,
+    cx: &Cx,
+    rows: &[&Row],
+    cell_cols: &[Vec<usize>],
+    col_count: usize,
+) -> Vec<Vec<CellEdges>> {
+    let style = t
+        .style_name()
+        .and_then(|n| cx.table_styles.get(&StyleId::new(n)));
+    let n_rows = rows.len();
+    rows.iter()
+        .enumerate()
+        .map(|(r, row)| {
+            row.cells
+                .iter()
+                .enumerate()
+                .map(|(ci, cell)| {
+                    let from_style =
+                        resolve_cell_borders(style, r, cell_cols[r][ci], n_rows, col_count);
+                    effective_cell_edges(
+                        (
+                            cell.props.border_top.as_ref(),
+                            cell.props.border_right.as_ref(),
+                            cell.props.border_bottom.as_ref(),
+                            cell.props.border_left.as_ref(),
+                        ),
+                        &from_style,
+                    )
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn table_cell(
+    out: &mut String,
+    cell: &Cell,
+    background: Option<&DocumentColor>,
+    edges: &CellEdges,
+    cx: &mut Cx,
+) {
     out.push_str("<table:table-cell");
-    if let Some(style) = cx.auto.cell_style(&cell.props, background) {
+    if let Some(style) = cx.auto.cell_style(&cell.props, background, edges) {
         attr(out, "table:style-name", &style);
     }
     if cell.col_span > 1 {

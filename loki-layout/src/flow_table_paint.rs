@@ -188,10 +188,21 @@ pub(super) fn emit_row_cell_decorations(
             // fill in each edge, so a styled table draws its grid without the
             // cells carrying explicit borders. `sb` is (top, right, bottom, left).
             let sb = cell_style_borders(table_style, row_idx, col_start, grid_rows, grid_cols);
-            let eff_top = cell.props.border_top.as_ref().or(sb.0.as_ref());
-            let eff_right = cell.props.border_right.as_ref().or(sb.1.as_ref());
-            let eff_bottom = cell.props.border_bottom.as_ref().or(sb.2.as_ref());
-            let eff_left = cell.props.border_left.as_ref().or(sb.3.as_ref());
+            let eff = loki_doc_model::style::table_borders::effective_cell_edges(
+                (
+                    cell.props.border_top.as_ref(),
+                    cell.props.border_right.as_ref(),
+                    cell.props.border_bottom.as_ref(),
+                    cell.props.border_left.as_ref(),
+                ),
+                &sb,
+            );
+            let (eff_top, eff_right, eff_bottom, eff_left) = (
+                eff.0.as_ref(),
+                eff.1.as_ref(),
+                eff.2.as_ref(),
+                eff.3.as_ref(),
+            );
 
             let has_borders = eff_top.is_some()
                 || eff_bottom.is_some()

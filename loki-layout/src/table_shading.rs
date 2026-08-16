@@ -78,10 +78,7 @@ pub fn cell_style_borders(
     rows: usize,
     cols: usize,
 ) -> CellEdges {
-    style
-        .and_then(|s| s.table_props.borders.as_ref())
-        .map(|b| b.edges_for(row, col, rows, cols))
-        .unwrap_or_default()
+    loki_doc_model::style::table_borders::resolve_cell_borders(style, row, col, rows, cols)
 }
 
 #[cfg(test)]

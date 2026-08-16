@@ -1640,3 +1640,218 @@ fn gap1_heading_style_survives_when_it_opens_a_later_section() {
          SceneHeading, not a name synthesised from its level"
     );
 }
+
+/// A table style's borders must survive ODT export.
+///
+/// ODF has no table-level border concept — like conditional-region shading, a
+/// grid is represented per cell. The writer already resolved style→cell for
+/// **shading** but passed each cell's raw direct borders straight through, so
+/// a table styled *Table Grid* (all six edges set, no direct cell borders)
+/// exported with no borders at all: measured before this fix, every cell came
+/// back with four `None` edges while its background survived.
+///
+/// The six edges carry distinct widths so the assertions discriminate
+/// *position* — an outer edge on the table boundary, the interior gridline
+/// inside — rather than merely "some border came back".
+#[test]
+fn table_style_borders_resolve_into_per_cell_borders_on_odt_export() {
+    use loki_doc_model::content::table::core::Table;
+    use loki_doc_model::style::props::border::{Border, BorderStyle};
+    use loki_doc_model::style::table_borders::TableBorders;
+    use loki_doc_model::style::table_style::{TableProps, TableStyle};
+    use loki_primitives::color::DocumentColor;
+
+    let edge = |w: f64| {
+        Some(Border {
+            style: BorderStyle::Solid,
+            width: Points::new(w),
+            color: DocumentColor::from_hex("#000000").ok(),
+            spacing: None,
+        })
+    };
+    // top 1, right 2, bottom 3, left 4, inside_h 5, inside_v 6.
+    let borders = TableBorders {
+        top: edge(1.0),
+        right: edge(2.0),
+        bottom: edge(3.0),
+        left: edge(4.0),
+        inside_h: edge(5.0),
+        inside_v: edge(6.0),
+    };
+
+    let mut doc = sample_doc();
+    doc.styles.table_styles.insert(
+        StyleId::new("TableGrid"),
+        TableStyle {
+            id: StyleId::new("TableGrid"),
+            display_name: Some("Table Grid".into()),
+            parent: None,
+            table_props: TableProps {
+                borders: Some(borders),
+                ..Default::default()
+            },
+            conditional: Default::default(),
+            extensions: Default::default(),
+        },
+    );
+
+    let mut table = Table::grid(2, 2);
+    table.set_style_name(Some("TableGrid".to_string()));
+    for body in table.bodies.iter_mut() {
+        for (r, row) in body.body_rows.iter_mut().enumerate() {
+            for (c, cell) in row.cells.iter_mut().enumerate() {
+                cell.blocks = vec![Block::Para(vec![Inline::Str(format!("r{r}c{c}"))])];
+            }
+        }
+    }
+    doc.sections[0].blocks.push(Block::Table(Box::new(table)));
+
+    let back = round_trip(&doc);
+    let t = back
+        .sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .find_map(|b| match b {
+            Block::Table(t) => Some(t),
+            _ => None,
+        })
+        .expect("table survives export");
+
+    let rows: Vec<_> = t.bodies.iter().flat_map(|b| b.body_rows.iter()).collect();
+    assert_eq!(rows.len(), 2, "both rows survive");
+
+    let w = |b: &Option<Border>| b.as_ref().map(|x| x.width.value());
+
+    // (0,0): top/left are the table's outer edges; bottom/right the interiors.
+    let c00 = &rows[0].cells[0].props;
+    assert_eq!(w(&c00.border_top), Some(1.0), "cell(0,0) top = outer top");
+    assert_eq!(
+        w(&c00.border_left),
+        Some(4.0),
+        "cell(0,0) left = outer left"
+    );
+    assert_eq!(
+        w(&c00.border_bottom),
+        Some(5.0),
+        "cell(0,0) bottom = interior horizontal"
+    );
+    assert_eq!(
+        w(&c00.border_right),
+        Some(6.0),
+        "cell(0,0) right = interior vertical"
+    );
+
+    // (1,1): the mirror — interiors above/left, outer edges below/right.
+    let c11 = &rows[1].cells[1].props;
+    assert_eq!(
+        w(&c11.border_top),
+        Some(5.0),
+        "cell(1,1) top = interior horizontal"
+    );
+    assert_eq!(
+        w(&c11.border_left),
+        Some(6.0),
+        "cell(1,1) left = interior vertical"
+    );
+    assert_eq!(
+        w(&c11.border_bottom),
+        Some(3.0),
+        "cell(1,1) bottom = outer bottom"
+    );
+    assert_eq!(
+        w(&c11.border_right),
+        Some(2.0),
+        "cell(1,1) right = outer right"
+    );
+}
+
+/// The other half of the precedence rule: a direct cell border wins over the
+/// style's edge, **per edge** — the cell keeps its own top and still takes the
+/// remaining three from the style. An all-or-nothing fallback passes the test
+/// above and fails this one.
+#[test]
+fn a_direct_cell_border_wins_per_edge_over_the_table_style() {
+    use loki_doc_model::content::table::core::Table;
+    use loki_doc_model::style::props::border::{Border, BorderStyle};
+    use loki_doc_model::style::table_borders::TableBorders;
+    use loki_doc_model::style::table_style::{TableProps, TableStyle};
+    use loki_primitives::color::DocumentColor;
+
+    let edge = |w: f64| {
+        Some(Border {
+            style: BorderStyle::Solid,
+            width: Points::new(w),
+            color: DocumentColor::from_hex("#000000").ok(),
+            spacing: None,
+        })
+    };
+    let mut doc = sample_doc();
+    doc.styles.table_styles.insert(
+        StyleId::new("TableGrid"),
+        TableStyle {
+            id: StyleId::new("TableGrid"),
+            display_name: None,
+            parent: None,
+            table_props: TableProps {
+                borders: Some(TableBorders {
+                    top: edge(1.0),
+                    right: edge(2.0),
+                    bottom: edge(3.0),
+                    left: edge(4.0),
+                    inside_h: edge(5.0),
+                    inside_v: edge(6.0),
+                }),
+                ..Default::default()
+            },
+            conditional: Default::default(),
+            extensions: Default::default(),
+        },
+    );
+
+    let mut table = Table::grid(1, 1);
+    table.set_style_name(Some("TableGrid".to_string()));
+    for body in table.bodies.iter_mut() {
+        for row in body.body_rows.iter_mut() {
+            for cell in row.cells.iter_mut() {
+                cell.blocks = vec![Block::Para(vec![Inline::Str("only".into())])];
+                // A direct top border only — the other three must come from
+                // the style.
+                cell.props.border_top = edge(9.0);
+            }
+        }
+    }
+    doc.sections[0].blocks.push(Block::Table(Box::new(table)));
+
+    let back = round_trip(&doc);
+    let t = back
+        .sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .find_map(|b| match b {
+            Block::Table(t) => Some(t),
+            _ => None,
+        })
+        .expect("table survives export");
+    let props = &t
+        .bodies
+        .iter()
+        .flat_map(|b| b.body_rows.iter())
+        .next()
+        .expect("a row")
+        .cells[0]
+        .props;
+    let w = |b: &Option<Border>| b.as_ref().map(|x| x.width.value());
+
+    assert_eq!(
+        w(&props.border_top),
+        Some(9.0),
+        "the cell's own top border wins over the style's"
+    );
+    assert_eq!(
+        w(&props.border_bottom),
+        Some(3.0),
+        "the other edges still come from the style (per-edge, not all-or-nothing)"
+    );
+    assert_eq!(w(&props.border_left), Some(4.0));
+    assert_eq!(w(&props.border_right), Some(2.0));
+}
