@@ -435,13 +435,19 @@ they actually are — a floor. Baseline on `1.97.1`, this container:
 ```
 fixture                            pages sheets slides  glyphs  coverage
 acid_docx.docx                        19      -      -    6115    1.0000
-acid_odt.odt                           2      -      -    2179    1.0000
+acid_odt.odt                           1      -      -    2144    1.0000
 acid_xlsx.xlsx                         -      9      -       -         -
 acid_pptx.pptx                         -      -      3       -         -
 acid_ods.ods                           -      1      -       -         -
 acid_odp.odp                           -      -      -       -         -
 acid_odg.odg                           -      -      -       -         -
 ```
+
+`acid_odt` read `2 pages / 2179 glyphs` when this baseline was first taken. It
+moved to `1 / 2144` when the fixture was font-pinned (§10) — the change is the
+fixture's, not a rendering regression, and the drop in glyphs is one fewer
+header+footer pair. Re-baseline with
+`cargo run -p loki-acid --example structural_baseline` after any fixture edit.
 
 **The pixel gate does not currently exist.** R-5 called the ACID harness "the
 only real acceptance gate" for the migration. That is only true of its
@@ -573,14 +579,71 @@ migration barely changes, and the path the migration *does* change — Blitz's o
 CSS/paint — has no golden harness, because it is GPU-only and there is no GPU
 here. Populating more goldens does not close that gap.
 
+### Font-pinning `acid_odt` (done) — it found a Loki defect, not a gate
+
+`acid_odt.odt` now carries
+`<style:default-style style:family="paragraph">` with `fo:font-family="Tinos"`,
+and `BaseBody` moved from `Liberation Serif` to `Tinos`. Tinos is bundled in
+`loki_fonts::fallback_font_blobs()`, so Loki resolves it with no system fonts at
+all, and the golden pipeline's documented D4 step installs it for fontconfig so
+LibreOffice shapes with the same face. `Liberation Serif` would have made the
+gate depend on what happens to be installed.
+
+The golden was regenerated through the sanctioned pipeline. The pin did **not**
+make the fixture gateable, and what it exposed is more useful than a gate:
+
+**A real ODF conformance defect in Loki, now fixed.** After pinning, body
+paragraphs *still* rendered in the fallback face — but only those whose style
+had no `style:parent-style-name` (`LhPct`, `LhAtLeast`, `TabP`, `DecP`,
+`DropP`, `RtlP`). Unstyled content (table cells, list items, header/footer) and
+`ChildEmph` (parent `BaseBody`) picked the document font up correctly. ODF 1.3
+§16.2 makes a parentless style inherit from its family's `style:default-style`;
+`loki-odf`'s mapper left `parent` as `None`, and
+`StyleCatalog::effective_paragraph_style` is `explicit.or(default)` — so a
+paragraph *with* a style bypassed the default entirely. One page, two font
+families. Fixed in `loki-odf/src/odt/mapper/styles.rs` (in the ODF mapper, not
+the shared resolver: OOXML's `w:docDefaults` reaches a paragraph by a different
+route). Two regression tests, verified by inversion.
+
+**And that fix broke ODT export, invisibly.** Setting `parent = "__Default"`
+made the writer emit `style:parent-style-name="__Default"` — a reference to a
+synthetic id that is serialised as `<style:default-style>` and therefore appears
+in the package under no name at all. The writer already skipped synthetic style
+*definitions* (three copies of `starts_with("__")`); it had no such check on
+*references*, because until now nothing set one. The whole `loki-odf` suite
+passed with the leak present: it shows up in the emitted bytes, not in any
+correctness assertion. Found by round-tripping the fixture and grepping the
+output, then fixed with a single `is_synthetic_style_id` predicate applied to
+both sides, and pinned by `loki-odf/tests/synthetic_style_leak.rs` — including a
+guard test asserting the fixture really does set a synthetic parent, so the leak
+assertion cannot pass vacuously.
+
+**What still diverges**, measured after both the pin and the fix:
+
+| cause | kind |
+|---|---|
+| `<text:h>` carries no style; LibreOffice applies its built-in Heading 1 (large, bold), Loki does not | fixture under-specification |
+| List markers: golden `◆` / `1.`, Loki `•` / `○` | genuine gap, TC-ODT-004 |
+| Embedded image renders as a grey placeholder | harness gap, `TODO(conformance-render)` |
+| Loki fits the document in 1 page, LibreOffice needs 2 | downstream of the above |
+
+The page-count divergence is new *information*, not a new fault: before the pin
+both engines produced 2 pages, but with **different fonts** — the agreement was
+coincidental. With the same face, they disagree.
+
+Pinning further will not close the remaining three, and pinning away TC-ODT-004
+would defeat what the fixture is for. `acid_odt` is not gateable, and the
+honest reason is now itemised rather than "it scores badly".
+
 **Recommended next step**, in preference order:
 
 1. Capture the Word goldens on a Windows/macOS box — unblocks the DOCX axis and
    is valuable independently of Dioxus 0.8.
-2. Font-pin `acid_odt.odt` (add an explicit `<style:default-style>`), regenerate
-   its golden, re-measure. Note `loki-render-cpu` still paints a grey placeholder
-   for embedded images (`TODO(conformance-render)`), which caps the achievable
-   score for image-bearing fixtures.
+2. Decide whether TC-ODT-004 (list markers) and the image-decode TODO are worth
+   fixing to make `acid_odt` gateable, or whether a purpose-built font-pinned
+   ODF fixture — the `para-carlito` / `styles-tinos` pattern — is the cheaper
+   route to more gate coverage. The acid fixture is designed to *diverge*; that
+   is a poor fit for a pass/fail pixel gate.
 3. For the Blitz-side risk specifically, accept that the net is manual: the
    runtime CSS probes in §6 Phase 3.2 plus a device pass, not a pixel diff.
 

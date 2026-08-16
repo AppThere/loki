@@ -12,6 +12,7 @@ use loki_doc_model::style::para_style::ParagraphStyle;
 
 use super::auto::AutoStyles;
 use super::content::{Cx, write_block};
+use super::is_synthetic_style_id;
 use super::media::{Media, Rendered};
 use super::page_styles::resolve_page_style_names;
 use super::para_props::emit_paragraph_properties;
@@ -83,13 +84,13 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
     out.push_str("<office:styles>");
     super::default_style::write_default_styles(&mut out, &doc.styles);
     for (id, style) in &doc.styles.paragraph_styles {
-        if id.as_str().starts_with("__") {
+        if is_synthetic_style_id(id.as_str()) {
             continue;
         }
         write_paragraph_style(&mut out, id.as_str(), style);
     }
     for (id, style) in &doc.styles.character_styles {
-        if id.as_str().starts_with("__") {
+        if is_synthetic_style_id(id.as_str()) {
             continue;
         }
         out.push_str("<style:style");
@@ -193,7 +194,15 @@ fn write_paragraph_style(out: &mut String, id: &str, style: &ParagraphStyle) {
         attr(out, "style:display-name", name);
     }
     attr(out, "style:family", "paragraph");
-    if let Some(parent) = &style.parent {
+    // A parent pointing at the synthetic document default is exactly what an
+    // *absent* `style:parent-style-name` means in ODF (1.3 §16.2), so omitting
+    // the attribute round-trips the semantic — and emitting it would name a
+    // style the package never defines.
+    if let Some(parent) = &style
+        .parent
+        .as_ref()
+        .filter(|p| !is_synthetic_style_id(p.as_str()))
+    {
         attr(out, "style:parent-style-name", parent.as_str());
     }
     if let Some(next) = &style.next_style_id {

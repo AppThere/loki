@@ -122,6 +122,29 @@ pub(crate) fn map_stylesheet(sheet: &OdfStylesheet) -> StyleCatalog {
         let display_name = s.display_name.clone();
         let is_custom = s.is_automatic;
 
+        // ODF 1.3 §16.2: a `style:style` that omits `style:parent-style-name`
+        // inherits from its family's `style:default-style` — the default is the
+        // root of the family's inheritance tree, not merely a fallback for
+        // paragraphs that name no style at all.
+        //
+        // `StyleCatalog::effective_paragraph_style` is `explicit.or(default)`,
+        // so a paragraph *with* a style bypassed the default entirely. The
+        // visible symptom: a document whose only font declaration is on
+        // `style:default-style` rendered its styled paragraphs in Loki's own
+        // fallback face while every unstyled one (table cells, list items,
+        // header/footer) picked up the document font — the same page, two
+        // different families.
+        //
+        // Fixed here rather than in `effective_paragraph_style` because this is
+        // an ODF rule: OOXML's `w:docDefaults` reaches a paragraph by a
+        // different route, and widening the shared resolver would change DOCX
+        // behaviour too.
+        let paragraph_parent = || {
+            parent
+                .clone()
+                .or_else(|| catalog.default_paragraph_style.clone())
+        };
+
         match s.family {
             OdfStyleFamily::Paragraph => {
                 let para_props = s
@@ -141,7 +164,7 @@ pub(crate) fn map_stylesheet(sheet: &OdfStylesheet) -> StyleCatalog {
                 let style = ParagraphStyle {
                     id: id.clone(),
                     display_name,
-                    parent,
+                    parent: paragraph_parent(),
                     linked_char_style: None,
                     // B8: `style:next-style-name` round-trips (the writer
                     // already emitted it; the importer used to drop it).
