@@ -190,7 +190,10 @@
       "Bash(magick z.png -crop 400x60+2400x1660 +repage -resize 300% z_crop.png)",
       "Bash(echo \"ceiling=$?\")",
       "Bash(echo \"license=$?\")",
-      "Bash(echo \"unsafe=$?\")"
+      "Bash(echo \"unsafe=$?\")",
+      "Bash(cargo report *)",
+      "Bash(cargo tree *)",
+      "Bash(git mv *)"
     ]
   },
   "enableAllProjectMcpServers": true,
