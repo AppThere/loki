@@ -29,7 +29,14 @@ fn emit_table_style(out: &mut String, name: &str, style: &TableStyle) {
         attr(out, "style:display-name", display);
     }
     attr(out, "style:family", "table");
-    if let Some(parent) = &style.parent {
+    // As in the paragraph and character writers: a synthetic parent is what an
+    // absent `style:parent-style-name` means in ODF, and emitting it would name
+    // a style the package never defines.
+    if let Some(parent) = &style
+        .parent
+        .as_ref()
+        .filter(|p| !super::is_synthetic_style_id(p.as_str()))
+    {
         attr(out, "style:parent-style-name", parent.as_str());
     }
     out.push('>');
