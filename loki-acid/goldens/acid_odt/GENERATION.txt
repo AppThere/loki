@@ -1,0 +1,16 @@
+fixture:    acid_odt.odt
+reference:  LibreOffice headless (LibreOffice 24.2.7.2 420(Build:2))
+rasterizer: pdftoppm version 24.02.0 @ 144 dpi (CONFORMANCE_DPI), -aa yes -aaVector yes
+generated:  2026-08-16
+operator:   manual, mirroring scripts/generate-odf-goldens.sh
+status:     PNGs NOT COMMITTED — this file records the provenance only.
+            The generating session lost its git push credentials before the
+            binaries could be uploaded. Regenerate with the commands in
+            loki-render-cpu/examples/measure_odf_golden.rs and replace this
+            record with the versions your run reports.
+
+Page files are zero-padded (page-001.png) per goldens/README.md; the
+rasterize_pdf example emits page-N.png, so they are renamed on the way
+in. Padding is load-bearing, not cosmetic: goldens are discovered by a
+plain sort, and acid_docx runs to 19 pages, where page-10 sorts before
+page-2.
