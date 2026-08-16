@@ -42,8 +42,8 @@ fn round_trip(bytes: Vec<u8>) -> (String, String) {
 }
 
 /// A fixture whose only font declaration is on `style:default-style`, with a
-/// parentless paragraph style — the shape that makes the mapper set a synthetic
-/// parent.
+/// parentless style in each of the three mapped families — the shape that makes
+/// the mapper set a synthetic parent.
 fn default_style_fixture() -> Vec<u8> {
     const STYLES: &str = concat!(
         r#"<?xml version="1.0" encoding="UTF-8"?>"#,
@@ -52,12 +52,25 @@ fn default_style_fixture() -> Vec<u8> {
         r#"xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" "#,
         r#"xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" "#,
         r#"xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" "#,
+        r#"xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" "#,
         r#"office:version="1.2"><office:styles>"#,
         r#"<style:default-style style:family="paragraph">"#,
         r#"<style:text-properties fo:font-family="Tinos" fo:font-size="12pt"/>"#,
         r#"</style:default-style>"#,
+        r#"<style:default-style style:family="text">"#,
+        r#"<style:text-properties fo:font-family="Tinos"/>"#,
+        r#"</style:default-style>"#,
+        r#"<style:default-style style:family="table">"#,
+        r#"<style:table-properties style:rel-width="50%"/>"#,
+        r#"</style:default-style>"#,
         r#"<style:style style:name="Body" style:family="paragraph">"#,
         r#"<style:text-properties fo:font-size="14pt"/>"#,
+        r#"</style:style>"#,
+        r#"<style:style style:name="Emph" style:family="text">"#,
+        r#"<style:text-properties fo:font-style="italic"/>"#,
+        r#"</style:style>"#,
+        r#"<style:style style:name="Tbl" style:family="table">"#,
+        r#"<style:table-properties table:align="center"/>"#,
         r#"</style:style>"#,
         r#"</office:styles></office:document-styles>"#,
     );
@@ -126,20 +139,47 @@ fn export_never_emits_a_synthetic_style_id() {
 /// stop being evidence of anything.
 #[test]
 fn the_fixture_actually_sets_a_synthetic_parent() {
+    use loki_doc_model::style::catalog::StyleId;
     let doc = OdtImport::import(
         Cursor::new(default_style_fixture()),
         OdtImportOptions::default(),
     )
     .expect("fixture imports");
-    let body = doc
-        .styles
-        .paragraph_styles
-        .get(&loki_doc_model::style::catalog::StyleId::new("Body"))
-        .expect("Body style mapped");
+    let s = &doc.styles;
+
+    // All three families, or the leak assertion passes vacuously for the two
+    // the fixture forgot to exercise — which is exactly how the character and
+    // table writers kept an unguarded parent long after the paragraph one was
+    // fixed.
     assert_eq!(
-        body.parent.as_ref().map(|p| p.as_str()),
+        s.paragraph_styles
+            .get(&StyleId::new("Body"))
+            .expect("Body mapped")
+            .parent
+            .as_ref()
+            .map(|p| p.as_str()),
         Some("__Default"),
-        "the parentless style must inherit the document default (ODF 1.3 §16.2)"
+        "parentless paragraph style must inherit the family default (ODF 1.3 §16.2)"
+    );
+    assert_eq!(
+        s.character_styles
+            .get(&StyleId::new("Emph"))
+            .expect("Emph mapped")
+            .parent
+            .as_ref()
+            .map(|p| p.as_str()),
+        Some("__DefaultChar"),
+        "parentless text style must inherit the family default (ODF 1.3 §16.2)"
+    );
+    assert_eq!(
+        s.table_styles
+            .get(&StyleId::new("Tbl"))
+            .expect("Tbl mapped")
+            .parent
+            .as_ref()
+            .map(|p| p.as_str()),
+        Some("__DefaultTable"),
+        "parentless table style must inherit the family default (ODF 1.3 §16.2)"
     );
 }
 
