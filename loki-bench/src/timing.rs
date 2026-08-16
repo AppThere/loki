@@ -31,8 +31,16 @@
 //! - **Neither** catches a fixture that does not exercise the path under test. That
 //!   needs an assertion about the path itself — see `relayout_edit_position`'s
 //!   check that the incremental path is entered at all.
-
-#![allow(dead_code)] // Each bench uses a different subset.
+//!
+//! # Why this lives in the library
+//!
+//! It was `benches/support/timing.rs`, `#[path]`-included by each bench. Cargo
+//! builds a bench target with `--cfg test` but without `--test`, so the
+//! `#[cfg(test)] mod tests` below was compiled with its `#[test]` functions
+//! stripped: the tests never ran anywhere, and the only visible trace was an
+//! unused-import warning inside them. Here they run under `cargo test -p
+//! loki-bench` like every other module's. Benches reach it through
+//! `support::timing::…` as before.
 
 use std::time::Instant;
 

@@ -45,6 +45,9 @@ mod leak;
 mod memory;
 mod parity;
 mod rss;
+// Public as a module, not flattened into the `pub use` list below: benches
+// address it as `support::timing::…` (see `benches/support/mod.rs`).
+pub mod timing;
 
 pub use axis::{Axis, Metric};
 pub use baseline::{

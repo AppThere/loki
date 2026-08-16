@@ -110,7 +110,7 @@ fn the_capability_search_runs_once_per_change_and_not_once_per_frame() {
     let source = DocPageSource::new(Arc::new(Document::default()));
     let runs = std::cell::Cell::new(0_u32);
     let letter = CapabilityInputs::from_pages(&[(612.0, 792.0)], 2.0, TextureBudget::baseline());
-    let mut apply = |inputs| {
+    let apply = |inputs| {
         source.apply_capability_limit(inputs, || {
             runs.set(runs.get() + 1);
             Some(1500)
@@ -159,7 +159,7 @@ fn overriding_the_cap_invalidates_the_memo() {
     let source = DocPageSource::new(Arc::new(Document::default()));
     let runs = std::cell::Cell::new(0_u32);
     let letter = CapabilityInputs::from_pages(&[(612.0, 792.0)], 2.0, TextureBudget::baseline());
-    let mut apply = || {
+    let apply = || {
         source.apply_capability_limit(letter, || {
             runs.set(runs.get() + 1);
             Some(1500)

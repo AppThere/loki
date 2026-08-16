@@ -11,8 +11,15 @@
 
 #![allow(dead_code)] // Each bench uses a different subset of these helpers.
 
-#[path = "timing.rs"]
-pub mod timing;
+// Re-exported from the library rather than `#[path]`-included here, so the
+// module's own unit tests run under `cargo test`. A bench target is built with
+// `--cfg test` but *not* `--test`, so a `#[cfg(test)] mod tests` inside a
+// `#[path]`-included file compiles with its `#[test]` fns stripped — the tests
+// never execute, and their imports read as unused. Benches keep addressing it as
+// `support::timing::…`.
+// Same reason as the `dead_code` allow above: only the timed benches use it.
+#[allow(unused_imports)]
+pub use loki_bench::timing;
 
 use loki_bench::AllocStats;
 use loki_doc_model::content::attr::ExtensionBag;

@@ -6,8 +6,6 @@
 
 use super::*;
 
-use super::*;
-
 #[test]
 fn test_font_resolution_fallback() {
     let mut r = FontResources::new();

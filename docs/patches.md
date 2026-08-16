@@ -750,6 +750,14 @@ what notices.
     `font-kerning` declaration is dropped as an unknown property, which is worse
     than nothing since it reads like a fix.
 
+12. **Dead store removed in `layout/construct.rs` (PATCH(loki), 2026-08-15).**
+    Not a behaviour change and not a fix for anything Loki needs — the *only*
+    reason it is here is that upstream's `*anonymous_block_id = None` inside the
+    whitespace-only branch is immediately followed by the same unconditional
+    assignment, so every build of the workspace printed an `unused_assignments`
+    warning from a file no consumer reads. A comment marks the spot. Drop this
+    delta on the next rebase if upstream has removed the store itself.
+
 **Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
 for non-input elements, dispatches scroll events to embedders, exposes an
 absolute node-scroll API, stops treating a static canvas as perpetually

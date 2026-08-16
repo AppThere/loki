@@ -256,6 +256,10 @@ pub const ADVANCE_TEXT: &str = "Handgloves quick brown fox jumps over lazy dogs"
 
 /// `(name, direct properties, character style)` for each advance case, in
 /// document order — the caller needs the names to label what it measures.
+// `allow`, not `expect`: this file is `#[path]`-included by four examples and
+// only `advance_probe` calls this, so the lint fires in three of the four
+// builds and would leave `expect` unfulfilled in the fourth.
+#[allow(dead_code)]
 #[expect(
     clippy::type_complexity,
     reason = "a table read once by two probes; a struct would be more names than facts"

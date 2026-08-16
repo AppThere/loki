@@ -510,7 +510,9 @@ fn collect_complex_layout_children(
                 if block_is_only_whitespace(doc, anon_id) {
                     layout_children.pop();
                     doc.nodes.remove(anon_id);
-                    *anonymous_block_id = None;
+                    // No `*anonymous_block_id = None` here: the unconditional
+                    // clear below already does it, and the dead store warned
+                    // (`unused_assignments`) on every build.
                 }
             }
 
