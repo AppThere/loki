@@ -127,6 +127,25 @@ The substitute faces are **embedded in the layout engine and registered lazily**
 
 **Default-style inheritance:** a paragraph with no explicit style (`w:pStyle`) now resolves through the document's **default paragraph style** (`StyleCatalog::default_paragraph_style`, set by the DOCX mapper to the `w:default="1"` paragraph style — typically `Normal`, rooted at `w:docDefaults`). Both the paragraph and character resolution paths (`loki-layout` `resolve_para_props` / `flatten_paragraph`) honour it via `effective_paragraph_style`. This means default-font body text inherits the document base font (e.g. Calibri → Carlito) instead of importing with `font_name = None` and rendering in the engine's default face. Tested by `default_paragraph_style_resolves_doc_default_font` / `explicit_default_paragraph_style_is_preferred` (`loki-ooxml`) and `effective_paragraph_style_falls_back_to_default` (`loki-doc-model`). ODT is wired symmetrically (5.10, 2026-07-12): the mapper points `default_paragraph_style` at the `__Default` style it builds from `style:default-style style:family="paragraph"`, and **export now emits the defaults back** — `odt/write/default_style.rs` writes the paragraph-family default (from the catalog's `is_default` style) and the text-family default (from `default_character_style`) as `<style:default-style>` elements at the top of `<office:styles>`; previously the synthetic `__`-prefixed defaults were skipped by the named-style writer and silently dropped, so a re-opened document lost its base font/size. Tested by `default_styles_round_trip` (ODT export→import, both families + the catalog wiring).
 
+**Heading style names survive ODT export** (2026-08-16): `Block::Heading` names
+its paragraph style in `NodeAttr` under the `"style"` key (the ODF mapper puts
+`text:style-name` there, the OOXML mapper `w:pStyle` during heading promotion)
+rather than in a typed `style_id` field. The ODT writer never read it — both of
+its heading paths synthesised `Heading{level}` from the outline level — so an
+imported `Heading_20_1` was written back as `text:style-name="Heading1"`, a name
+the accompanying `styles.xml` does not declare. The reference dangled and the
+heading lost its formatting (18 pt bold → nothing) on **every** ODT save. The
+DOCX writer and the layout engine already read the attr correctly, so this was
+one fact with three consumers and two answers. The derivation now lives once, in
+`loki_doc_model::content::heading::heading_style_id`, and all three call it;
+the fallback still yields the canonical `Heading{level}` for an in-app heading
+that carries no name, clamped to the six levels that exist as named styles.
+Tested by `gap1_heading_style_survives_odt_export`,
+`gap1_heading_style_survives_when_it_opens_a_later_section` (the
+`write_block_with_master` path), and
+`gap1_heading_without_a_carried_style_falls_back_to_the_canonical_name`, plus
+the `heading_style_id` unit tests.
+
 ### UI / renderer font registration (synchronous, all platforms)
 
 The bundled fonts are registered into the **UI renderer's** font collection

@@ -166,11 +166,9 @@ fn write_block<W: std::io::Write>(
             // an ODF heading style), a direct alignment, and a direct page
             // break. Writing them back closes the promote-then-drop round-trip
             // hole; without the style key the fallback matches the old output.
-            let style_id = attr
-                .kv
-                .iter()
-                .find(|(k, _)| k == "style")
-                .map_or_else(|| format!("Heading{level}"), |(_, v)| v.clone());
+            let style_id = loki_doc_model::content::heading::heading_style_id(*level, attr)
+                .as_str()
+                .to_string();
             let alignment =
                 attr.kv
                     .iter()
