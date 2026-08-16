@@ -1,8 +1,9 @@
 # Golden reference renders
 
 > **Read this first (2026-08-16).** A working pixel gate already exists — it is
-> **not** this directory. See "Where the pixel gate actually lives" below before
-> producing anything here.
+> **not** this directory, and nothing that lands here would make it one. See
+> "Where the pixel gate actually lives" and "What is committed here, and what
+> it does" below before producing anything else.
 
 Drop canonical reference renders here, one PNG per page, grouped by fixture stem:
 
@@ -18,11 +19,18 @@ Conventions (from `../TEST_PLAN.md`):
 
 - **Authority.** OOXML (`docx`/`xlsx`/`pptx`) → Microsoft 365 desktop.
   ODF (`odt`/`ods`/`odp`/`odg`) → LibreOffice.
-- **Resolution.** Render at **150 DPI**.
+- **Resolution.** Render at **`appthere_conformance::CONFORMANCE_DPI` (144)**.
+  This line used to read "150 DPI", which appeared in no code — the rasterizer
+  every path shares is pinned to 144, so that is the number with an owner.
+  Goldens and candidates must agree on it or the comparison measures scaling.
 - **One case per page.** Keep each in-document test case on its own page so a
   failing page maps to exactly one `TC-*` id.
 - **File names.** `page-001.png`, `page-002.png`, … (zero-padded, 1-based),
-  matching the page order Loki produces.
+  matching the page order Loki produces. The padding is load-bearing:
+  discovery lists the directory and sorts by name, and `acid_docx` runs to 19
+  pages, where an unpadded `page-10.png` sorts before `page-2.png`. The
+  `rasterize_pdf` example emits `page-N.png`, so renaming is part of the
+  procedure.
 
 The matching Loki renders go in `../renders/<stem>/page-NNN.png`. The
 `golden_pixel` test pairs the two trees and diffs them with mean SSIM
@@ -33,14 +41,15 @@ a log line.
 
 ## Where the pixel gate actually lives
 
-This tree is empty, and **populating it would not create a gate**, for two
-reasons found while trying:
+An `acid_odt/` golden has been produced, and **it would not create a gate**, for
+two reasons:
 
 1. **`../renders/` has no in-repo producer.** The `golden_pixel` test needs
-   *both* trees. Nothing in this workspace writes `renders/`; the README below
-   says it is "populated by an external step". So `golden_pixel` passes in
-   **0.00 s** with zero pages compared today, and would keep passing after a
-   rendering regression of any size.
+   *both* trees. Nothing in this workspace writes `renders/`; the note above
+   says it is "populated by an external step". So `golden_pixel` compares
+   **zero pairs** — with goldens present it logs the ones it skipped rather than
+   reporting an empty set, but it stays green through a rendering regression of
+   any size either way.
 
 2. **A complete, asserting equivalent already exists.**
    `loki-render-cpu/tests/visual_golden.rs` compares Loki's deterministic
@@ -49,8 +58,8 @@ reasons found while trying:
    no GPU. Three ODT fixtures, all passing. `visual_golden_docx.rs` is the same
    axis for DOCX and is waiting on Word goldens.
 
-Prefer extending that harness over filling this one. Two golden systems for one
-fact is exactly the drift this suite exists to catch.
+Prefer extending that harness over filling this one further. Two golden systems
+for one fact is exactly the drift this suite exists to catch.
 
 ## Why the acid fixtures are not in that harness
 
@@ -106,10 +115,43 @@ diverge; that is a poor fit for a pass/fail pixel gate. For more gate coverage,
 a purpose-built font-pinned fixture in the `para-carlito` / `styles-tinos`
 pattern is the cheaper route.
 
-No golden PNGs are committed for `acid_odt`: nothing reads this tree (see
-above), the fixture is still moving, and a stale golden is worse than none.
-Regenerate on demand with the three commands in
-`loki-render-cpu/examples/measure_odf_golden.rs`.
+## What is committed here, and what it does
+
+`acid_odt/GENERATION.txt` records the provenance of a real LibreOffice golden
+(2 pages at 144 DPI) — the LibreOffice and rasterizer versions and the date —
+mirroring the conformance tree's convention.
+
+**The 2 page PNGs it describes are not committed.** The session that generated
+them lost its git push credentials before they could be uploaded, and the
+GitHub API path that landed these text files carries UTF-8 only, so binaries
+could not go through it. The provenance record is committed on its own because
+it is the part that cannot be reconstructed later; the PNGs can.
+
+To supply them, either regenerate with the three commands in
+`loki-render-cpu/examples/measure_odf_golden.rs` (about a minute, given
+`soffice` and `poppler-utils`), or apply the `git format-patch --binary` from
+that session, which was verified to restore both PNGs byte-identically. Update
+`GENERATION.txt` if you regenerate — the versions in it are the ones that
+produced the original.
+
+Be clear about what landing them would and would not buy, because a PNG count is
+easy to mistake for coverage:
+
+- **`golden_pixel` would still compare nothing.** It pairs `goldens/` with
+  `renders/`, and `renders/` has no in-repo producer. With goldens present the
+  test names the ones it skipped instead of reporting an empty set — better
+  diagnostics, not a gate.
+- **Populating `renders/` would turn the suite red, not green.** `golden_pixel`
+  asserts mean SSIM ≥ 0.98; `acid_odt` is nowhere near that, for the four
+  itemised reasons above. The pair would fail on divergences that are
+  known and partly deliberate, which is a failing build rather than a finding.
+  Do not populate `renders/` until those four are resolved or the threshold is
+  replaced with the calibrated `Tolerance` the conformance axis uses.
+- **The golden is a moving target.** It was produced after `acid_odt.odt` was
+  font-pinned, and any further fixture edit (a heading style, say) invalidates
+  it.
+
+`acid_docx` / `acid_xlsx` / `acid_pptx` have no goldens either — see below.
 
 ## What cannot be produced headlessly at all
 
@@ -120,5 +162,3 @@ Rendering them with LibreOffice instead would be actively wrong: every
 being tested, so a LibreOffice "golden" would enshrine the known-wrong render as
 the reference. These stay pending until captured on a Windows/macOS box via
 `scripts/generate-office-goldens.sh`.
-
-This directory is intentionally committed empty (this file only).
