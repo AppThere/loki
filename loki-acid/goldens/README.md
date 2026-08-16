@@ -55,35 +55,61 @@ fact is exactly the drift this suite exists to catch.
 ## Why the acid fixtures are not in that harness
 
 Measured 2026-08-16 with
-`cargo run -p loki-render-cpu --example measure_odf_golden`:
+`cargo run -p loki-render-cpu --example measure_odf_golden`. `acid_odt.odt` was
+**font-pinned** on the same day — it now carries a
+`<style:default-style style:family="paragraph">` naming **Tinos**, and
+`BaseBody` moved from `Liberation Serif` to Tinos. (Tinos is bundled in
+`loki_fonts::fallback_font_blobs()`, so Loki resolves it without any system
+fonts, and `scripts/generate-odf-goldens.sh`'s D4 step installs it for
+fontconfig so LibreOffice shapes the same face. Liberation Serif would have made
+the result depend on what happened to be installed.)
 
 | fixture | worst region | verdict |
 |---|---|---|
 | `styles-tinos.odt` (conformance, font-pinned) | ssim 0.6603, ΔE 7.854 | **passes** |
-| `acid_odt.odt` page 1 | ssim 0.0845, ΔE 22.115 | fails |
-| `acid_odt.odt` page 2 | ssim 0.2188, ΔE 14.753 | fails |
+| `acid_odt.odt`, before the pin | ssim 0.0845 / 0.2188 | fails |
+| `acid_odt.odt`, after the pin **and** the inheritance fix below | ssim −0.0106 | fails |
 
-Page counts and page dimensions agree (2 pages, 1224×1584), the import is clean,
-and Loki reports **no font substitutions** — so this is not a broken import and
-not a missing face.
+The import is clean, dimensions match, and Loki reports **no font
+substitutions** — this was never a broken import or a missing face.
 
-The cause is that **`acid_odt.odt` declares no `<style:default-style>`**. Its
-only font declaration is on the named style `BaseBody` (Liberation Serif).
-Paragraphs that neither carry a font nor inherit from `BaseBody` therefore fall
-back to each *application's own* default face — Liberation Serif in LibreOffice,
-a sans face in Loki. That difference repaints nearly every glyph on the page and
-dominates the score, for a reason that is about the fixture, not about either
-renderer.
+### What the pin exposed: an ODF inheritance defect (fixed)
 
-The conformance fixtures are font-pinned by name (`para-carlito`,
-`para-gelasio`, `styles-tinos`) for precisely this reason.
+After pinning, styled paragraphs *still* rendered in Loki's fallback face —
+specifically those whose style had no `style:parent-style-name` (`LhPct`,
+`LhAtLeast`, `TabP`, `DecP`, `DropP`, `RtlP`), while unstyled content and
+`ChildEmph` (parent `BaseBody`) picked up the document font. ODF 1.3 §16.2 makes
+a parentless style inherit from its family's `style:default-style`;
+`loki-odf`'s mapper left `parent` as `None`, and
+`StyleCatalog::effective_paragraph_style` is `explicit.or(default)`, so a
+paragraph *with* a style bypassed the default entirely.
 
-**To make an acid fixture gateable:** give it an explicit
-`<style:default-style style:family="paragraph">` naming a bundled
-metric-compatible face, regenerate its golden, and re-measure. Note that
-`loki-render-cpu` also paints a grey placeholder for embedded images
-(`TODO(conformance-render)`), so a fixture with images cannot reach a clean
-score until that lands.
+Fixed in `loki-odf/src/odt/mapper/styles.rs`, with regression tests in
+`styles_tests.rs`.
+
+### What still diverges
+
+| cause | kind |
+|---|---|
+| `<text:h>` carries no style; LibreOffice applies its built-in Heading 1, Loki does not | fixture under-specification |
+| List markers: golden `◆` / `1.`, Loki `•` / `○` | genuine gap, TC-ODT-004 |
+| Embedded image renders as a grey placeholder | harness gap, `TODO(conformance-render)` |
+| Loki fits the document in 1 page, LibreOffice needs 2 | downstream of the above |
+
+Note the page-count line. Before the pin both engines produced 2 pages — but
+with *different fonts*, so the agreement was coincidental. Given the same face
+they disagree, which is information the un-pinned fixture was hiding.
+
+**Pinning further will not close the remaining three**, and pinning away
+TC-ODT-004 would defeat what the fixture is for. An acid fixture is built to
+diverge; that is a poor fit for a pass/fail pixel gate. For more gate coverage,
+a purpose-built font-pinned fixture in the `para-carlito` / `styles-tinos`
+pattern is the cheaper route.
+
+No golden PNGs are committed for `acid_odt`: nothing reads this tree (see
+above), the fixture is still moving, and a stale golden is worse than none.
+Regenerate on demand with the three commands in
+`loki-render-cpu/examples/measure_odf_golden.rs`.
 
 ## What cannot be produced headlessly at all
 

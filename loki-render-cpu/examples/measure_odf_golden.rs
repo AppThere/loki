@@ -124,6 +124,10 @@ fn main() {
                 passed_all = false;
             }
         }
+        if let Ok(dir) = std::env::var("DUMP_DIR") {
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = candidate.save(format!("{dir}/candidate-{page}.png"));
+        }
         compared += 1;
         page += 1;
     }

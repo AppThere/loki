@@ -312,3 +312,72 @@ fn table_default_style_becomes_the_table_default() {
         .expect("synthesised table default");
     assert_eq!(def.table_props.alignment, Some(TableAlignment::Center));
 }
+
+/// ODF 1.3 §16.2: a `style:style` that omits `style:parent-style-name` inherits
+/// from its family's `style:default-style`.
+///
+/// The mapper used to leave such a style's `parent` as `None`, which made the
+/// default reachable only by paragraphs that named *no* style —
+/// `effective_paragraph_style` is `explicit.or(default)`, so an explicit style
+/// bypassed it. A document whose only font sits on `style:default-style` then
+/// rendered its styled paragraphs in the engine's own fallback face while its
+/// unstyled ones (table cells, list items, header/footer) used the document
+/// font: one page, two families.
+#[test]
+fn parentless_paragraph_style_inherits_the_default_style() {
+    let sheet = OdfStylesheet {
+        default_styles: vec![OdfDefaultStyle {
+            family: OdfStyleFamily::Paragraph,
+            para_props: None,
+            text_props: Some(OdfTextProps {
+                font_family: Some("Tinos".into()),
+                ..Default::default()
+            }),
+            table_props: None,
+        }],
+        auto_styles: vec![make_para_style("LhPct", None, true)],
+        named_styles: vec![make_para_style("Child", Some("BaseBody"), false)],
+        ..Default::default()
+    };
+    let catalog = map_stylesheet(&sheet);
+
+    // The parentless automatic style is re-rooted onto the synthesised default…
+    let auto = catalog
+        .paragraph_styles
+        .get(&StyleId::new("LhPct"))
+        .expect("automatic style mapped");
+    assert_eq!(auto.parent, Some(StyleId::new("__Default")));
+
+    // …and the resolved family reaches it through that link. Without the
+    // re-rooting this is `None`, which is the defect.
+    let resolved = catalog
+        .resolve_char(&StyleId::new("LhPct"))
+        .expect("style resolves");
+    assert_eq!(resolved.font_name.as_deref(), Some("Tinos"));
+
+    // An explicit parent is never overwritten — the default is the *root* of
+    // the tree, not a blanket replacement.
+    let child = catalog
+        .paragraph_styles
+        .get(&StyleId::new("Child"))
+        .expect("named style mapped");
+    assert_eq!(child.parent, Some(StyleId::new("BaseBody")));
+}
+
+/// The re-rooting is conditional on a default existing: a document with no
+/// `style:default-style` must leave `parent` as `None` rather than inventing a
+/// link to a style that was never synthesised.
+#[test]
+fn parentless_style_keeps_none_when_no_default_style_exists() {
+    let sheet = OdfStylesheet {
+        auto_styles: vec![make_para_style("LhPct", None, true)],
+        ..Default::default()
+    };
+    let catalog = map_stylesheet(&sheet);
+    assert_eq!(catalog.default_paragraph_style, None);
+    let auto = catalog
+        .paragraph_styles
+        .get(&StyleId::new("LhPct"))
+        .expect("automatic style mapped");
+    assert_eq!(auto.parent, None);
+}

@@ -15,7 +15,7 @@ use super::xml::{attr, pt};
 /// (skipping `__`-prefixed synthetics) into the current `<office:styles>`.
 pub(super) fn write_table_styles(out: &mut String, catalog: &StyleCatalog) {
     for (id, style) in &catalog.table_styles {
-        if id.as_str().starts_with("__") {
+        if super::is_synthetic_style_id(id.as_str()) {
             continue;
         }
         emit_table_style(out, id.as_str(), style);
