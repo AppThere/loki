@@ -193,7 +193,10 @@
       "Bash(echo \"unsafe=$?\")",
       "Bash(cargo report *)",
       "Bash(cargo tree *)",
-      "Bash(git mv *)"
+      "Bash(git mv *)",
+      "Bash(git checkout *)",
+      "Bash(grep -E \"^test .*\\(FAILED|ok\\)$|test result|error\\\\[\")",
+      "Bash(grep -A 4 \"^failures:$\")"
     ]
   },
   "enableAllProjectMcpServers": true,
