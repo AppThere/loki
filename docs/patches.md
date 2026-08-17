@@ -236,6 +236,32 @@ events are available without panicking.
 **Source:** `patches/blitz-shell/` (local, vendored from crates.io version 0.2.3,
 checksum `61ecda230035f39b13383f08e0cfc7159c92d194650ac8d57871a207ea0e52b7`).
 
+**Key events with no scancode are no longer dropped (PATCH(loki), 2026-08-16).**
+The `KeyboardInput` arm opened with `let PhysicalKey::Code(key_code) =
+event.physical_key else { return; }`, discarding the **entire** event. But the
+scancode is used only by the Ctrl/Alt shortcut tables a few lines below; the
+text dispatch at the end of the arm reads `logical_key`/`text` and never touches
+it. So the guard silently swallowed text-bearing events.
+
+That is not hypothetical on Android: a `NativeActivity` gives the IME no
+`InputConnection`, so the soft keyboard *synthesises* key events, and any
+keycode outside winit's Android translation table arrives as
+`PhysicalKey::Unidentified`. The symptom is occasional missing characters —
+input that vanishes with no error — rather than a reproducible failure, which is
+why it survived: nothing fails, some keystrokes just never happen.
+
+`key_code` is now an `Option` that gates only the shortcut tables. Everything
+else reaches the DOM.
+
+**Removal condition:** upstream `blitz-shell` restricting the early return to
+the shortcut handling (or moving the shortcut tables to `logical_key`).
+
+**Not fixed here, and not fixable at this layer:** winit's Android backend maps
+`KeyAction::Multiple` (the deprecated `KEYCODE_UNKNOWN` + string payload path,
+which some IMEs still use) to `ElementState::Released`, so such an event now
+reaches the DOM as a *key-up* and still inserts nothing. Fixing that needs a
+winit patch, which this workspace does not carry.
+
 **Wheel reporting, and the modified-wheel policy (PATCH(loki), 2026-08-02).**
 The `MouseWheel` arm now reports every gesture to the embedder via
 `Document::handle_wheel` *before* deciding whether to scroll with it, and

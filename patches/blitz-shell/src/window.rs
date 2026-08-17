@@ -836,11 +836,25 @@ impl<Rend: WindowRenderer> View<Rend> {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 self.clear_tooltip(); // typing dismisses the tooltip
-                let PhysicalKey::Code(key_code) = event.physical_key else {
-                    return;
+                // PATCH(loki): the scancode is needed only by the Ctrl/Alt
+                // shortcut tables below — the text dispatch at the end of this
+                // arm reads `logical_key`/`text` and never touches it. Returning
+                // early on a non-`Code` scancode therefore dropped whole
+                // *text-bearing* events: Android's IME synthesises key events
+                // (a `NativeActivity` gives it no `InputConnection`), and any
+                // keycode outside winit's Android translation table arrives as
+                // `PhysicalKey::Unidentified` — silently swallowed, which
+                // presents as occasional missing characters rather than a
+                // reproducible bug. Keep the shortcut tables scancode-gated;
+                // let everything else through.
+                let key_code = match event.physical_key {
+                    PhysicalKey::Code(code) => Some(code),
+                    PhysicalKey::Unidentified(_) => None,
                 };
 
-                if event.state.is_pressed() {
+                if let Some(key_code) = key_code
+                    && event.state.is_pressed()
+                {
                     let ctrl = self.keyboard_modifiers.state().control_key();
                     let meta = self.keyboard_modifiers.state().super_key();
                     let alt = self.keyboard_modifiers.state().alt_key();
