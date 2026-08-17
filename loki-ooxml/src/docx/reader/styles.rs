@@ -10,7 +10,7 @@ use crate::docx::model::paragraph::DocxBorderEdge;
 use crate::docx::model::styles::{
     DocxStyle, DocxStyleType, DocxStyles, DocxTableStyleProps, DocxTblBorders, DocxTblStylePr,
 };
-use crate::docx::reader::util::{attr_val, local_name};
+use crate::docx::reader::util::{attr_val, local_name, parse_cell_margins};
 use crate::error::{OoxmlError, OoxmlResult};
 
 use super::document::parse_ppr_element;
@@ -148,6 +148,14 @@ pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
                             && let Some(t) = table_props_mut(&mut current_style)
                         {
                             t.tbl_borders = Some(borders);
+                        }
+                    }
+                    b"tblCellMar" if in_style && current_region.is_none() => {
+                        if let Ok(m) =
+                            parse_cell_margins(&mut reader, b"tblCellMar", "word/styles.xml")
+                            && let Some(t) = table_props_mut(&mut current_style)
+                        {
+                            t.tbl_cell_mar = Some(m);
                         }
                     }
                     b"tcPr" if in_style => in_tcpr = true,

@@ -80,16 +80,22 @@ impl TableBorders {
 /// The style→cell half of a cell's border resolution. The other half — a
 /// direct `CellProps` border winning per edge — belongs to the caller, which
 /// must `or` each edge over these; see [`effective_cell_edges`].
+///
+/// `borders` is the set already resolved through the style's `basedOn` chain
+/// (see [`StyleCatalog::table_borders_for`](crate::style::StyleCatalog::table_borders_for)),
+/// **not** a style to read them off. Taking a `&TableStyle` here is what let
+/// callers do a flat `catalog.table_styles[name]` lookup and silently miss
+/// borders that the style inherits from its parent — the signature now makes
+/// that call impossible to write.
 #[must_use]
 pub fn resolve_cell_borders(
-    style: Option<&crate::style::table_style::TableStyle>,
+    borders: Option<&TableBorders>,
     row: usize,
     col: usize,
     rows: usize,
     cols: usize,
 ) -> CellEdges {
-    style
-        .and_then(|s| s.table_props.borders.as_ref())
+    borders
         .map(|b| b.edges_for(row, col, rows, cols))
         .unwrap_or_default()
 }
@@ -174,22 +180,15 @@ mod tests {
     }
 
     #[test]
-    fn resolve_cell_borders_needs_both_a_style_and_a_border_set() {
-        use crate::style::table_style::{TableProps, TableStyle};
-        let plain = TableStyle {
-            id: crate::style::catalog::StyleId::new("Plain"),
-            display_name: None,
-            parent: None,
-            table_props: TableProps::default(),
-            conditional: Default::default(),
-            extensions: Default::default(),
-        };
-        // Guard inversion: no style at all, and a style with no border set,
-        // must both contribute nothing — otherwise "has a style" would be
-        // standing in for "has borders".
+    fn resolve_cell_borders_contributes_nothing_without_a_border_set() {
+        // Guard inversion: an absent set and a present-but-empty set must both
+        // contribute nothing. The second case is the one that matters — a
+        // `Some(TableBorders::default())` reaching here means some style in the
+        // chain was found but specified no edges, and it must not read as
+        // "borders exist" merely because the `Option` is `Some`.
         assert_eq!(resolve_cell_borders(None, 0, 0, 2, 2), CellEdges::default());
         assert_eq!(
-            resolve_cell_borders(Some(&plain), 0, 0, 2, 2),
+            resolve_cell_borders(Some(&TableBorders::default()), 0, 0, 2, 2),
             CellEdges::default()
         );
     }

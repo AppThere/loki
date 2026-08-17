@@ -59,8 +59,11 @@ pub struct TableProps {
     pub width: Option<TableWidth>,
     /// Horizontal alignment of the table block on the page.
     pub alignment: Option<TableAlignment>,
-    /// Default cell padding (inside border) in points.
-    pub cell_padding: Option<Points>,
+    /// Default cell padding applied to every cell in the table
+    /// (`w:tblCellMar`). Four independent sides: Word's own default is
+    /// asymmetric (top/bottom 0, left/right 5.4pt), so a scalar cannot hold it.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub cell_padding: Option<crate::style::table_padding::CellPadding>,
     /// Cell spacing (border collapse separation). `None` = collapsed.
     pub cell_spacing: Option<Points>,
     /// Default outside border for all table edges.

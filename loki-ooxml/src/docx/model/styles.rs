@@ -74,6 +74,10 @@ pub struct DocxTableStyleProps {
     /// Whole-table borders from `w:tblPr/w:tblBorders` — the outer edges plus
     /// the interior gridlines a *Table Grid* style draws.
     pub tbl_borders: Option<DocxTblBorders>,
+    /// Default cell margins from `w:tblPr/w:tblCellMar` (§17.4.43), in twips.
+    /// Word puts its 108-twip left/right default on the `w:default="1"` style,
+    /// so this is usually reached only through the `w:basedOn` chain.
+    pub tbl_cell_mar: Option<DocxCellMargins>,
     /// Per-region conditional formats from `w:tblStylePr`.
     pub conditional: Vec<DocxTblStylePr>,
 }

@@ -190,12 +190,15 @@ fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingCon
             props.border_left = borders.left.as_ref().map(map_border_edge);
             props.border_right = borders.right.as_ref().map(map_border_edge);
         }
-        // Cell padding from `w:tcMar`. COMPAT(ooxml-dxa): twips ÷ 20 = points.
+        // Cell padding from `w:tcMar`, via the same conversion the table-style
+        // `w:tblCellMar` path uses — the two must agree or a cell would inherit
+        // a differently-rounded value than it sets directly.
         if let Some(ref m) = tc_pr.tc_margins {
-            props.padding_top = m.top.map(|v| Points::new(f64::from(v) / 20.0));
-            props.padding_bottom = m.bottom.map(|v| Points::new(f64::from(v) / 20.0));
-            props.padding_left = m.left.map(|v| Points::new(f64::from(v) / 20.0));
-            props.padding_right = m.right.map(|v| Points::new(f64::from(v) / 20.0));
+            let p = map_cell_margins(m);
+            props.padding_top = p.top;
+            props.padding_bottom = p.bottom;
+            props.padding_left = p.left;
+            props.padding_right = p.right;
         }
         // Vertical alignment from `w:vAlign`.
         props.vertical_align = tc_pr.v_align.map(|v| match v {
@@ -231,3 +234,20 @@ fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingCon
 #[cfg(test)]
 #[path = "table_tests.rs"]
 mod tests;
+
+/// Maps a parsed cell-margin container (`w:tcMar` or `w:tblCellMar`) to the
+/// doc-model [`CellPadding`]. COMPAT(ooxml-dxa): twips ÷ 20 = points.
+///
+/// Shared by the per-cell and table-style paths so one element's content has
+/// exactly one derivation.
+pub(crate) fn map_cell_margins(
+    m: &crate::docx::model::styles::DocxCellMargins,
+) -> loki_doc_model::style::table_padding::CellPadding {
+    let pt = |v: Option<i32>| v.map(|v| Points::new(f64::from(v) / 20.0));
+    loki_doc_model::style::table_padding::CellPadding {
+        top: pt(m.top),
+        bottom: pt(m.bottom),
+        left: pt(m.left),
+        right: pt(m.right),
+    }
+}

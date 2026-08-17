@@ -7,7 +7,7 @@
 //! `flow.rs` (file-ceiling pass).
 
 use super::{FlowState, columns_impl, table_cells, table_chars, table_geom, table_paint};
-use crate::table_shading::{resolve_table_style, table_look};
+use crate::table_shading::{TableStyleCtx, table_look};
 
 pub(super) fn flow_table(
     state: &mut FlowState,
@@ -29,24 +29,36 @@ pub(super) fn flow_table(
     // Resolved before column widths because autofit measures per-column content.
     let cell_cols = table_geom::assign_cell_columns(&rows, tbl.col_count().max(1));
 
-    let col_widths = table_geom::resolve_column_widths(state, tbl, &rows, &cell_cols);
+    // Resolved before column widths: autofit sizes columns from each cell's
+    // content plus its padding, and a style-supplied `w:tblCellMar` is part of
+    // that padding. Resolving after would size every column too narrow by the
+    // inherited inset.
+    let style_ctx = TableStyleCtx::resolve(state.catalog, tbl.style_name());
+
+    let col_widths = table_geom::resolve_column_widths(state, tbl, &rows, &cell_cols, &style_ctx);
 
     // Named style + `w:tblLook` → conditional/banding shading (under direct).
-    let table_style = resolve_table_style(state.catalog, tbl.style_name());
     let look = table_look(tbl);
     let (grid_rows, grid_cols) = (rows.len(), col_widths.len());
     // Region character formatting (4a.3): per-cell defaults, `None` for
     // styleless / char-free tables so plain tables pay nothing.
-    let char_grid =
-        table_chars::cell_char_grid(table_style, &look, &rows, &cell_cols, grid_rows, grid_cols);
+    let char_grid = table_chars::cell_char_grid(
+        style_ctx.style,
+        &look,
+        &rows,
+        &cell_cols,
+        grid_rows,
+        grid_cols,
+    );
 
-    let row_heights = table_paint::measure_row_heights(
+    let row_heights = table_paint::measure::measure_row_heights(
         state,
         &rows,
         &cell_cols,
         &col_widths,
         idx,
         char_grid.as_ref(),
+        &style_ctx,
     );
 
     // Pass 3: Place and flow cell blocks. `cell_flat` counts cells in the bridge's
@@ -83,6 +95,7 @@ pub(super) fn flow_table(
             idx,
             &mut cell_flat,
             char_grid.as_ref().map(|g| g[row_idx].as_slice()),
+            &style_ctx,
         );
 
         let row_page_end = state.page_number;
@@ -105,7 +118,7 @@ pub(super) fn flow_table(
             row_max_h,
             &cell_starts,
             table_indent,
-            table_style,
+            &style_ctx,
             &look,
             grid_rows,
             grid_cols,

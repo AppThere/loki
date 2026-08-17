@@ -15,6 +15,8 @@ use std::collections::HashSet;
 
 use crate::style::catalog::{MAX_STYLE_CHAIN_DEPTH, StyleCatalog, StyleId};
 use crate::style::resolve::Resolved;
+use crate::style::table_borders::TableBorders;
+use crate::style::table_padding::CellPadding;
 use crate::style::table_style::TableStyle;
 
 impl StyleCatalog {
@@ -110,5 +112,38 @@ impl StyleCatalog {
     #[must_use]
     pub fn table_reparent_cycles(&self, child: &StyleId, new_parent: &StyleId) -> bool {
         self.table_ancestors(new_parent).iter().any(|a| a == child)
+    }
+
+    /// The six-sided border set a table named `style_name` contributes,
+    /// resolved **through the `basedOn` chain**.
+    ///
+    /// Callers must go through this rather than reading
+    /// `catalog.table_styles[name].table_props.borders` directly: DOCX's
+    /// built-in *Table Grid* is `w:basedOn` *Normal Table*, and any user style
+    /// derived from *Table Grid* holds no `w:tblBorders` of its own — a flat
+    /// lookup silently returns "no borders" for it and the grid disappears.
+    #[must_use]
+    pub fn table_borders_for(&self, style_name: Option<&str>) -> Option<TableBorders> {
+        self.resolve_table_chain(&StyleId::new(style_name?), |s| {
+            s.table_props.borders.clone()
+        })?
+        .value
+    }
+
+    /// The default cell padding a table named `style_name` contributes,
+    /// resolved **through the `basedOn` chain**, or an empty set when the chain
+    /// specifies none.
+    ///
+    /// The chain walk is the whole point here: Word puts `w:tblCellMar` on the
+    /// `w:default="1"` *Normal Table* style, so for the overwhelmingly common
+    /// case it is only ever reachable through inheritance.
+    #[must_use]
+    pub fn table_cell_padding_for(&self, style_name: Option<&str>) -> CellPadding {
+        style_name
+            .and_then(|n| {
+                self.resolve_table_chain(&StyleId::new(n), |s| s.table_props.cell_padding.clone())
+            })
+            .and_then(|r| r.value)
+            .unwrap_or_default()
     }
 }

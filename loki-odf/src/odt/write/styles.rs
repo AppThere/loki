@@ -54,7 +54,7 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
         // Tracked changes inside headers/footers are not modelled.
         changes: super::revisions::Changes::default(),
         // Header/footer tables (rare) resolve no banding — empty catalog.
-        table_styles: indexmap::IndexMap::default(),
+        styles: loki_doc_model::style::StyleCatalog::default(),
     };
     let mut masters = String::new();
     let mut page_layouts = String::new();

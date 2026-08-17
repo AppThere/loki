@@ -27,11 +27,15 @@ pub(super) fn measure_cell_height(
     cell_content_width: f32,
     idx: usize,
     cell_chars: Option<&loki_doc_model::style::props::char_props::CharProps>,
+    style_ctx: &crate::table_shading::TableStyleCtx<'_>,
 ) -> f32 {
     use loki_doc_model::content::table::row::CellTextDirection;
 
-    let pad_top = cell.props.padding_top.map(pts_to_f32).unwrap_or(0.0);
-    let pad_bottom = cell.props.padding_bottom.map(pts_to_f32).unwrap_or(0.0);
+    // Vertical padding resolved against the table style, so a cell inheriting
+    // `w:tblCellMar` is measured at the height it will actually be painted at.
+    let (pt, pb, _, _) = style_ctx.cell_padding(&cell.props);
+    let pad_top = pt.map(pts_to_f32).unwrap_or(0.0);
+    let pad_bottom = pb.map(pts_to_f32).unwrap_or(0.0);
 
     let is_rotated = matches!(
         cell.props.text_direction.as_ref(),
@@ -74,6 +78,7 @@ pub(super) fn resolve_column_widths(
     tbl: &loki_doc_model::content::table::core::Table,
     rows: &[&loki_doc_model::content::table::row::Row],
     cell_cols: &[Vec<(usize, usize)>],
+    style_ctx: &crate::table_shading::TableStyleCtx<'_>,
 ) -> Vec<f32> {
     use loki_doc_model::content::table::col::{ColWidth, TableWidth};
 
@@ -144,6 +149,7 @@ pub(super) fn resolve_column_widths(
                 cell_cols,
                 &scaled,
                 table_width,
+                style_ctx,
             );
         }
     } else {

@@ -1855,3 +1855,181 @@ fn a_direct_cell_border_wins_per_edge_over_the_table_style() {
     assert_eq!(w(&props.border_left), Some(4.0));
     assert_eq!(w(&props.border_right), Some(2.0));
 }
+
+/// A table style that inherits its border set from a parent must still export a
+/// grid.
+///
+/// The style→cell border baking originally looked the referenced style up flat,
+/// so a style deriving its grid via `basedOn` (DOCX's *Table Grid* is `basedOn`
+/// *Normal Table*; any user style derived from *Table Grid* holds no
+/// `w:tblBorders` of its own) contributed nothing and the grid vanished.
+#[test]
+fn table_style_borders_inherited_from_a_parent_still_export() {
+    use loki_doc_model::content::table::core::Table;
+    use loki_doc_model::style::props::border::{Border, BorderStyle};
+    use loki_doc_model::style::table_borders::TableBorders;
+    use loki_doc_model::style::table_style::{TableProps, TableStyle};
+
+    let edge = |w: f64| {
+        Some(Border {
+            style: BorderStyle::Solid,
+            width: Points::new(w),
+            color: None,
+            spacing: None,
+        })
+    };
+    let mut doc = sample_doc();
+    // Parent holds the borders; child declares none and points at it.
+    doc.styles.table_styles.insert(
+        StyleId::new("Base"),
+        TableStyle {
+            id: StyleId::new("Base"),
+            display_name: None,
+            parent: None,
+            table_props: TableProps {
+                borders: Some(TableBorders {
+                    top: edge(1.0),
+                    right: edge(2.0),
+                    bottom: edge(3.0),
+                    left: edge(4.0),
+                    inside_h: edge(5.0),
+                    inside_v: edge(6.0),
+                }),
+                ..Default::default()
+            },
+            conditional: Default::default(),
+            extensions: Default::default(),
+        },
+    );
+    doc.styles.table_styles.insert(
+        StyleId::new("Child"),
+        TableStyle {
+            id: StyleId::new("Child"),
+            display_name: None,
+            parent: Some(StyleId::new("Base")),
+            table_props: TableProps::default(),
+            conditional: Default::default(),
+            extensions: Default::default(),
+        },
+    );
+
+    let mut table = Table::grid(2, 2);
+    table.set_style_name(Some("Child".to_string()));
+    for body in table.bodies.iter_mut() {
+        for row in body.body_rows.iter_mut() {
+            for cell in row.cells.iter_mut() {
+                cell.blocks = vec![Block::Para(vec![Inline::Str("x".into())])];
+            }
+        }
+    }
+    doc.sections[0].blocks.push(Block::Table(Box::new(table)));
+
+    let back = round_trip(&doc);
+    let t = back
+        .sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .find_map(|b| match b {
+            Block::Table(t) => Some(t),
+            _ => None,
+        })
+        .expect("table survives");
+    let w = |b: &Option<loki_doc_model::style::props::border::Border>| {
+        b.as_ref().map(|x| x.width.value())
+    };
+
+    // Top-left cell: outer top (1) + outer left (4), interior right (6) and
+    // interior bottom (5) — distinct widths, so the assertion pins position as
+    // well as presence.
+    let p = &t.bodies[0].body_rows[0].cells[0].props;
+    assert_eq!(
+        (
+            w(&p.border_top),
+            w(&p.border_right),
+            w(&p.border_bottom),
+            w(&p.border_left)
+        ),
+        (Some(1.0), Some(6.0), Some(5.0), Some(4.0)),
+        "inherited border set must reach the cell"
+    );
+}
+
+/// A table style's default cell padding (`w:tblCellMar`) must be baked into each
+/// exported cell, since ODF has no table-level cell-margin concept.
+#[test]
+fn table_style_cell_padding_bakes_into_per_cell_padding_on_odt_export() {
+    use loki_doc_model::content::table::core::Table;
+    use loki_doc_model::style::table_padding::CellPadding;
+    use loki_doc_model::style::table_style::{TableProps, TableStyle};
+
+    let mut doc = sample_doc();
+    doc.styles.table_styles.insert(
+        StyleId::new("Padded"),
+        TableStyle {
+            id: StyleId::new("Padded"),
+            display_name: None,
+            parent: None,
+            table_props: TableProps {
+                // Four distinct values: a uniform inset would pass under any
+                // permutation of the four `fo:padding-*` attributes.
+                cell_padding: Some(CellPadding {
+                    top: Some(Points::new(1.0)),
+                    bottom: Some(Points::new(2.0)),
+                    left: Some(Points::new(3.0)),
+                    right: Some(Points::new(4.0)),
+                }),
+                ..Default::default()
+            },
+            conditional: Default::default(),
+            extensions: Default::default(),
+        },
+    );
+
+    let mut table = Table::grid(2, 2);
+    table.set_style_name(Some("Padded".to_string()));
+    for body in table.bodies.iter_mut() {
+        for row in body.body_rows.iter_mut() {
+            for cell in row.cells.iter_mut() {
+                cell.blocks = vec![Block::Para(vec![Inline::Str("x".into())])];
+            }
+        }
+        // One cell overrides a single side directly, to pin that resolution is
+        // per side rather than all-or-nothing.
+        body.body_rows[1].cells[1].props.padding_left = Some(Points::new(9.0));
+    }
+    doc.sections[0].blocks.push(Block::Table(Box::new(table)));
+
+    let back = round_trip(&doc);
+    let t = back
+        .sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .find_map(|b| match b {
+            Block::Table(t) => Some(t),
+            _ => None,
+        })
+        .expect("table survives");
+
+    let plain = &t.bodies[0].body_rows[0].cells[0].props;
+    assert_eq!(
+        (
+            plain.padding_top.map(|p| p.value()),
+            plain.padding_bottom.map(|p| p.value()),
+            plain.padding_left.map(|p| p.value()),
+            plain.padding_right.map(|p| p.value())
+        ),
+        (Some(1.0), Some(2.0), Some(3.0), Some(4.0)),
+        "a cell with no direct padding takes all four sides from the style"
+    );
+
+    let overridden = &t.bodies[0].body_rows[1].cells[1].props;
+    assert_eq!(
+        (
+            overridden.padding_left.map(|p| p.value()),
+            overridden.padding_right.map(|p| p.value()),
+            overridden.padding_top.map(|p| p.value())
+        ),
+        (Some(9.0), Some(4.0), Some(1.0)),
+        "a direct side wins only on that side; the rest still come from the style"
+    );
+}

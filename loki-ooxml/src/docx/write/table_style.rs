@@ -15,7 +15,7 @@ use loki_doc_model::style::table_style::{
 };
 use loki_primitives::color::DocumentColor;
 
-use super::xml::{color_to_hex, write_empty, write_end, write_start, wval};
+use super::xml::{color_to_hex, pts_to_twips, write_empty, write_end, write_start, wval};
 
 /// Emit every `w:type="table"` style definition in the catalog: band sizes,
 /// base whole-table cell shading, and each `w:tblStylePr` conditional region.
@@ -60,9 +60,11 @@ fn emit_table_style<W: Write>(
     let _ = write_end(w, "w:style");
 }
 
-/// `w:tblPr` carrying the band sizes; skipped entirely when neither is set.
+/// `w:tblPr` carrying the band sizes and the default cell margins; skipped
+/// entirely when none of them is set.
 fn write_tbl_pr<W: Write>(w: &mut Writer<W>, props: &TableProps) {
-    if props.row_band_size.is_none() && props.col_band_size.is_none() {
+    let cell_mar = props.cell_padding.as_ref().filter(|p| !p.is_empty());
+    if props.row_band_size.is_none() && props.col_band_size.is_none() && cell_mar.is_none() {
         return;
     }
     let _ = write_start(w, "w:tblPr", &[]);
@@ -71,6 +73,23 @@ fn write_tbl_pr<W: Write>(w: &mut Writer<W>, props: &TableProps) {
     }
     if let Some(n) = props.col_band_size {
         let _ = write_empty(w, "w:tblStyleColBandSize", &wval(&n.to_string()));
+    }
+    // `w:tblCellMar` follows the band sizes in CT_TblPrBase (§17.4.60); the
+    // order is enforced by `repair::order::TBL_PR`.
+    if let Some(p) = cell_mar {
+        let _ = write_start(w, "w:tblCellMar", &[]);
+        for (tag, side) in [
+            ("w:top", p.top),
+            ("w:left", p.left),
+            ("w:bottom", p.bottom),
+            ("w:right", p.right),
+        ] {
+            if let Some(v) = side {
+                let twips = pts_to_twips(v.value()).to_string();
+                let _ = write_empty(w, tag, &[("w:w", twips.as_str()), ("w:type", "dxa")]);
+            }
+        }
+        let _ = write_end(w, "w:tblCellMar");
     }
     let _ = write_end(w, "w:tblPr");
 }

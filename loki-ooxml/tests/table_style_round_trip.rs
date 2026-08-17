@@ -246,3 +246,223 @@ fn region_char_formatting_round_trips() {
     assert_eq!(hdr.char_props.bold, Some(true));
     assert_eq!(hdr.char_props.font_size, Some(Points::new(14.0)));
 }
+
+/// `w:tblCellMar` on a table style must reach the model, and must be reachable
+/// from a *child* style through `w:basedOn`.
+///
+/// This is how Word actually ships cell margins: the 108-twip left/right
+/// default lives on the `w:default="1"` *Normal Table* style, and every real
+/// table references a style like *Table Grid* that is `basedOn` it. A flat
+/// `catalog.table_styles[name]` lookup returns `None` here and every cell
+/// renders flush against its border.
+#[test]
+fn tbl_cell_mar_resolves_through_the_based_on_chain() {
+    use loki_doc_model::style::catalog::StyleId;
+
+    let bytes = std::fs::read("../loki-acid/assets/acid2-docx.docx").expect("fixture readable");
+    let doc = DocxImporter::new(DocxImportOptions::default())
+        .run(Cursor::new(bytes))
+        .expect("import")
+        .document;
+
+    // The margins are declared on the parent, not the referenced style — so a
+    // test that only checked the referenced style would pass while inheriting
+    // nothing.
+    let parent = doc
+        .styles
+        .table_styles
+        .get(&StyleId::new("TableNormal"))
+        .expect("TableNormal present");
+    let own = parent
+        .table_props
+        .cell_padding
+        .as_ref()
+        .expect("TableNormal carries w:tblCellMar");
+    assert_eq!(own.left.map(|p| p.value()), Some(5.4), "108 twips ÷ 20");
+    assert_eq!(own.right.map(|p| p.value()), Some(5.4));
+    assert_eq!(
+        own.top.map(|p| p.value()),
+        Some(0.0),
+        "an explicit 0 must survive as 0, not as absent"
+    );
+
+    // TableGrid declares none of its own …
+    assert!(
+        doc.styles
+            .table_styles
+            .get(&StyleId::new("TableGrid"))
+            .expect("TableGrid present")
+            .table_props
+            .cell_padding
+            .is_none(),
+        "fixture precondition: TableGrid inherits rather than declares"
+    );
+    // … but resolves to the parent's through the chain.
+    let resolved = doc.styles.table_cell_padding_for(Some("TableGrid"));
+    assert_eq!(resolved.left.map(|p| p.value()), Some(5.4));
+    assert_eq!(resolved.right.map(|p| p.value()), Some(5.4));
+    assert_eq!(resolved.top.map(|p| p.value()), Some(0.0));
+
+    // Guard inversion: an unknown style resolves to nothing rather than
+    // borrowing the last style looked up.
+    assert!(
+        doc.styles
+            .table_cell_padding_for(Some("NoSuchStyle"))
+            .is_empty(),
+        "an unknown style must contribute no padding"
+    );
+    assert!(doc.styles.table_cell_padding_for(None).is_empty());
+}
+
+/// A table style's `w:tblCellMar` must survive a DOCX export→import cycle.
+#[test]
+fn table_style_cell_margins_round_trip_through_docx() {
+    use loki_doc_model::style::catalog::StyleId as SId;
+    use loki_doc_model::style::table_padding::CellPadding;
+    use loki_doc_model::style::table_style::{TableProps, TableStyle};
+    use loki_primitives::units::Points;
+
+    let mut doc = Document::new();
+    doc.styles.table_styles.insert(
+        SId::new("Padded"),
+        TableStyle {
+            id: SId::new("Padded"),
+            display_name: Some("Padded".into()),
+            parent: None,
+            table_props: TableProps {
+                // Four distinct values so the assertions discriminate *which*
+                // side landed where — a uniform value would pass under any
+                // permutation of the four tags.
+                cell_padding: Some(CellPadding {
+                    top: Some(Points::new(1.0)),
+                    bottom: Some(Points::new(2.0)),
+                    left: Some(Points::new(3.0)),
+                    right: Some(Points::new(4.0)),
+                }),
+                ..Default::default()
+            },
+            conditional: Default::default(),
+            extensions: Default::default(),
+        },
+    );
+    let mut table = Table::grid(2, 2);
+    table.set_style_name(Some("Padded".into()));
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+
+    let back = export_import(&doc);
+    let p = back
+        .styles
+        .table_styles
+        .get(&SId::new("Padded"))
+        .expect("style survives")
+        .table_props
+        .cell_padding
+        .as_ref()
+        .expect("w:tblCellMar written and re-read");
+    assert_eq!(
+        (
+            p.top.map(|x| x.value()),
+            p.bottom.map(|x| x.value()),
+            p.left.map(|x| x.value()),
+            p.right.map(|x| x.value())
+        ),
+        (Some(1.0), Some(2.0), Some(3.0), Some(4.0))
+    );
+}
+
+/// End-to-end on a real Word document: the `w:tblCellMar` inherited from
+/// *Normal Table* must actually move glyphs at layout time.
+///
+/// The ACID DOCX fixture's three tables are styled *Table Grid*, carry no
+/// per-cell `w:tcMar` at all, and inherit top/bottom 0 + left/right 108 twips
+/// (5.4pt) from the `w:default="1"` *Normal Table* parent. Before this change
+/// their text was laid out flush against the cell edge.
+///
+/// The DOCX visual-golden axis cannot cover this — no Word goldens are
+/// committed yet, so `visual_golden_docx` is a documented no-op — which is why
+/// the geometric assertion lives here instead.
+#[test]
+fn inherited_cell_margins_shift_glyphs_in_the_acid_fixture() {
+    use loki_doc_model::io::DocumentImport;
+    use loki_layout::{FontResources, LayoutMode, LayoutOptions, PositionedItem, layout_document};
+    use loki_ooxml::docx::import::DocxImport;
+
+    let bytes = std::fs::read("../loki-acid/assets/acid2-docx.docx").expect("fixture readable");
+    let mut doc =
+        DocxImport::import(Cursor::new(bytes), DocxImportOptions::default()).expect("import");
+    let mut r = FontResources::new();
+
+    fn glyph_xs(doc: &loki_doc_model::Document, r: &mut FontResources) -> Vec<f32> {
+        let l = layout_document(
+            r,
+            doc,
+            LayoutMode::Paginated,
+            1.0,
+            &LayoutOptions::default(),
+        );
+        // Cell content is wrapped in a per-cell `ClippedGroup`, so a flat scan
+        // of top-level items misses every glyph inside a table — precisely
+        // where this change acts. Descend.
+        fn walk(items: &[PositionedItem], out: &mut Vec<f32>) {
+            for i in items {
+                match i {
+                    PositionedItem::ClippedGroup { items, .. }
+                    | PositionedItem::RotatedGroup { items, .. } => walk(items, out),
+                    PositionedItem::GlyphRun(g) => out.push(g.origin.x),
+                    _ => {}
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for i in l.all_items().collect::<Vec<_>>() {
+            walk(std::slice::from_ref(i), &mut out);
+        }
+        out
+    }
+
+    let with_margins = glyph_xs(&doc, &mut r);
+
+    // Strip only the style's contribution to recover the pre-fix geometry —
+    // the cells themselves are untouched, so any difference is attributable to
+    // the inherited `w:tblCellMar` and nothing else.
+    for st in doc.styles.table_styles.values_mut() {
+        st.table_props.cell_padding = None;
+    }
+    let without = glyph_xs(&doc, &mut r);
+
+    assert_eq!(
+        with_margins.len(),
+        without.len(),
+        "stripping cell margins must not change how many runs are produced"
+    );
+    let shifts: Vec<f32> = with_margins
+        .iter()
+        .zip(&without)
+        .map(|(a, b)| a - b)
+        .filter(|d| d.abs() > 0.01)
+        .collect();
+
+    // Establish the phenomenon is reachable at all before asserting its size:
+    // a scan that found nothing would otherwise "pass" the tolerance check.
+    assert!(
+        !shifts.is_empty(),
+        "no glyph moved — the inherited margins never reached layout"
+    );
+    // Every shift is exactly the specified margin: +5.4 where left-aligned
+    // content is pushed in by `fo:padding-left`'s OOXML equivalent, -5.4 where
+    // right-aligned content is pulled in by the right margin. Any other
+    // magnitude would mean column geometry moved too, which `w:tblCellMar`
+    // must not do.
+    for d in &shifts {
+        assert!(
+            (d.abs() - 5.4).abs() < 0.01,
+            "every shift must be exactly the inherited 5.4pt margin, got {d}"
+        );
+    }
+    // Both signs must appear: asserting only the magnitude would pass if the
+    // right margin were silently dropped and every run moved right.
+    assert!(
+        shifts.iter().any(|d| *d > 0.0) && shifts.iter().any(|d| *d < 0.0),
+        "both the left and the right margin must take effect, got {shifts:?}"
+    );
+}

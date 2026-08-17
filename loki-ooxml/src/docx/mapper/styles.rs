@@ -229,11 +229,20 @@ fn map_table_style_props(
         .as_ref()
         .map(map_tbl_borders)
         .filter(|b| !b.is_empty());
+    // `w:tblCellMar` → the style's default cell padding. Filtered to `None`
+    // when every side is absent so an empty container does not read as "this
+    // style specifies padding" and shadow an ancestor that actually does.
+    let cell_padding = t
+        .tbl_cell_mar
+        .as_ref()
+        .map(super::table::map_cell_margins)
+        .filter(|p| !p.is_empty());
     let table_props = TableProps {
         background_color: shd_color(t.base_shd_fill.as_deref()),
         row_band_size: t.row_band_size,
         col_band_size: t.col_band_size,
         borders,
+        cell_padding,
         ..TableProps::default()
     };
     let mut conditional = IndexMap::new();

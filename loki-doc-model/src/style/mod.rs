@@ -20,6 +20,7 @@ pub mod resolve_table;
 pub mod table_banding;
 pub mod table_borders;
 pub mod table_cnf;
+pub mod table_padding;
 pub mod table_style;
 pub mod tree;
 
@@ -34,4 +35,5 @@ pub use resolve::{Provenance, Resolved};
 pub use table_banding::resolve_cell_shading;
 pub use table_borders::{CellEdges, TableBorders};
 pub use table_cnf::TableCnf;
+pub use table_padding::{CellPadding, effective_cell_padding};
 pub use table_style::{TableConditionalFormat, TableLook, TableRegion, TableStyle};

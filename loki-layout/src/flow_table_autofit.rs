@@ -128,6 +128,7 @@ fn column_min_widths(
     rows: &[&Row],
     cell_cols: &[Vec<(usize, usize)>],
     col_count: usize,
+    style_ctx: &crate::table_shading::TableStyleCtx<'_>,
 ) -> Vec<f32> {
     // Copy the shared refs/scalars out first so `state.resources` can be
     // reborrowed mutably in the loop without conflicting.
@@ -142,8 +143,10 @@ fn column_min_widths(
             if col_end - col_start != 1 || col_start >= col_count {
                 continue;
             }
-            let pad = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0)
-                + cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
+            // Effective padding, so a column is wide enough for the inset a
+            // style-supplied `w:tblCellMar` will impose at paint time.
+            let (_, _, pl, pr) = style_ctx.cell_padding(&cell.props);
+            let pad = pl.map(pts_to_f32).unwrap_or(0.0) + pr.map(pts_to_f32).unwrap_or(0.0);
             let w = measure_cell_min_width(state.resources, catalog, display_scale, options, cell)
                 + pad;
             if w > mins[col_start] {
@@ -210,8 +213,9 @@ pub(super) fn autofit_column_widths(
     cell_cols: &[Vec<(usize, usize)>],
     scaled: &[f32],
     table_width: f32,
+    style_ctx: &crate::table_shading::TableStyleCtx<'_>,
 ) -> Vec<f32> {
-    let mins = column_min_widths(state, rows, cell_cols, scaled.len());
+    let mins = column_min_widths(state, rows, cell_cols, scaled.len(), style_ctx);
     distribute_with_mins(scaled, &mins, table_width)
 }
 

@@ -101,7 +101,7 @@ fn cell_style_borders_resolve_the_grid_from_a_table_grid_style() {
     // Every cell of a Table-Grid table gets all four edges (outer or interior),
     // so the whole grid is drawn.
     for (row, col) in [(0, 0), (1, 1), (2, 2)] {
-        let (t, r, b, l) = cell_style_borders(Some(&style), row, col, 3, 3);
+        let (t, r, b, l) = cell_style_borders(style.table_props.borders.as_ref(), row, col, 3, 3);
         assert!(
             t.is_some() && r.is_some() && b.is_some() && l.is_some(),
             "cell ({row},{col}) should have all four grid edges"
@@ -115,7 +115,7 @@ fn cell_style_borders_resolve_the_grid_from_a_table_grid_style() {
     );
     let plain = styled("Plain", TableRegion::FirstRow, rgb(1, 2, 3));
     assert_eq!(
-        cell_style_borders(Some(&plain), 0, 0, 3, 3),
+        cell_style_borders(plain.table_props.borders.as_ref(), 0, 0, 3, 3),
         (None, None, None, None)
     );
 }
