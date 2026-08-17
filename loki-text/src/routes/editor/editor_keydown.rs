@@ -13,8 +13,8 @@ use loki_renderer::render_layout::reflow_layout_content_width_pt;
 
 use super::editor_keydown_backspace::handle_backspace_key;
 use super::editor_keydown_ctrl::{handle_ctrl_keys, handle_delete_key, post_mutation_sync};
-use super::editor_keydown_enter::handle_enter_key;
-use super::editor_keydown_text::{SelectionRemoval, handle_character_key, remove_selection};
+use super::editor_keydown_newline::{enter_or_line_break, insert_text_or_paragraph_breaks};
+use super::editor_keydown_text::{SelectionRemoval, remove_selection};
 use super::editor_scrollbar::ScrollMetrics;
 
 use crate::editing::cursor::CursorState;
@@ -109,8 +109,10 @@ pub(super) fn make_keydown_handler(
 
         match &key {
             // ── Printable characters (replace the selection if one is active) ─
+            // A soft keyboard's Enter arrives *here*, as `Character("\n")` —
+            // see `editor_keydown_newline`, which splits paragraphs on it.
             Key::Character(ch) => {
-                handle_character_key(
+                insert_text_or_paragraph_breaks(
                     ch.clone(),
                     focus,
                     loro_doc,
@@ -279,7 +281,8 @@ pub(super) fn make_keydown_handler(
             }
 
             Key::Enter => {
-                handle_enter_key(
+                enter_or_line_break(
+                    modifiers.shift(),
                     focus,
                     loro_doc,
                     &doc_state,

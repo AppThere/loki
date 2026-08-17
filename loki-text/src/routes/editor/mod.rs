@@ -43,6 +43,7 @@ mod editor_keydown;
 mod editor_keydown_backspace;
 mod editor_keydown_ctrl;
 mod editor_keydown_enter;
+mod editor_keydown_newline;
 mod editor_keydown_text;
 mod editor_language_panel;
 mod editor_layout_task;

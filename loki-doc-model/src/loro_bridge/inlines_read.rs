@@ -12,6 +12,7 @@ use super::decode::{
     decode_border, decode_highlight_color, decode_strikethrough, decode_underline,
     decode_vertical_align,
 };
+use super::line_breaks::text_to_inlines;
 use crate::content::attr::NodeAttr;
 use crate::content::inline::{Inline, QuoteType, StyledRun};
 use crate::loro_schema::*;
@@ -42,7 +43,7 @@ pub(super) fn reconstruct_inlines(map: &loro::LoroMap) -> Result<Vec<Inline>, Br
     for span in text_container.to_delta() {
         if let loro::TextDelta::Insert { insert, attributes } = span {
             match attributes {
-                None => inlines.push(Inline::Str(insert.to_string())),
+                None => inlines.extend(text_to_inlines(&insert)),
                 Some(attrs) => {
                     // An inline object (anchored by a placeholder char) carries
                     // its data in a mark — reconstruct it and discard the
@@ -70,26 +71,26 @@ pub(super) fn reconstruct_inlines(map: &loro::LoroMap) -> Result<Vec<Inline>, Br
                     }
                     let props = read_char_props_from_marks(&attrs);
                     let style_id = read_style_id_from_marks(&attrs);
-                    let mut inline = if props.is_some() || style_id.is_some() {
-                        Inline::StyledRun(StyledRun {
+                    let mut parts = if props.is_some() || style_id.is_some() {
+                        vec![Inline::StyledRun(StyledRun {
                             style_id,
                             direct_props: props.map(Box::new),
-                            content: vec![Inline::Str(insert.to_string())],
+                            content: text_to_inlines(&insert),
                             attr: NodeAttr::default(),
-                        })
+                        })]
                     } else {
-                        Inline::Str(insert.to_string())
+                        text_to_inlines(&insert)
                     };
                     // Re-wrap span/quote range marks (innermost first, so a
                     // quoted span reads back as Quoted(Span(..)) — the write
                     // path flattens both onto the same range).
                     if let Some(attr) = decode_span_attr(&attrs) {
-                        inline = Inline::Span(attr, vec![inline]);
+                        parts = vec![Inline::Span(attr, parts)];
                     }
                     if let Some(qt) = decode_quote_type(&attrs) {
-                        inline = Inline::Quoted(qt, vec![inline]);
+                        parts = vec![Inline::Quoted(qt, parts)];
                     }
-                    inlines.push(inline);
+                    inlines.extend(parts);
                 }
             }
         }

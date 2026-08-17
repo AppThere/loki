@@ -42,10 +42,10 @@ pub(super) fn map_inlines(
             Inline::Str(s) => {
                 text.insert(start, s)?;
             }
-            Inline::Space => {
+            Inline::Space | Inline::SoftBreak => {
                 text.insert(start, " ")?;
             }
-            Inline::SoftBreak | Inline::LineBreak => {
+            Inline::LineBreak => {
                 text.insert(start, "\n")?;
             }
             Inline::StyledRun(run) => {
@@ -184,8 +184,8 @@ pub(super) fn extract_plain_text(inlines: &[Inline]) -> String {
     for inline in inlines {
         match inline {
             Inline::Str(s) => out.push_str(s),
-            Inline::Space => out.push(' '),
-            Inline::SoftBreak | Inline::LineBreak => out.push('\n'),
+            Inline::Space | Inline::SoftBreak => out.push(' '),
+            Inline::LineBreak => out.push('\n'),
             Inline::Code(_, s) => out.push_str(s),
             // Math holds MathML markup, not display text; a block containing it
             // is preserved as an opaque snapshot rather than flat text.

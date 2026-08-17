@@ -19,6 +19,7 @@ mod incremental;
 mod inline_objects;
 mod inlines;
 mod inlines_read;
+mod line_breaks;
 mod map_get;
 mod meta;
 mod opaque;
