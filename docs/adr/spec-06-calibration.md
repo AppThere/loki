@@ -16,6 +16,21 @@ the chosen budgets, and the device / date / tool versions they trace to — so
 budgets are **traceable to data, not guessed** (D2). Budgets are **review
 targets, never CI gates** (§11).
 
+## Open finding from the first Windows run (2026-08-16)
+
+The portable baseline was run on the Windows box for the first time and reports
+**DOCX save allocating 8.5× what it did** (`io/large_save`: 6 484 → 54 918
+allocs). Bisected to `05644320` and attributed in full to the export's
+schema-order canonicalisation pass; the same run established that the `io/*`
+baseline keys **are** cross-platform comparable (Windows and Linux agree to
+within 0 allocations at the baseline commit), so this is a real regression
+rather than a platform artifact. Details, evidence and the two candidate fixes:
+[docx-save-allocation-regression-2026-08.md](../docx-save-allocation-regression-2026-08.md).
+
+Not a budget change — `portable.txt` was **not** updated, deliberately:
+overwriting a Linux-calibrated reference with Windows numbers would destroy the
+comparison that made the diagnosis possible.
+
 ## Method (D2)
 
 `cargo bench -p loki-bench --bench device_rss` builds and lays out each corpus
