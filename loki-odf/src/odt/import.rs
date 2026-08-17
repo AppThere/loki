@@ -180,8 +180,13 @@ impl OdtImporter {
 
         // Merge automatic styles from content.xml (paragraph/span-level styles
         // that are specific to this document instance).
-        let auto_styles = crate::odt::reader::styles::read_auto_styles(&package.content)?;
-        stylesheet.merge_auto(auto_styles);
+        let auto = crate::odt::reader::styles::read_auto_styles(&package.content)?;
+        stylesheet.merge_auto(auto.styles);
+        // `text:list-style` may be declared in either part and a list resolves
+        // against both. Appended after `styles.xml`'s, so on a name collision
+        // the document-instance definition is the one the catalog keeps —
+        // automatic styles are the more specific declaration.
+        stylesheet.list_styles.extend(auto.list_styles);
 
         let odf_meta = package
             .meta

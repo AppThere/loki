@@ -240,7 +240,7 @@ fn read_auto_styles_returns_automatic_styles() {
   </office:body>
 </office:document-content>"#;
 
-    let styles = read_auto_styles(xml).unwrap();
+    let styles = read_auto_styles(xml).unwrap().styles;
     assert_eq!(styles.len(), 2);
 
     let p1 = &styles[0];
@@ -288,4 +288,86 @@ fn read_stylesheet_list_style_legacy_positioning() {
     assert_eq!(lv.legacy_min_label_width.as_deref(), Some("0.4cm"));
     assert_eq!(lv.legacy_min_label_distance.as_deref(), Some("0.1cm"));
     assert!(lv.label_followed_by.is_none());
+}
+
+/// A `text:list-style` declared in `content.xml`'s automatic styles must be
+/// read, not dropped.
+///
+/// This reader matched only `style:style`, so a list style declared beside the
+/// paragraph styles — what a writer emits for a list formatted in one document
+/// rather than through a named style — never reached the catalog. The list then
+/// referenced a style that did not exist and layout fell back to the built-in
+/// bullets, rendering a *numbered* level as `○` (TC-ODT-004).
+///
+/// The number level is asserted specifically: a reader that produced the style
+/// but flattened every level to a bullet would satisfy a bare "was it read?"
+/// check while leaving the visible symptom exactly as it was.
+#[test]
+fn list_styles_in_content_automatic_styles_are_read() {
+    let xml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+  <office:automatic-styles>
+    <style:style style:name="P1" style:family="paragraph"/>
+    <text:list-style style:name="L1">
+      <text:list-level-style-bullet text:level="1" text:bullet-char="&#9670;"/>
+      <text:list-level-style-number text:level="2" style:num-format="1"
+                                    text:start-value="1"/>
+    </text:list-style>
+  </office:automatic-styles>
+  <office:body><office:text/></office:body>
+</office:document-content>"#;
+
+    let auto = read_auto_styles(xml).unwrap();
+
+    // The paragraph style still arrives — the added arm must not shadow it.
+    assert_eq!(auto.styles.len(), 1, "style:style must still be collected");
+
+    assert_eq!(auto.list_styles.len(), 1, "the list style was dropped");
+    let ls = &auto.list_styles[0];
+    assert_eq!(ls.name, "L1");
+    assert_eq!(ls.levels.len(), 2, "both levels must survive");
+
+    // Level 1 keeps the document's own bullet, not Loki's default `•`.
+    match &ls.levels[0].kind {
+        OdfListLevelKind::Bullet { char, .. } => assert_eq!(char, "\u{25c6}"),
+        other => panic!("level 1 should be a bullet, got {other:?}"),
+    }
+    // Level 2 is a *number*. This is the assertion that separates "read the
+    // style" from "read it correctly" — the reported symptom was this level
+    // rendering as a bullet.
+    match &ls.levels[1].kind {
+        OdfListLevelKind::Number {
+            num_format,
+            start_value,
+            ..
+        } => {
+            assert_eq!(num_format.as_deref(), Some("1"));
+            assert_eq!(*start_value, Some(1));
+        }
+        other => panic!("level 2 should be numbered, got {other:?}"),
+    }
+}
+
+/// The inversion: a document with no `text:list-style` must not acquire one.
+#[test]
+fn content_without_a_list_style_yields_none() {
+    let xml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0">
+  <office:automatic-styles>
+    <style:style style:name="P1" style:family="paragraph"/>
+  </office:automatic-styles>
+  <office:body><office:text/></office:body>
+</office:document-content>"#;
+
+    let auto = read_auto_styles(xml).unwrap();
+    assert_eq!(auto.styles.len(), 1);
+    assert!(
+        auto.list_styles.is_empty(),
+        "a list style appeared where none was declared"
+    );
 }
