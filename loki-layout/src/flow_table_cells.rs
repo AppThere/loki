@@ -31,6 +31,7 @@ pub(super) fn flow_row_cells(
     idx: usize,
     cell_flat: &mut usize,
     char_row: Option<&[Option<loki_doc_model::style::props::char_props::CharProps>]>,
+    style_ctx: &crate::table_shading::TableStyleCtx<'_>,
 ) -> Vec<(usize, usize)> {
     use loki_doc_model::content::table::row::{CellTextDirection, CellVerticalAlign};
 
@@ -46,10 +47,13 @@ pub(super) fn flow_row_cells(
         let cell_chars = char_row.and_then(|r| r.get(c_idx)).and_then(Option::as_ref);
         state.cell_char_defaults = cell_chars.cloned();
 
-        let pad_top = cell.props.padding_top.map(pts_to_f32).unwrap_or(0.0);
-        let pad_bottom = cell.props.padding_bottom.map(pts_to_f32).unwrap_or(0.0);
-        let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
-        let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
+        // Effective padding: the cell's own value per side, else the table
+        // style's `w:tblCellMar` default.
+        let (pt, pb, pl, pr) = style_ctx.cell_padding(&cell.props);
+        let pad_top = pt.map(pts_to_f32).unwrap_or(0.0);
+        let pad_bottom = pb.map(pts_to_f32).unwrap_or(0.0);
+        let pad_left = pl.map(pts_to_f32).unwrap_or(0.0);
+        let pad_right = pr.map(pts_to_f32).unwrap_or(0.0);
 
         let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
         let cell_x = old_indent + col_widths[0..col_start].iter().sum::<f32>();

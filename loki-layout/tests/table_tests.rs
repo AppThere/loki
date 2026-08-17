@@ -966,3 +966,116 @@ fn keep_next_caption_does_not_drop_the_following_table() {
          cell should emit a FilledRect); items = {flat:?}"
     );
 }
+
+/// A table style's default cell padding (`w:tblCellMar`) must inset cell
+/// content at layout time, not just on export.
+///
+/// Word parks its 108-twip (5.4pt) left/right default on the `w:default="1"`
+/// *Normal Table* style and every real table reaches it through `w:basedOn`,
+/// so a table styled *Table Grid* renders its text flush against the gridline
+/// unless the style's contribution is resolved into each cell.
+#[test]
+fn table_style_cell_padding_insets_cell_content() {
+    use loki_doc_model::style::catalog::StyleId;
+    use loki_doc_model::style::table_padding::CellPadding;
+    use loki_doc_model::style::table_style::{TableProps, TableStyle};
+    use loki_primitives::units::Points;
+
+    fn first_glyph_x(items: &[PositionedItem]) -> f32 {
+        let mut flat = Vec::new();
+        flatten(items, &mut flat);
+        flat.iter()
+            .find_map(|i| match i {
+                PositionedItem::GlyphRun(g) => Some(g.origin.x),
+                _ => None,
+            })
+            .expect("a glyph run in the first cell")
+    }
+
+    fn layout_with(catalog: &StyleCatalog, style_name: Option<&str>) -> Vec<PositionedItem> {
+        let mut r = test_resources();
+        let mut table = Table {
+            attr: loki_doc_model::content::attr::NodeAttr::default(),
+            caption: Default::default(),
+            width: None,
+            col_specs: vec![
+                ColSpec {
+                    alignment: ColAlignment::Default,
+                    width: ColWidth::Default,
+                };
+                2
+            ],
+            head: TableHead::empty(),
+            bodies: vec![TableBody::from_rows(vec![Row::new(vec![
+                make_cell_tall(vec!["Cell"], None, 1),
+                make_cell_tall(vec!["Other"], None, 1),
+            ])])],
+            foot: TableFoot::empty(),
+        };
+        table.set_style_name(style_name.map(str::to_string));
+        let section = Section {
+            page_style: None,
+            layout: PageLayout::default(),
+            start: Default::default(),
+            blocks: vec![Block::Table(Box::new(table))],
+            extensions: ExtensionBag::default(),
+        };
+        match flow_section(
+            &mut r,
+            &section,
+            catalog,
+            &LayoutMode::Pageless,
+            1.0,
+            &LayoutOptions::default(),
+            &[],
+        ) {
+            FlowOutput::Canvas { items, .. } => items,
+            _ => panic!("expected Canvas output"),
+        }
+    }
+
+    // Parent carries the margins; the referenced style inherits them, exactly
+    // as TableGrid inherits from TableNormal.
+    let mut catalog = StyleCatalog::new();
+    catalog.table_styles.insert(
+        StyleId::new("Base"),
+        TableStyle {
+            id: StyleId::new("Base"),
+            display_name: None,
+            parent: None,
+            table_props: TableProps {
+                cell_padding: Some(CellPadding {
+                    top: Some(Points::new(0.0)),
+                    bottom: Some(Points::new(0.0)),
+                    left: Some(Points::new(12.0)),
+                    right: Some(Points::new(12.0)),
+                }),
+                ..Default::default()
+            },
+            conditional: Default::default(),
+            extensions: Default::default(),
+        },
+    );
+    catalog.table_styles.insert(
+        StyleId::new("Child"),
+        TableStyle {
+            id: StyleId::new("Child"),
+            display_name: None,
+            parent: Some(StyleId::new("Base")),
+            table_props: TableProps::default(),
+            conditional: Default::default(),
+            extensions: Default::default(),
+        },
+    );
+
+    // Control first: establish that the unpadded position is reachable, so the
+    // padded run below is measured against a known baseline rather than an
+    // assumed one.
+    let bare = first_glyph_x(&layout_with(&catalog, None));
+    let padded = first_glyph_x(&layout_with(&catalog, Some("Child")));
+
+    assert!(
+        (padded - bare - 12.0).abs() < 0.5,
+        "inherited 12pt left margin must inset content: bare={bare}, padded={padded}"
+    );
+}

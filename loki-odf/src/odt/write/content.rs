@@ -47,10 +47,13 @@ pub(super) struct Cx {
     /// Tracked-change regions collected from revision runs, flushed as the
     /// `text:tracked-changes` table at the start of `office:text`.
     pub(super) changes: super::revisions::Changes,
-    /// Table styles (banding/conditional regions) resolved into per-cell
-    /// shading at table-export time — ODF's per-cell representation.
-    pub(super) table_styles:
-        indexmap::IndexMap<loki_doc_model::style::StyleId, loki_doc_model::style::TableStyle>,
+    /// The document's style catalog. Table styles (banding/conditional
+    /// regions, borders, cell margins) are resolved into per-cell values at
+    /// table-export time — ODF's per-cell representation. The whole catalog
+    /// rather than just the table-style map because resolution has to walk the
+    /// `basedOn` chain, which needs the sibling styles and the document's
+    /// default table style.
+    pub(super) styles: loki_doc_model::style::StyleCatalog,
 }
 
 /// Renders the whole `content.xml` for `doc`, collecting any embedded images.
@@ -66,7 +69,7 @@ pub(crate) fn content_xml(doc: &Document) -> Rendered {
             .collect(),
         objects: Vec::new(),
         changes: super::revisions::Changes::default(),
-        table_styles: doc.styles.table_styles.clone(),
+        styles: doc.styles.clone(),
     };
     // The section→master-page names, honouring the stored `page_style` refs so a
     // named page style round-trips (must agree with `styles.xml`).

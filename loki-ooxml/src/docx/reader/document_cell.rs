@@ -184,36 +184,9 @@ fn parse_tc_borders(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTcBorders> {
     Ok(borders)
 }
 
-/// Parses a `w:tcMar` element. Called after Start("tcMar") is consumed.
-/// Values are in twips (twentieths of a point); COMPAT(ooxml-dxa): divide by 20 for points.
+/// Parses a `w:tcMar` element (per-cell margins). Called after Start("tcMar")
+/// is consumed. Delegates to the shared container parser so `w:tcMar` and the
+/// table-level `w:tblCellMar` cannot drift apart.
 fn parse_tc_margins(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxCellMargins> {
-    let mut margins = DocxCellMargins::default();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
-                let twips: Option<i32> = attr_val(e, b"w").and_then(|v| v.parse().ok());
-                match local_name(e.local_name().as_ref()) {
-                    b"top" => margins.top = twips,
-                    b"bottom" => margins.bottom = twips,
-                    b"left" | b"start" => margins.left = twips,
-                    b"right" | b"end" => margins.right = twips,
-                    _ => {}
-                }
-            }
-            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"tcMar" => {
-                break;
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OoxmlError::Xml {
-                    part: "word/document.xml".into(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(margins)
+    crate::docx::reader::util::parse_cell_margins(reader, b"tcMar", "word/document.xml")
 }

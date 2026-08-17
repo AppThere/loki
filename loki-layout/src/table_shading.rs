@@ -9,7 +9,10 @@
 
 use loki_doc_model::StyleCatalog;
 use loki_doc_model::content::table::core::Table;
-use loki_doc_model::style::{CellEdges, StyleId, TableLook, TableStyle, resolve_cell_shading};
+use loki_doc_model::style::table_padding::CellPadding;
+use loki_doc_model::style::{
+    CellEdges, StyleId, TableBorders, TableLook, TableStyle, resolve_cell_shading,
+};
 use loki_primitives::color::DocumentColor;
 
 /// The named table style a table references, if any, resolved against the
@@ -71,16 +74,83 @@ pub fn cell_style_shading_cnf(
 /// where the style leaves it unset, so a caller can fall back to it only when a
 /// direct cell border is absent. This is how a *Table Grid* style paints a full
 /// grid even though the cells carry no explicit borders.
+///
+/// `borders` must come from
+/// [`StyleCatalog::table_borders_for`](loki_doc_model::style::StyleCatalog::table_borders_for),
+/// which walks the `basedOn` chain — reading `style.table_props.borders` off a
+/// single style misses every style that inherits its grid from a parent.
 pub fn cell_style_borders(
-    style: Option<&TableStyle>,
+    borders: Option<&TableBorders>,
     row: usize,
     col: usize,
     rows: usize,
     cols: usize,
 ) -> CellEdges {
-    loki_doc_model::style::table_borders::resolve_cell_borders(style, row, col, rows, cols)
+    loki_doc_model::style::table_borders::resolve_cell_borders(borders, row, col, rows, cols)
 }
 
 #[cfg(test)]
 #[path = "table_shading_tests.rs"]
 mod tests;
+
+/// Everything a table's named style contributes to its cells, resolved **once**
+/// per table and **through the `basedOn` chain**.
+///
+/// The flow engine used to carry a bare `Option<&TableStyle>` and read
+/// `table_props.*` off it at each use site. That is a flat lookup: DOCX's
+/// *Table Grid* is `w:basedOn` *Normal Table*, and Word parks its default
+/// `w:tblCellMar` on *Normal Table*, so the properties that matter most are
+/// usually reachable only by walking the chain. Resolving into this struct at
+/// the table's entry point means no pass can accidentally do the flat read —
+/// the unresolved style is simply not what gets passed around.
+pub struct TableStyleCtx<'a> {
+    /// The named style itself — still needed for banding/conditional shading,
+    /// which resolves per region rather than per property.
+    pub style: Option<&'a TableStyle>,
+    /// The six-sided border set, resolved through the chain.
+    pub borders: Option<TableBorders>,
+    /// The default cell padding, resolved through the chain.
+    pub padding: CellPadding,
+}
+
+impl<'a> TableStyleCtx<'a> {
+    /// Resolves a table's style context from the catalog.
+    #[must_use]
+    pub fn resolve(catalog: &'a StyleCatalog, style_name: Option<&str>) -> Self {
+        Self {
+            style: resolve_table_style(catalog, style_name),
+            borders: catalog.table_borders_for(style_name),
+            padding: catalog.table_cell_padding_for(style_name),
+        }
+    }
+
+    /// The `(top, right, bottom, left)` borders this style contributes to the
+    /// cell at `(row, col)`.
+    #[must_use]
+    pub fn cell_edges(&self, row: usize, col: usize, rows: usize, cols: usize) -> CellEdges {
+        cell_style_borders(self.borders.as_ref(), row, col, rows, cols)
+    }
+
+    /// A cell's effective `(top, bottom, left, right)` padding: the cell's own
+    /// value per side, else this style's default for that side.
+    #[must_use]
+    pub fn cell_padding(
+        &self,
+        props: &loki_doc_model::content::table::row::CellProps,
+    ) -> (
+        Option<loki_primitives::units::Points>,
+        Option<loki_primitives::units::Points>,
+        Option<loki_primitives::units::Points>,
+        Option<loki_primitives::units::Points>,
+    ) {
+        loki_doc_model::style::effective_cell_padding(
+            (
+                props.padding_top,
+                props.padding_bottom,
+                props.padding_left,
+                props.padding_right,
+            ),
+            &self.padding,
+        )
+    }
+}

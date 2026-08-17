@@ -40,12 +40,20 @@ pub(super) fn table(out: &mut String, t: &Table, cx: &mut Cx) {
     // a table-level border set has no ODF-native form to defer to.
     let backgrounds = resolve_backgrounds(t, cx, &rows, &cell_cols, col_count);
     let borders = resolve_borders(t, cx, &rows, &cell_cols, col_count);
+    let paddings = resolve_paddings(t, cx, &rows);
 
     // Phase 2: emit rows/cells, minting the per-cell automatic styles.
     for (r, row) in rows.iter().enumerate() {
         out.push_str("<table:table-row>");
         for (ci, cell) in row.cells.iter().enumerate() {
-            table_cell(out, cell, backgrounds[r][ci].as_ref(), &borders[r][ci], cx);
+            table_cell(
+                out,
+                cell,
+                backgrounds[r][ci].as_ref(),
+                &borders[r][ci],
+                &paddings[r][ci],
+                cx,
+            );
         }
         out.push_str("</table:table-row>");
     }
@@ -114,7 +122,7 @@ fn resolve_backgrounds(
 ) -> Vec<Vec<Option<DocumentColor>>> {
     let style = t
         .style_name()
-        .and_then(|n| cx.table_styles.get(&StyleId::new(n)));
+        .and_then(|n| cx.styles.table_styles.get(&StyleId::new(n)));
     let look = t
         .table_look_code()
         .and_then(TableLook::decode_attr)
@@ -161,9 +169,9 @@ fn resolve_borders(
     cell_cols: &[Vec<usize>],
     col_count: usize,
 ) -> Vec<Vec<CellEdges>> {
-    let style = t
-        .style_name()
-        .and_then(|n| cx.table_styles.get(&StyleId::new(n)));
+    // Chain-resolved: a style deriving its grid from a parent (Table Grid is
+    // `basedOn` Normal Table) contributes nothing under a flat lookup.
+    let borders = cx.styles.table_borders_for(t.style_name());
     let n_rows = rows.len();
     rows.iter()
         .enumerate()
@@ -172,8 +180,13 @@ fn resolve_borders(
                 .iter()
                 .enumerate()
                 .map(|(ci, cell)| {
-                    let from_style =
-                        resolve_cell_borders(style, r, cell_cols[r][ci], n_rows, col_count);
+                    let from_style = resolve_cell_borders(
+                        borders.as_ref(),
+                        r,
+                        cell_cols[r][ci],
+                        n_rows,
+                        col_count,
+                    );
                     effective_cell_edges(
                         (
                             cell.props.border_top.as_ref(),
@@ -189,15 +202,54 @@ fn resolve_borders(
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
+/// A cell's effective `(top, bottom, left, right)` padding.
+pub(super) type EffectivePadding = (
+    Option<loki_primitives::units::Points>,
+    Option<loki_primitives::units::Points>,
+    Option<loki_primitives::units::Points>,
+    Option<loki_primitives::units::Points>,
+);
+
+/// The effective padding for every cell: its direct `padding_*`, else the
+/// referenced table style's `w:tblCellMar` default for that side.
+///
+/// ODF has no table-level cell-margin concept — like shading and borders, the
+/// inset is represented per cell — so a style's contribution must be baked in
+/// here or it is simply lost on save. Unlike borders this does not vary by
+/// grid position: `w:tblCellMar` is one value for the whole table.
+fn resolve_paddings(t: &Table, cx: &Cx, rows: &[&Row]) -> Vec<Vec<EffectivePadding>> {
+    let from_style = cx.styles.table_cell_padding_for(t.style_name());
+    rows.iter()
+        .map(|row| {
+            row.cells
+                .iter()
+                .map(|cell| {
+                    loki_doc_model::style::effective_cell_padding(
+                        (
+                            cell.props.padding_top,
+                            cell.props.padding_bottom,
+                            cell.props.padding_left,
+                            cell.props.padding_right,
+                        ),
+                        &from_style,
+                    )
+                })
+                .collect()
+        })
+        .collect()
+}
+
 fn table_cell(
     out: &mut String,
     cell: &Cell,
     background: Option<&DocumentColor>,
     edges: &CellEdges,
+    padding: &EffectivePadding,
     cx: &mut Cx,
 ) {
     out.push_str("<table:table-cell");
-    if let Some(style) = cx.auto.cell_style(&cell.props, background, edges) {
+    if let Some(style) = cx.auto.cell_style(background, edges, padding) {
         attr(out, "table:style-name", &style);
     }
     if cell.col_span > 1 {

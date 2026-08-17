@@ -1,93 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! Table row-height measurement (passes 1–2) and per-row cell background/border
-//! decoration emission (pass 3b) for the flow engine. Split out of `flow.rs`
-//! (Phase 7.1); `flow_table` (in `flow.rs`) orchestrates and calls these.
+//! Per-row cell background/border decoration emission (flow pass 3b). Split out
+//! of `flow.rs` (Phase 7.1); row-height measurement (passes 1–2) moved on to
+//! `flow_table_measure.rs` in the file-ceiling pass. `flow_table` (in
+//! `flow_table_main.rs`) orchestrates and calls both.
 
 use loki_doc_model::content::table::row::Row;
-use loki_doc_model::style::{TableLook, TableStyle};
+use loki_doc_model::style::TableLook;
 
 use crate::geometry::{LayoutPoint, LayoutRect, LayoutSize};
 use crate::items::{PositionedBorderRect, PositionedItem, PositionedRect};
-use crate::resolve::{convert_border, pts_to_f32, resolve_color};
-use crate::table_shading::{cell_style_borders, cell_style_shading_cnf};
+use crate::resolve::{convert_border, resolve_color};
+use crate::table_shading::{TableStyleCtx, cell_style_shading_cnf};
 
-use super::{FlowState, table_geom};
+use super::FlowState;
 
-/// Measure each row's height. Pass 1 sizes cells with `row_span == 1`; pass 2
-/// grows the last spanned row when a `row_span > 1` cell needs more than its
-/// rows currently provide. Returns one height per row (min `MIN_ROW_HEIGHT`).
-pub(super) fn measure_row_heights(
-    state: &mut FlowState,
-    rows: &[&Row],
-    cell_cols: &[Vec<(usize, usize)>],
-    col_widths: &[f32],
-    idx: usize,
-    char_grid: Option<&Vec<Vec<Option<loki_doc_model::style::props::char_props::CharProps>>>>,
-) -> Vec<f32> {
-    let mut row_heights = vec![0.0f32; rows.len()];
-
-    // Pass 1: Measure all cells with row_span == 1
-    for (row_idx, row) in rows.iter().enumerate() {
-        for (c_idx, cell) in row.cells.iter().enumerate() {
-            let (col_start, col_end) = cell_cols[row_idx][c_idx];
-            if cell.row_span == 1 {
-                let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
-                let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
-                let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
-                let cell_content_width = (cell_w - pad_left - pad_right).max(0.0);
-                let h = table_geom::measure_cell_height(
-                    state.resources,
-                    state.catalog,
-                    state.display_scale,
-                    state.options,
-                    cell,
-                    cell_content_width,
-                    idx,
-                    cell_chars(char_grid, row_idx, c_idx),
-                );
-                row_heights[row_idx] = row_heights[row_idx].max(h);
-            }
-        }
-        row_heights[row_idx] = row_heights[row_idx].max(crate::MIN_ROW_HEIGHT);
-    }
-
-    // Pass 2: Distribute spanning cell heights across spanned rows
-    for (row_idx, row) in rows.iter().enumerate() {
-        for (c_idx, cell) in row.cells.iter().enumerate() {
-            let (col_start, col_end) = cell_cols[row_idx][c_idx];
-            if cell.row_span > 1 {
-                let span = cell.row_span as usize;
-                let spanned_height: f32 = row_heights
-                    [row_idx..(row_idx + span).min(row_heights.len())]
-                    .iter()
-                    .sum();
-                let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
-                let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
-                let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
-                let cell_content_width = (cell_w - pad_left - pad_right).max(0.0);
-                let needed = table_geom::measure_cell_height(
-                    state.resources,
-                    state.catalog,
-                    state.display_scale,
-                    state.options,
-                    cell,
-                    cell_content_width,
-                    idx,
-                    cell_chars(char_grid, row_idx, c_idx),
-                );
-                if needed > spanned_height {
-                    let extra = needed - spanned_height;
-                    let last = (row_idx + span - 1).min(row_heights.len() - 1);
-                    row_heights[last] += extra;
-                }
-            }
-        }
-    }
-
-    row_heights
-}
+#[path = "flow_table_measure.rs"]
+pub(super) mod measure;
 
 /// Emit the background fill and border rects for one row's cells, inserting
 /// them beneath the already-placed cell content on each page the row spans.
@@ -103,7 +33,7 @@ pub(super) fn emit_row_cell_decorations(
     row_max_h: f32,
     cell_starts: &[(usize, usize)],
     table_indent: f32,
-    table_style: Option<&TableStyle>,
+    style_ctx: &TableStyleCtx<'_>,
     look: &TableLook,
     grid_rows: usize,
     grid_cols: usize,
@@ -187,7 +117,7 @@ pub(super) fn emit_row_cell_decorations(
             // (e.g. the Table Grid style's outer edges + interior gridlines)
             // fill in each edge, so a styled table draws its grid without the
             // cells carrying explicit borders. `sb` is (top, right, bottom, left).
-            let sb = cell_style_borders(table_style, row_idx, col_start, grid_rows, grid_cols);
+            let sb = style_ctx.cell_edges(row_idx, col_start, grid_rows, grid_cols);
             let eff = loki_doc_model::style::table_borders::effective_cell_edges(
                 (
                     cell.props.border_top.as_ref(),
@@ -213,7 +143,7 @@ pub(super) fn emit_row_cell_decorations(
             // the cell's explicit w:cnfStyle mask when it carries one (4a.3).
             let cell_bg = cell.props.background_color.clone().or_else(|| {
                 cell_style_shading_cnf(
-                    table_style,
+                    style_ctx.style,
                     look,
                     cell.cnf_code(),
                     row_idx,
@@ -286,15 +216,4 @@ pub(super) fn emit_row_cell_decorations(
             }
         }
     }
-}
-
-/// The 4a.3 region character defaults for one cell of the grid, if any.
-fn cell_chars(
-    grid: Option<&Vec<Vec<Option<loki_doc_model::style::props::char_props::CharProps>>>>,
-    row: usize,
-    cell: usize,
-) -> Option<&loki_doc_model::style::props::char_props::CharProps> {
-    grid.and_then(|g| g.get(row))
-        .and_then(|r| r.get(cell))
-        .and_then(Option::as_ref)
 }

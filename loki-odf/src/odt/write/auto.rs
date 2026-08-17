@@ -124,23 +124,24 @@ impl AutoStyles {
     }
 
     /// Returns the automatic `family="table-cell"` style name for a cell's
-    /// padding plus its **effective** `background` and `edges`, or `None` when
-    /// there is none of any. Both are the resolved values (direct formatting
-    /// else the table style's contribution) because ODF has no conditional-
-    /// region or table-level-border concept — it bakes both into per-cell
-    /// styles, so resolution has to happen before serialisation.
+    /// **effective** `background`, `edges` and `padding`, or `None` when there
+    /// is none of any. All three are resolved values (direct formatting else
+    /// the table style's contribution) because ODF has no conditional-region,
+    /// table-level-border or table-level-cell-margin concept — it bakes all
+    /// three into per-cell styles, so resolution happens before serialisation.
     ///
-    /// `edges` is passed in rather than read back off `props` deliberately:
-    /// reading `props.border_*` here is exactly the bug this signature
-    /// replaces, and there is now no path through this function that can see
-    /// the unresolved direct borders.
+    /// The cell's own `CellProps` is deliberately *not* a parameter. Reading
+    /// `props.border_*` / `props.padding_*` here — instead of the resolved
+    /// values — is exactly the bug this signature replaces, twice over; with
+    /// the raw props out of scope there is no path through this function that
+    /// can see them.
     pub(super) fn cell_style(
         &mut self,
-        props: &loki_doc_model::content::table::row::CellProps,
         background: Option<&DocumentColor>,
         edges: &CellEdges,
+        padding: &super::tables::EffectivePadding,
     ) -> Option<String> {
-        let cell_props = emit_cell_properties(props, background, edges);
+        let cell_props = emit_cell_properties(background, edges, padding);
         if cell_props.is_empty() {
             return None;
         }
@@ -193,9 +194,9 @@ mod graphic;
 /// and padding (4a.3) — as a `<style:table-cell-properties/>` element, or an
 /// empty string when the cell carries none.
 fn emit_cell_properties(
-    props: &loki_doc_model::content::table::row::CellProps,
     background: Option<&DocumentColor>,
     edges: &CellEdges,
+    padding: &super::tables::EffectivePadding,
 ) -> String {
     let mut s = String::new();
     if let Some(hex) = background.and_then(DocumentColor::to_hex) {
@@ -207,11 +208,14 @@ fn emit_cell_properties(
     super::para_props::border_attr(&mut s, "fo:border-bottom", edges.2.as_ref());
     super::para_props::border_attr(&mut s, "fo:border-left", edges.3.as_ref());
     super::para_props::border_attr(&mut s, "fo:border-right", edges.1.as_ref());
+    // `padding` is passed in, already resolved against the table style, for the
+    // same reason `edges` is: reading `props.padding_*` here would silently drop
+    // every inherited `w:tblCellMar`.
     for (name, pad) in [
-        ("fo:padding-top", props.padding_top),
-        ("fo:padding-bottom", props.padding_bottom),
-        ("fo:padding-left", props.padding_left),
-        ("fo:padding-right", props.padding_right),
+        ("fo:padding-top", padding.0),
+        ("fo:padding-bottom", padding.1),
+        ("fo:padding-left", padding.2),
+        ("fo:padding-right", padding.3),
     ] {
         if let Some(p) = pad {
             attr_str(&mut s, name, &format!("{}pt", p.value()));
@@ -233,96 +237,5 @@ fn attr_str(s: &mut String, name: &str, value: &str) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use loki_doc_model::content::table::row::CellProps;
-    use loki_primitives::color::RgbColor;
-
-    fn color(r: u8, g: u8, b: u8) -> DocumentColor {
-        DocumentColor::Rgb(RgbColor::new(
-            f32::from(r) / 255.0,
-            f32::from(g) / 255.0,
-            f32::from(b) / 255.0,
-        ))
-    }
-
-    #[test]
-    fn cell_style_emits_background_and_dedupes() {
-        let mut a = AutoStyles::new();
-        let n1 = a
-            .cell_style(
-                &CellProps::default(),
-                Some(&color(0x44, 0x72, 0xC4)),
-                &CellEdges::default(),
-            )
-            .expect("shaded cell → style");
-        // Same colour reuses the same style name.
-        let n2 = a
-            .cell_style(
-                &CellProps::default(),
-                Some(&color(0x44, 0x72, 0xC4)),
-                &CellEdges::default(),
-            )
-            .unwrap();
-        assert_eq!(n1, n2);
-        // A different colour gets a distinct name.
-        let n3 = a
-            .cell_style(
-                &CellProps::default(),
-                Some(&color(0xFF, 0x00, 0x00)),
-                &CellEdges::default(),
-            )
-            .unwrap();
-        assert_ne!(n1, n3);
-
-        let xml = a.render();
-        assert!(xml.contains(r#"style:family="table-cell""#));
-        assert!(xml.contains(r##"fo:background-color="#4472C4""##));
-        assert!(xml.contains(r##"fo:background-color="#FF0000""##));
-    }
-
-    #[test]
-    fn a_cell_without_shading_or_edges_gets_no_style() {
-        let mut a = AutoStyles::new();
-        assert_eq!(
-            a.cell_style(&CellProps::default(), None, &CellEdges::default()),
-            None
-        );
-        assert!(a.render().is_empty());
-    }
-
-    #[test]
-    fn resolved_edges_alone_mint_a_cell_style() {
-        // The Table Grid case: the cell carries no direct formatting at all,
-        // and everything it draws comes from the table style's resolved edges.
-        // Before the resolution was threaded through, this cell produced no
-        // style and the grid vanished on export.
-        use loki_doc_model::style::props::border::{Border, BorderStyle};
-        use loki_primitives::units::Points;
-        let edge = |w: f64| {
-            Some(Border {
-                style: BorderStyle::Solid,
-                width: Points::new(w),
-                color: None,
-                spacing: None,
-            })
-        };
-        let mut a = AutoStyles::new();
-        let name = a
-            .cell_style(
-                &CellProps::default(),
-                None,
-                &(edge(1.0), edge(2.0), edge(3.0), edge(4.0)),
-            )
-            .expect("resolved edges must produce a cell style");
-        let xml = a.render();
-        assert!(xml.contains(&name));
-        // All four sides present, and mapped to the right ODF attribute —
-        // `edges` is (top, right, bottom, left), so a tuple-order slip would
-        // put the 2pt edge on `fo:border-bottom`.
-        assert!(xml.contains("fo:border-top=\"1pt"), "{xml}");
-        assert!(xml.contains("fo:border-right=\"2pt"), "{xml}");
-        assert!(xml.contains("fo:border-bottom=\"3pt"), "{xml}");
-        assert!(xml.contains("fo:border-left=\"4pt"), "{xml}");
-    }
-}
+#[path = "auto_tests.rs"]
+mod tests;
