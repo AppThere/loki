@@ -40,7 +40,12 @@ loki-text/src/routes/editor/dom_reflow/content.rs | monospace
 # The font picker renders each family's name *in that family*, which is the
 # whole point of the row — a list of names all set in the UI face tells the
 # reader nothing about what they are choosing.
-loki-text/src/routes/editor/style_dialog/font_picker.rs | {}
+#
+# The specimen row moved out of `style_dialog/font_picker.rs` when the picker
+# became the shared searchable field; the gate caught both halves (a stale
+# entry here and an undeclared one there), which is what keying on the family
+# rather than a line number is for.
+loki-text/src/routes/editor/font_family_field.rs | {}
 # The paragraph and table previews are specimens of the document, not chrome:
 # they show what the style will look like on the page. The `{serif}` line is the
 # specimen body; the `{ui}` lines are the ruler and column labels drawn around
