@@ -92,6 +92,9 @@ pub(super) fn break_column(state: &mut FlowState) {
         // The next column starts at the band top (page content top, or mid-page
         // for a continuous section that opened its band below earlier content).
         state.cursor_y = state.column_top_y;
+        // Spacing does not collapse across a column break, for the same reason
+        // it does not across a page break (see `finish_page`).
+        state.clear_pending_space();
     } else {
         finish_page(state);
     }

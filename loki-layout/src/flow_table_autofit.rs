@@ -89,6 +89,8 @@ pub(super) fn cell_flow_state<'a>(
         tail_candidate: None,
         cell_char_defaults: cell_chars.cloned(),
         line_num: None,
+        last_space_after: 0.0,
+        suppress_space_before: false,
     }
 }
 

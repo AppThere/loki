@@ -229,7 +229,7 @@ fn collect_chain_notes(state: &mut FlowState, mut notes: Vec<CollectedNote>, blo
 /// Place chain blocks in order, adding `space_before` to `cursor_y` before each.
 fn place_chain_blocks(state: &mut FlowState, chain: Vec<ChainEntry>, start: usize) {
     for (i, (resolved, layout, notes)) in chain.into_iter().enumerate() {
-        state.cursor_y += resolved.space_before;
+        state.advance_space_before(resolved.space_before);
         if resolved.page_break_before && state.mode.is_paginated() {
             finish_page(state);
         }
@@ -286,7 +286,7 @@ fn place_chain_too_tall(
             // re-flows it (re-collecting its notes) — so drop these here.
             break;
         }
-        state.cursor_y += resolved.space_before;
+        state.advance_space_before(resolved.space_before);
         if resolved.page_break_before && state.mode.is_paginated() {
             finish_page(state);
         }

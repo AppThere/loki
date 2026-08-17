@@ -116,7 +116,7 @@ pub(super) fn split_and_place_loop(
                 // the next column (or page) and retry. Re-apply space_before on
                 // the fresh column (ADR 004 §3 retry).
                 break_column(state);
-                state.cursor_y += resolved.space_before;
+                state.advance_space_before(resolved.space_before);
                 flushed_without_progress = true;
             }
             None => {
@@ -174,7 +174,7 @@ pub(super) fn split_and_place_loop(
                     // the "no lines fit" flush; guarded so the retry at the fresh
                     // page top splits normally and terminates).
                     break_column(state);
-                    state.cursor_y += resolved.space_before;
+                    state.advance_space_before(resolved.space_before);
                     flushed_without_progress = true;
                     continue;
                 }

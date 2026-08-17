@@ -112,11 +112,16 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     let (float_plan, own_float) =
         super::float_impl::plan_paragraph_float(state, &mut images, &mut resolved);
 
-    state.cursor_y += resolved.space_before;
-
+    // The break comes first: spacing added to a page that is about to be
+    // closed is spacing nobody sees, and — since `finish_page` is what marks
+    // the next block's `space_before` as suppressed — applying it beforehand
+    // let the *following* paragraph consume the suppression instead of this
+    // one, which is the paragraph actually starting the new page.
     if resolved.page_break_before && state.mode.is_paginated() {
         finish_page(state);
     }
+
+    state.advance_space_before(resolved.space_before);
 
     // Cross-paragraph wrap: when this paragraph has no float of its own but an
     // earlier float still extends below the cursor, narrow it to clear the

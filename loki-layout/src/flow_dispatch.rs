@@ -224,4 +224,9 @@ pub(crate) fn finish_page(state: &mut FlowState) {
     }
     // Cross-paragraph float wrap does not continue onto the next page.
     state.active_float = None;
+    // Nor does paragraph-spacing collapsing: the block whose `space_after` is
+    // pending is on the page just closed, so collapsing the next block's
+    // `space_before` against it would pull its first line up against the top
+    // margin.
+    state.clear_pending_space();
 }

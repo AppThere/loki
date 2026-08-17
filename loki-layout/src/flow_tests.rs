@@ -2624,3 +2624,134 @@ fn table_region_char_formatting_reaches_header_glyphs() {
         "body runs keep the 12 pt default: {sizes:?}"
     );
 }
+
+// ── Paragraph-spacing collapsing (Word's rule, measured) ─────────────────────
+
+/// The gap between two blocks is `max(space_after, space_before)`, not their
+/// sum.
+///
+/// Measured against Word 16.0: two paragraphs with `after = 12pt` on the first
+/// leave the same gap whether the second declares `before = 0` or `before =
+/// 6pt`. Summing leaked the smaller value at *every* boundary, and because the
+/// error accumulates it eventually overflows a page — Loki needed 15 pages for
+/// a 14-page Word document, after which every page compared against unrelated
+/// content.
+#[test]
+fn adjacent_paragraph_spacing_collapses_to_the_larger() {
+    fn first_y_of_second_para(after: f64, before: f64) -> f32 {
+        let mut r = test_resources();
+        let p1 = StyledParagraph {
+            direct_para_props: Some(Box::new(ParaProps {
+                space_after: Some(Spacing::Exact(Points::new(after))),
+                ..Default::default()
+            })),
+            ..make_para("First")
+        };
+        let p2 = StyledParagraph {
+            direct_para_props: Some(Box::new(ParaProps {
+                space_before: Some(Spacing::Exact(Points::new(before))),
+                ..Default::default()
+            })),
+            ..make_para("Second")
+        };
+        let section = section_of(vec![p1, p2], PageLayout::default());
+        let (items, _, _) = flow_pageless(&mut r, &section);
+        let ys: Vec<f32> = items
+            .iter()
+            .filter_map(|i| match i {
+                PositionedItem::GlyphRun(run) => Some(run.origin.y),
+                _ => None,
+            })
+            .collect();
+        // The second paragraph's run is the last distinct y.
+        *ys.last().expect("two glyph runs")
+    }
+
+    let baseline = first_y_of_second_para(12.0, 0.0);
+    let with_before = first_y_of_second_para(12.0, 6.0);
+    assert!(
+        (with_before - baseline).abs() < 0.01,
+        "a `before` smaller than the preceding `after` must add nothing: \
+         {baseline} vs {with_before}"
+    );
+
+    // The inversion: a `before` *larger* than the preceding `after` must still
+    // move the block down, or "collapsing" would just be "ignore space_before".
+    let larger = first_y_of_second_para(12.0, 30.0);
+    assert!(
+        larger > baseline + 17.0,
+        "a `before` larger than the preceding `after` must top the gap up to it: \
+         {baseline} vs {larger}"
+    );
+}
+
+/// `space_before` is suppressed at a page break, but **not** on the document's
+/// first paragraph.
+///
+/// Both halves measured against Word 16.0: a paragraph carrying
+/// `PageBreakBefore` puts its first ink at the same `y` whether it declares
+/// `before = 0` or `before = 18pt`, while the document's first paragraph moves
+/// down by exactly its declared 24pt. Only the arrival route separates the two
+/// cases, which is why the flow tracks it rather than testing the cursor.
+#[test]
+fn space_before_is_dropped_after_a_page_break_but_not_at_the_document_start() {
+    fn first_run_y_on_page(page: usize, before: f64, page_break: bool) -> f32 {
+        let mut r = test_resources();
+        let p1 = make_para("Page one");
+        let p2 = StyledParagraph {
+            direct_para_props: Some(Box::new(ParaProps {
+                space_before: Some(Spacing::Exact(Points::new(before))),
+                page_break_before: page_break.then_some(true),
+                ..Default::default()
+            })),
+            ..make_para("Page two")
+        };
+        let section = section_of(vec![p1, p2], PageLayout::default());
+        let (pages, _) = flow_paginated(&mut r, &section);
+        pages[page]
+            .content_items
+            .iter()
+            .find_map(|i| match i {
+                PositionedItem::GlyphRun(run) => Some(run.origin.y),
+                _ => None,
+            })
+            .expect("a glyph run on the page")
+    }
+
+    // After a page break: the declared space_before must not move the content.
+    let none = first_run_y_on_page(1, 0.0, true);
+    let some = first_run_y_on_page(1, 18.0, true);
+    assert!(
+        (some - none).abs() < 0.01,
+        "space_before must be dropped after a page break: {none} vs {some}"
+    );
+
+    // At the document start it must still apply — the inversion that keeps the
+    // rule from becoming "ignore space_before at any page top".
+    let doc_start_none = first_run_y_on_page(0, 0.0, true);
+    let doc_start_some = {
+        let mut r = test_resources();
+        let p1 = StyledParagraph {
+            direct_para_props: Some(Box::new(ParaProps {
+                space_before: Some(Spacing::Exact(Points::new(24.0))),
+                ..Default::default()
+            })),
+            ..make_para("Page one")
+        };
+        let section = section_of(vec![p1], PageLayout::default());
+        let (pages, _) = flow_paginated(&mut r, &section);
+        pages[0]
+            .content_items
+            .iter()
+            .find_map(|i| match i {
+                PositionedItem::GlyphRun(run) => Some(run.origin.y),
+                _ => None,
+            })
+            .expect("a glyph run")
+    };
+    assert!(
+        doc_start_some > doc_start_none + 20.0,
+        "the document's first paragraph must keep its space_before: \
+         {doc_start_none} vs {doc_start_some}"
+    );
+}

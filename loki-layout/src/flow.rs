@@ -60,19 +60,11 @@ use tail::{flow_footnotes, flow_hrule, get_items_max_x};
 pub use dispatch::{NESTED_INDENT_PT, list_marker, synthesize_list_item_para};
 pub use tail::synthesize::{synthesize_heading_para, synthesize_plain_para};
 
-use std::collections::HashMap;
-
-use loki_doc_model::StyleCatalog;
 use loki_doc_model::style::list_style::ListId;
 
-use crate::LayoutOptions;
-use crate::font::FontResources;
-use crate::geometry::{LayoutInsets, LayoutSize};
 use crate::incremental::{FlowCheckpoint, PageStart};
 use crate::items::PositionedItem;
-use crate::mode::LayoutMode;
-use crate::resolve::CollectedNote;
-use crate::result::{LayoutPage, PageParagraphData};
+use crate::result::LayoutPage;
 
 use para_impl::{flow_keep_with_next_chain, flow_paragraph};
 
@@ -148,101 +140,9 @@ pub enum LayoutWarning {
 
 // ── Private flow state ────────────────────────────────────────────────────────
 
-pub(super) struct FlowState<'a> {
-    pub(super) resources: &'a mut FontResources,
-    pub(super) catalog: &'a StyleCatalog,
-    pub(super) mode: &'a LayoutMode,
-    pub(super) display_scale: f32,
-    /// Layout options forwarded from the [`layout_document`] caller.
-    pub(super) options: &'a LayoutOptions,
-    /// Current y within the current page content area (or canvas).
-    pub(super) cursor_y: f32,
-    pub(super) content_width: f32,
-    /// Items accumulating in the current page (or entire canvas for continuous).
-    pub(super) current_items: Vec<PositionedItem>,
-    /// Completed pages (paginated mode only).
-    pub(super) pages: Vec<LayoutPage>,
-    pub(super) page_size: LayoutSize,
-    pub(super) margins: LayoutInsets,
-    /// Height of the content area within a page (page_height − v_margins).
-    pub(super) page_content_height: f32,
-    /// 1-indexed current page number.
-    pub(super) page_number: usize,
-    /// Accumulated warnings.
-    pub(super) warnings: Vec<LayoutWarning>,
-    /// Accumulated horizontal indentation in points.
-    pub(super) current_indent: f32,
-    /// Per-list counters: `ListId` → per-level counters (`0` = uninitialised).
-    pub(super) list_counters: HashMap<ListId, [u32; 9]>,
-    /// `ListId` of the most recently placed list item (detects list changes).
-    pub(super) prev_list_id: Option<ListId>,
-    /// Footnote/endnote counter for the section (bumped by `walk_inlines`).
-    pub(super) note_counter: u32,
-    /// Footnotes whose reference is on the **current page**, laid out at its
-    /// foot by `finish_page` (their height reserved from `page_content_height`
-    /// so body content stops above the band — per-page, matching Word).
-    pub(super) pending_footnotes: Vec<CollectedNote>,
-    /// Endnotes, held for the section-end flush (`flow_footnotes`) rather than
-    /// the per-page footnote band.
-    pub(super) pending_endnotes: Vec<CollectedNote>,
-    /// Points reserved at the foot of the **current page** for the footnotes
-    /// collected so far (separator band + each note's measured height). Shrinks
-    /// [`content_bottom`](Self::content_bottom) so body content stops above the
-    /// band; reset to `0` at each page boundary (`finish_page`).
-    pub(super) footnote_reserved: f32,
-    /// Re-entrancy guard: `true` while `finish_page` is laying out the footnote
-    /// band, so a nested page flush during that work does not recurse.
-    pub(super) rendering_footnotes: bool,
-    /// Paragraph metadata for the current page (block index, layout, origin).
-    pub(super) current_paragraphs: Vec<PageParagraphData>,
-    /// Clean-page-top checkpoints for incremental relayout (top-level only).
-    pub(super) checkpoints: Vec<PageStart>,
-    /// Number of text columns (`1` = single); when `> 1`,
-    /// [`content_width`](Self::content_width) is the *current* column's width.
-    pub(super) columns: u8,
-    /// Per-column widths in points (length `columns`; may be unequal). Column
-    /// x-offsets are the running sum of preceding widths plus `column_gap` per
-    /// gap. `content_width` tracks the current column's entry.
-    pub(super) column_widths: Vec<f32>,
-    /// Gap between adjacent columns in points (only when `columns > 1`).
-    pub(super) column_gap: f32,
-    /// Whether to draw a separator line between columns.
-    pub(super) column_separator: bool,
-    /// 0-based index of the column currently being filled.
-    pub(super) col_index: u8,
-    /// Content-area y where the current column band begins (`0` normally; mid-page
-    /// for a `continuous` section break that starts a band below the previous one).
-    pub(super) column_top_y: f32,
-    /// First `current_items` index of the current column (shifted at finish).
-    pub(super) column_item_start: usize,
-    /// First `current_paragraphs` index of the column (parallel to above).
-    pub(super) column_para_start: usize,
-    /// Document comments, looked up by id for the gutter panel; empty in nested flows.
-    pub(super) comments: &'a [loki_doc_model::content::annotation::Comment],
-    /// Comment anchors (`id`, content-local `y`) on the current page, consumed by
-    /// [`finish_page`] for the gutter comment panel.
-    pub(super) pending_comment_anchors: Vec<(String, f32)>,
-    /// Break over-long words to the width (`overflow-wrap: anywhere`); set
-    /// while flowing table-cell content so words wrap to the column width.
-    pub(super) break_long_words: bool,
-    /// A float taller than its anchoring paragraph whose remaining extent the
-    /// following paragraphs keep wrapping beside; cleared on page boundaries.
-    pub(super) active_float: Option<float_impl::ActiveFloat>,
-    /// Editing-path context for nested content (see [`editing::NestedEditing`]).
-    pub(super) nested_editing: Option<editing::NestedEditing>,
-    /// Between-border override for the paragraph about to flow (gap #26).
-    pub(super) staged_between: Option<para_between::BetweenOverride>,
-    /// Newest block observed to start a fresh page, with its pre-block resume
-    /// snapshot — the last-page balancing seed (`flow_balance`; multi-column
-    /// flows only). `None`d when a block spans several page advances.
-    pub(super) tail_candidate: Option<PageStart>,
-    /// Table-region character defaults for the cell currently flowing (4a.3);
-    /// merged under the paragraph chain by `flatten_paragraph_with_base`.
-    pub(super) cell_char_defaults: Option<loki_doc_model::style::props::char_props::CharProps>,
-    /// Active margin line-numbering state for the section (`w:lnNumType`), or
-    /// `None` when the section has no line numbering (the common case).
-    pub(super) line_num: Option<line_numbers::LineNumberState>,
-}
+#[path = "flow_state.rs"]
+mod state;
+pub(super) use state::FlowState;
 
 impl FlowState<'_> {
     /// Snapshots the resumable flow state at a clean page top.

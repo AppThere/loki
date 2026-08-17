@@ -101,6 +101,8 @@ pub(super) fn new_flow_state<'a>(
             .line_numbering
             .as_ref()
             .map(super::line_numbers::LineNumberState::new),
+        last_space_after: 0.0,
+        suppress_space_before: false,
     }
 }
 
@@ -111,6 +113,60 @@ impl FlowState<'_> {
     /// Used only by the "space remaining on this page" break checks.
     pub(super) fn content_bottom(&self) -> f32 {
         (self.page_content_height - self.footnote_reserved).max(self.cursor_y)
+    }
+
+    /// Opens a block by advancing the cursor for its `space_before`,
+    /// **collapsed** against the `space_after` the previous block already
+    /// contributed: the gap between two blocks is `max(after, before)`, not
+    /// their sum.
+    ///
+    /// # Why max rather than sum
+    ///
+    /// This is Word's behaviour, and it was measured rather than assumed:
+    /// two paragraphs with `after = 12pt` on the first, exported to PDF by
+    /// Word 16.0 and rasterised at 144 dpi, leave the same 42 px gap whether
+    /// the second declares `before = 0` or `before = 6pt`. Summing instead
+    /// leaked the smaller of the two at *every* boundary, and because the
+    /// error accumulates down the page it eventually overflows one — Loki
+    /// needed 15 pages for a 14-page Word document, after which every page
+    /// compared against unrelated content.
+    ///
+    /// Applying only the excess (`before - already`) is what makes this
+    /// `max()`: the previous block's `space_after` has already moved the
+    /// cursor, so adding the difference tops it up to the larger of the two
+    /// and adds nothing when it is already the larger.
+    /// At the very top of a page or column, `space_before` is **suppressed
+    /// entirely** rather than collapsed. Also measured: a paragraph carrying
+    /// `PageBreakBefore` puts its first ink at the same `y` whether it declares
+    /// `before = 0` or `before = 18pt` — Word drops it, because the page margin
+    /// already provides the separation the spacing exists to create.
+    ///
+    /// This is why the reset at a break clears the pending `space_after`
+    /// *without* leaving `space_before` to be applied in full: the two rules
+    /// are one decision, and splitting them across two places is how the
+    /// paginator would end up honouring one and not the other.
+    pub(super) fn advance_space_before(&mut self, before: f32) {
+        if std::mem::take(&mut self.suppress_space_before) {
+            self.last_space_after = 0.0;
+            return;
+        }
+        self.cursor_y += (before - self.last_space_after).max(0.0);
+        self.last_space_after = 0.0;
+    }
+
+    /// Closes a block by advancing the cursor for its `space_after` and
+    /// remembering it, so the next block's `space_before` collapses against it.
+    pub(super) fn apply_space_after(&mut self, after: f32) {
+        self.cursor_y += after;
+        self.last_space_after = after;
+    }
+
+    /// Forgets any pending `space_after` — called at a page or column break,
+    /// where there is no longer a preceding block on this page to collapse
+    /// against.
+    pub(super) fn clear_pending_space(&mut self) {
+        self.last_space_after = 0.0;
+        self.suppress_space_before = true;
     }
 }
 

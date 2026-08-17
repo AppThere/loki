@@ -78,7 +78,8 @@ pub(super) fn place_paragraph_layout(
             item.translate(dx, dy);
             state.current_items.push(item);
         }
-        state.cursor_y += para_layout.height + resolved.space_after;
+        state.cursor_y += para_layout.height;
+        state.apply_space_after(resolved.space_after);
         return;
     }
 
@@ -101,7 +102,7 @@ pub(super) fn place_paragraph_layout(
             let available = state.content_bottom() - state.cursor_y;
             if needed > available && state.cursor_y > 0.0 {
                 break_column(state);
-                state.cursor_y += resolved.space_before;
+                state.advance_space_before(resolved.space_before);
             }
             // Fits on current (or freshly flushed) column/page.
             let dy = state.cursor_y;
@@ -115,7 +116,8 @@ pub(super) fn place_paragraph_layout(
                 item.translate(dx, dy);
                 state.current_items.push(item);
             }
-            state.cursor_y += para_layout.height + resolved.space_after;
+            state.cursor_y += para_layout.height;
+            state.apply_space_after(resolved.space_after);
             return;
         }
     }
@@ -134,5 +136,5 @@ pub(super) fn place_paragraph_layout(
         .preserve_for_editing
         .then(|| Arc::clone(&para_layout));
     split_and_place_loop(state, resolved, &para_layout, arc_layout, block_index, dx);
-    state.cursor_y += resolved.space_after;
+    state.apply_space_after(resolved.space_after);
 }
