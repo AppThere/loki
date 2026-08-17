@@ -303,15 +303,22 @@ fn tbl_cell_mar_resolves_through_the_based_on_chain() {
     assert_eq!(resolved.right.map(|p| p.value()), Some(5.4));
     assert_eq!(resolved.top.map(|p| p.value()), Some(0.0));
 
-    // Guard inversion: an unknown style resolves to nothing rather than
-    // borrowing the last style looked up.
-    assert!(
-        doc.styles
-            .table_cell_padding_for(Some("NoSuchStyle"))
-            .is_empty(),
-        "an unknown style must contribute no padding"
+    // A table that names no style still gets the `w:default="1"` style's
+    // margins — ECMA-376 §17.7.6 applies the default table style to every
+    // table that does not reference one, and Word parks `w:tblCellMar` there.
+    // Asserting `is_empty()` here (as this test first did) locks in a
+    // style-less table rendering with no cell margins at all.
+    assert_eq!(
+        doc.styles.default_table_style.as_ref().map(StyleId::as_str),
+        Some("TableNormal"),
+        "fixture precondition: the document declares a default table style"
     );
-    assert!(doc.styles.table_cell_padding_for(None).is_empty());
+    let styleless = doc.styles.table_cell_padding_for(None);
+    assert_eq!(styleless.left.map(|p| p.value()), Some(5.4));
+    assert_eq!(styleless.right.map(|p| p.value()), Some(5.4));
+    // A dangling reference resolves the same way, rather than to nothing.
+    let dangling = doc.styles.table_cell_padding_for(Some("NoSuchStyle"));
+    assert_eq!(dangling.left.map(|p| p.value()), Some(5.4));
 }
 
 /// A table style's `w:tblCellMar` must survive a DOCX export→import cycle.
