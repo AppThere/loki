@@ -124,10 +124,7 @@ impl StyleCatalog {
     /// lookup silently returns "no borders" for it and the grid disappears.
     #[must_use]
     pub fn table_borders_for(&self, style_name: Option<&str>) -> Option<TableBorders> {
-        self.resolve_table_chain(&StyleId::new(style_name?), |s| {
-            s.table_props.borders.clone()
-        })?
-        .value
+        self.table_prop_for(style_name, |s| s.table_props.borders.clone())
     }
 
     /// The default cell padding a table named `style_name` contributes,
@@ -139,11 +136,33 @@ impl StyleCatalog {
     /// case it is only ever reachable through inheritance.
     #[must_use]
     pub fn table_cell_padding_for(&self, style_name: Option<&str>) -> CellPadding {
-        style_name
-            .and_then(|n| {
-                self.resolve_table_chain(&StyleId::new(n), |s| s.table_props.cell_padding.clone())
-            })
-            .and_then(|r| r.value)
+        self.table_prop_for(style_name, |s| s.table_props.cell_padding.clone())
             .unwrap_or_default()
+    }
+
+    /// One table-style property, resolved for a table that references
+    /// `style_name` — through the `basedOn` chain, and through the document's
+    /// `w:default="1"` table style when the reference is absent or dangling.
+    ///
+    /// The default-style leg is not a fallback nicety: ECMA-376 §17.7.6 makes
+    /// the default table style apply to every table that does not name one, and
+    /// Word parks `w:tblCellMar` there. Resolving only the named chain leaves a
+    /// style-less table with no cell margins at all, which is what this
+    /// function was doing before.
+    ///
+    /// Shared by both public resolvers so the "named chain, else default style"
+    /// rule has one derivation rather than one per property.
+    fn table_prop_for<T: Clone>(
+        &self,
+        style_name: Option<&str>,
+        get: impl Fn(&TableStyle) -> Option<T> + Copy,
+    ) -> Option<T> {
+        if let Some(name) = style_name
+            && let Some(resolved) = self.resolve_table_chain(&StyleId::new(name), get)
+        {
+            return resolved.value;
+        }
+        let default_id = self.default_table_style.clone()?;
+        self.resolve_table_chain(&default_id, get)?.value
     }
 }
