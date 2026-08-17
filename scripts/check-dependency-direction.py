@@ -42,6 +42,14 @@ LAYERS: dict[str, float] = {
     "loki-vba": 2,
     # L2 macro signature verifier (leaf: external crypto only; macro spec Phase 8A / ADR-0014)
     "loki-macro-sig": 2,
+    # L2 IPP print client (leaf: external `ipp` only). Introduced with the
+    # headless server and first filed at L7 with it, but nothing about it is
+    # server-side: it is a protocol client with no internal dependencies, and
+    # the desktop Print dialog consumes it directly (§6). Layer follows the
+    # dependency graph, not the subsystem a crate happened to arrive with.
+    "loki-print": 2,
+    # L2 text-source importers (depend on the model only, like the format crates)
+    "loki-markdown": 2, "loki-fountain": 2,
     # L3 layout
     "loki-layout": 3,
     # L3b exporter-above-layout
@@ -51,6 +59,9 @@ LAYERS: dict[str, float] = {
     "loki-renderer": 4, "loki-render-cpu": 4,
     # L5 ui / app-shell
     "appthere-ui": 5, "loki-app-shell": 5,
+    # L5 platform capability (per-platform system print dialog; the shape
+    # `loki-file-access` established — a leaf the app binaries call into)
+    "loki-print-dialog": 5,
     # L5 macro trust store + capability broker + host services (macro spec Phase 4)
     "loki-macro-host": 5,
     # L6 app binaries
@@ -61,7 +72,7 @@ LAYERS: dict[str, float] = {
     # the client app binaries, so it sits above L6. Layers order the server
     # crates by their own dependency graph (all edges verified downhill).
     # L7 server foundation
-    "loki-model": 7, "loki-crypto": 7, "loki-server-audit": 7, "loki-print": 7,
+    "loki-model": 7, "loki-crypto": 7, "loki-server-audit": 7,
     # L8 server services + document conversion
     "loki-server-store": 8, "loki-server-auth": 8, "loki-convert": 8,
     # L9 collaboration relay

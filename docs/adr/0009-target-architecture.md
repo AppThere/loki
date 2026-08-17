@@ -231,6 +231,9 @@ mechanical. None require a rewrite — consistent with D3: the target is reached
 | loki-odf | L2 | loki-doc-model, loki-primitives, loki-sheet-model |
 | loki-ooxml | L2 | loki-doc-model, loki-graphics, loki-opc, loki-presentation-model, loki-primitives, loki-sheet-model |
 | loki-epub | L2 | loki-doc-model, loki-primitives |
+| loki-markdown | L2 | loki-doc-model |
+| loki-fountain | L2 | loki-doc-model |
+| loki-print | L2 | — (IPP client; leaf over the external `ipp` crate) |
 | loki-layout | L3 | loki-doc-model, loki-fonts, loki-primitives, loki-spell |
 | loki-pdf | L3b | loki-doc-model, loki-layout, loki-primitives |
 | appthere-canvas | L4 | — (ADR-0016: absorbed `loki-render-cache`, now deleted) |
@@ -239,6 +242,7 @@ mechanical. None require a rewrite — consistent with D3: the target is reached
 | loki-render-cpu | L4 | loki-layout (deterministic CPU rasterizer; conformance candidate render path) |
 | appthere-ui | L5 | loki-i18n |
 | loki-app-shell | L5 | loki-i18n, loki-spell |
+| loki-print-dialog | L5 | — (per-platform system print dialog; the `loki-file-access` shape) |
 | loki-text | L6 | appthere-ui, loki-app-shell, loki-doc-model, loki-epub, loki-fonts, loki-i18n, loki-layout, loki-odf, loki-ooxml, loki-pdf, loki-renderer, loki-templates, loki-vello |
 | loki-spreadsheet | L6 | appthere-ui, loki-app-shell, loki-doc-model, loki-fonts, loki-i18n, loki-layout, loki-odf, loki-ooxml, loki-renderer, loki-sheet-model, loki-vello |
 | loki-presentation | L6 | appthere-ui, loki-app-shell, loki-doc-model, loki-fonts, loki-graphics, loki-i18n, loki-layout, loki-odf, loki-ooxml, loki-presentation-model, loki-renderer, loki-vello |
@@ -249,7 +253,6 @@ mechanical. None require a rewrite — consistent with D3: the target is reached
 | loki-model | L7 | — |
 | loki-crypto | L7 | — |
 | loki-server-audit | L7 | — |
-| loki-print | L7 | — |
 | loki-server-store | L8 | loki-crypto, loki-model, loki-server-audit |
 | loki-server-auth | L8 | loki-model |
 | loki-convert | L8 | loki-doc-model, loki-epub, loki-odf, loki-ooxml, loki-pdf, loki-sheet-model |
@@ -263,6 +266,25 @@ effort (spec ADRs C012–C028) merged in: a separate backend stack that consumes
 the document/format libraries (`loki-convert` reaches down to `loki-pdf` at L3b)
 but is never consumed by the client app binaries, so it sits above L6. The
 layers order those crates by their own dependency graph.
+
+**`loki-print` moved L7 → L2 (2026-08-16).** It arrived with that subsystem and
+was filed alongside it, but nothing about it is server-side: it is an IPP
+protocol client with **no internal dependencies at all**, over the external
+`ipp` crate. When the desktop Print dialog (§6) started dispatching jobs
+directly, `loki-text` (L6) → `loki-print` (L7) became the branch's only uphill
+edge.
+
+The alternative — leaving the layer and inverting the edge behind a port
+injected from above — would have added dynamic dispatch on the print path and a
+trait with two implementors, to work around a layer number rather than fix it.
+The dependency graph is the authority here: a crate with no internal
+dependencies is foundational by construction, and `loki-spell` (L0, and it
+fetches dictionaries over the network) is the standing precedent that a leaf
+with I/O belongs low rather than high. L2 rather than L0 to sit with the other
+external-protocol leaves, `loki-vba` and `loki-macro-sig`.
+
+The general rule this records: **a crate's layer follows its dependency graph,
+not the subsystem it happened to arrive with.**
 
 The former A-8 `loki-renderer → appthere-ui` edge has been removed (M-1), so
 **every edge is now conformant** — `scripts/check-dependency-direction.py`
