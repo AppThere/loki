@@ -12,7 +12,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use parley::{AlignmentOptions, InlineBox, InlineBoxKind, PositionedLayoutItem};
+use parley::{AlignmentOptions, IndentOptions, InlineBox, InlineBoxKind, PositionedLayoutItem};
 
 use crate::font::FontResources;
 use crate::geometry::LayoutRect;
@@ -298,28 +298,25 @@ fn layout_paragraph_uncached(
         };
     }
 
-    // NOTE(indent-hanging-width): a hanging-indent paragraph's first line wraps
-    // at the same `line_w` as the rest, so it holds `indent_hanging` less text
-    // than it should — it is *placed* that far to the left (see the per-line
-    // `indent_x` below) without being given the room that opens up. Fidelity
-    // gap #8 (partial).
+    // Hanging indent (fidelity gap #8, closed 2026-08-17). The first line was
+    // placed `indent_hanging` to the left without being given the room that
+    // opens up, so it wrapped that much early — measured against Word on
+    // `iris-blueprint`: bulleted lines stopped 36 px (18 pt, exactly the
+    // hanging amount) short of the right margin, dropping a word per bullet and
+    // pushing content onto later pages.
     //
-    // **The reason first written here — "Parley 0.6 exposes no per-line width
-    // control" — is no longer true.** This crate is on parley 0.10, which has
-    // `BreakLines::set_line_max_advance` (break line 0 at `line_w +
-    // indent_hanging`, the rest at `line_w`) and, better, a native
-    // `Layout::set_indent(indent_hanging, IndentOptions { hanging: true })`
-    // that expresses the whole rule — at which point the manual `indent_x`
-    // shift below becomes the double application.
-    //
-    // Measured 2026-08-06 (ADR-0017 §5.9): this is the whole of the residual
-    // between this path and the DOM reflow view, which gets it right because
-    // the marker sits in its own box. On a 278 px column a nested item's first
-    // line filled 170.06 pt of the 172.50 pt it was given, and the word it then
-    // dropped needed 190.08 pt — inside the 190.50 pt it was entitled to. The
-    // fix moves line breaks in every list and every hanging paragraph, so it
-    // wants its own comparison sweep rather than a rider on one.
-    let line_w = (available_width - para_props.indent_start - para_props.indent_end).max(0.0);
+    // parley 0.10's `Layout::set_text_indent(amount, IndentOptions { hanging })`
+    // expresses the whole rule: continuation lines get the amount as a start
+    // margin, which both narrows them and offsets them (`line.metrics.offset =
+    // indent`, applied in `align`). So the per-line `indent_x` shift below now
+    // uses the *first* line's x for every line — Parley supplies the rest, and
+    // adding it here again would double-apply it.
+    // The line box runs from the paragraph's *leftmost* edge — which is the
+    // first line's start under a hanging indent — to the end indent. Parley is
+    // then told about the hanging amount (below), so it gives continuation
+    // lines that much less room and offsets them itself.
+    let first_line_x = (para_props.indent_start - para_props.indent_hanging).max(0.0);
+    let line_w = (available_width - first_line_x - para_props.indent_end).max(0.0);
 
     // ── Tab stop expansion (gap #7) ───────────────────────────────────────────
     // Parley has no native tab-stop API. Two passes: (1) probe with zero-width
@@ -428,6 +425,13 @@ fn layout_paragraph_uncached(
     // Plan the drop cap (its enlarged glyph + band geometry) from the body's
     // first-line metrics. `drop_plan` keeps the line height for `cover_height`.
     let drop_plan = if let Some((dc, cap_text, base)) = &drop_state {
+        layout.set_text_indent(
+            para_props.indent_hanging,
+            IndentOptions {
+                hanging: true,
+                each_line: false,
+            },
+        );
         layout.break_all_lines(Some(line_w)); // metrics only
         let (lh, asc, bl) = layout
             .lines()
@@ -523,6 +527,13 @@ fn layout_paragraph_uncached(
         .as_ref()
         .map(|b| if b.shift_text { b.inset } else { 0.0 })
         .unwrap_or(0.0);
+    layout.set_text_indent(
+        para_props.indent_hanging,
+        IndentOptions {
+            hanging: true,
+            each_line: false,
+        },
+    );
     layout.break_all_lines(Some((line_w - band_inset).max(1.0)));
     layout.align(para_props.alignment, AlignmentOptions::default());
 
@@ -592,13 +603,10 @@ fn layout_paragraph_uncached(
         // Index into `items` where this line's emitted items begin (used to wrap
         // them in a clip layer for exact line height).
         let line_item_start = items.len();
-        // Hanging indent: the first line shifts left so the marker is visible to
-        // the left of `indent_start`. Subsequent lines use the full `indent_start`.
-        let mut indent_x = if line_index == 0 && para_props.indent_hanging > 0.0 {
-            para_props.indent_start - para_props.indent_hanging
-        } else {
-            para_props.indent_start
-        };
+        // Every line starts at the paragraph's leftmost edge; Parley has
+        // already offset the continuation lines by the hanging amount (see the
+        // `set_text_indent` note above), so re-adding it here would double it.
+        let mut indent_x = (para_props.indent_start - para_props.indent_hanging).max(0.0);
         // Leading lines beside a drop cap / float band are shifted right to
         // clear it; lines below it return to the paragraph's left edge.
         if line_index < drop_lines {
