@@ -129,6 +129,31 @@ pub(crate) fn parse_rpr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxR
     Ok(rpr)
 }
 
+/// Replaces literal line feeds in `w:t` content with single spaces.
+///
+/// A line break in OOXML is `<w:br/>`; a line feed sitting in `w:t` character
+/// data is only whitespace, and Word renders it as one space rather than
+/// breaking the line. Generators that pretty-print a code block or a directory
+/// tree into a single `<w:t xml:space="preserve">` rely on this — carrying the
+/// feeds through as breaks turns one wrapped paragraph into as many lines as it
+/// has feeds. In `iris-blueprint.docx` that made a 12-line tree 21 lines, which
+/// overflowed page 9 and pushed the whole "8. Technology Stack" table onto the
+/// next page.
+///
+/// One space, not a collapse: `xml:space="preserve"` keeps the run's own
+/// indentation, and Word shows a feed followed by two indent spaces as three
+/// spaces. The substitution is 1:1 in `char`s, so byte offsets are unchanged.
+fn newlines_to_spaces(text: String) -> String {
+    /// U+000A. Named so the substitution reads the same as the rule it
+    /// implements, and so a stray edit cannot turn it into a real newline.
+    const LF: char = '\u{000A}';
+    // XML parsing has already normalised CRLF and CR to LF (XML 1.0 §2.11).
+    if text.contains(LF) {
+        return text.replace(LF, " ");
+    }
+    text
+}
+
 /// Parses a `w:r` element. Called after the Start("r") event is consumed.
 // Function body is a single large match over XML events; splitting would reduce readability.
 #[allow(clippy::too_many_lines)]
@@ -167,6 +192,7 @@ pub(crate) fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
                         }
                         tbuf.clear();
                     }
+                    let text = newlines_to_spaces(text);
                     run.children.push(DocxRunChild::Text { text, preserve });
                     continue;
                 }
