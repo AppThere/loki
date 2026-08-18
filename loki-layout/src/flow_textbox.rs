@@ -121,6 +121,9 @@ pub(super) fn plan_textbox(
             color: line,
             width: 1.0,
             style: BorderStyle::Solid,
+            // The text box already insets its content by `BOX_PAD`; the frame
+            // adds no further room of its own.
+            spacing: 0.0,
         });
         items.push(PositionedItem::BorderRect(PositionedBorderRect {
             rect,

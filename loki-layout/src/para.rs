@@ -39,7 +39,7 @@ mod types;
 #[path = "para_underlays.rs"]
 mod underlays;
 
-use para_box::prepend_para_box;
+use para_box::{apply_border_box, shift_boundaries};
 
 pub use index_map::ByteIndexMap;
 pub use layout_types::{
@@ -246,10 +246,13 @@ fn layout_paragraph_uncached(
         // The border/rule spans the full content column (indent to indent).
         let content_w =
             (available_width - para_props.indent_start - para_props.indent_end).max(0.0);
+        // A rule is room, not just ink (see `apply_border_box`).
         let mut items = Vec::new();
-        prepend_para_box(&mut items, para_props, available_width, line_h);
+        let (bt, total_h) = apply_border_box(&mut items, para_props, available_width, line_h);
+        let first_baseline = first_baseline + bt;
+        let line_boundaries = shift_boundaries(line_boundaries, bt);
         return ParagraphLayout {
-            height: line_h,
+            height: total_h,
             width: content_w,
             items,
             first_baseline,
@@ -466,14 +469,15 @@ fn layout_paragraph_uncached(
             }
             content_bottom = content_bottom.max(p.bottom);
         }
-        prepend_para_box(&mut items, para_props, available_width, body.height);
+        let (bt, outer) = apply_border_box(&mut items, para_props, available_width, body.height);
+        content_bottom += outer - body.height;
         return ParagraphLayout {
             height: content_bottom,
             width: body.width,
             items,
-            first_baseline: body.first_baseline,
-            last_baseline: body.last_baseline,
-            line_boundaries: body.line_boundaries,
+            first_baseline: body.first_baseline + bt,
+            last_baseline: body.last_baseline + bt,
+            line_boundaries: shift_boundaries(body.line_boundaries, bt),
             parley_layout: None,
             orig_to_clean: ByteIndexMap::from_indices(&orig_to_clean),
             clean_to_orig: ByteIndexMap::from_indices(&clean_to_orig),
@@ -669,7 +673,8 @@ fn layout_paragraph_uncached(
         content_bottom = content_bottom.max(p.bottom);
     }
 
-    prepend_para_box(&mut items, para_props, available_width, total_height);
+    let (bt, outer) = apply_border_box(&mut items, para_props, available_width, total_height);
+    let content_bottom = content_bottom + (outer - total_height);
 
     let parley_layout = if preserve_for_editing {
         Some(Arc::new(layout))
@@ -683,9 +688,9 @@ fn layout_paragraph_uncached(
         height: content_bottom,
         width: total_width,
         items,
-        first_baseline,
-        last_baseline,
-        line_boundaries,
+        first_baseline: first_baseline + bt,
+        last_baseline: last_baseline + bt,
+        line_boundaries: shift_boundaries(line_boundaries, bt),
         parley_layout,
         orig_to_clean: ByteIndexMap::from_indices(&orig_to_clean),
         clean_to_orig: ByteIndexMap::from_indices(&clean_to_orig),

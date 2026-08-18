@@ -248,6 +248,7 @@ pub(crate) fn convert_border(border: &DocBorder) -> Option<BorderEdge> {
     Some(BorderEdge {
         color: resolve_color(border.color.as_ref()),
         width: pts_to_f32(border.width),
+        spacing: border.spacing.map(pts_to_f32).unwrap_or(0.0),
         style: match border.style {
             DocBorderStyle::Dashed => BorderStyle::Dashed,
             DocBorderStyle::Dotted => BorderStyle::Dotted,

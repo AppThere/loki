@@ -176,6 +176,14 @@ pub struct BorderEdge {
     pub width: f32,
     /// Border style (solid, dashed, etc.).
     pub style: BorderStyle,
+    /// Gap in points between the border and the text it encloses — OOXML
+    /// `w:pBdr/*@w:space`, ODF `fo:padding-*`.
+    ///
+    /// The rule sits this far outside the text, so together with
+    /// [`width`](Self::width) it is room the paragraph occupies *in addition
+    /// to* its lines: Word's blank-paragraph-with-a-bottom-border idiom (a
+    /// horizontal rule) is `space + width` tall even though it has no text.
+    pub spacing: f32,
 }
 
 /// The stroke pattern for a border edge.

@@ -569,6 +569,124 @@ fn empty_paragraph_line_height_follows_the_document_default() {
 }
 
 #[test]
+fn a_border_occupies_its_space_and_width() {
+    // Word treats a paragraph border as part of the paragraph's *extent*, not
+    // as ink drawn over the surrounding spacing: the rule sits `w:space`
+    // outside the text and occupies its own width, so the following block
+    // starts that much lower. `iris-blueprint.docx` uses the blank-paragraph
+    // horizontal-rule idiom 14 times (`w:sz="4" w:space="1"` = 0.5 + 1 pt);
+    // dropping it made Loki's blank->heading transition 1.58 pt tight against
+    // Word's own PDF, and left every rule one rule too short.
+    let mut r = test_resources();
+    let plain = layout_paragraph(
+        &mut r,
+        "",
+        &[],
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    )
+    .height;
+
+    let ruled = |r: &mut FontResources, width: f32, spacing: f32| {
+        let props = ResolvedParaProps {
+            border_bottom: Some(BorderEdge {
+                color: LayoutColor::BLACK,
+                width,
+                style: BorderStyle::Solid,
+                spacing,
+            }),
+            ..Default::default()
+        };
+        layout_paragraph(r, "", &[], &props, 400.0, 1.0, false).height
+    };
+
+    // Both terms count, and each on its own: a fix that honoured only the
+    // `space` offset (or only the rule's width) passes one of these and fails
+    // the other, so neither can be dropped.
+    let width_only = ruled(&mut r, 2.0, 0.0);
+    assert!(
+        (width_only - (plain + 2.0)).abs() < 0.01,
+        "the rule's own width must occupy room: got {width_only}, expected {}",
+        plain + 2.0
+    );
+    let spacing_only = ruled(&mut r, 0.0, 3.0);
+    assert!(
+        (spacing_only - (plain + 3.0)).abs() < 0.01,
+        "the `w:space` offset must occupy room: got {spacing_only}, expected {}",
+        plain + 3.0
+    );
+    let both = ruled(&mut r, 2.0, 3.0);
+    assert!(
+        (both - (plain + 5.0)).abs() < 0.01,
+        "space and width must both count: got {both}, expected {}",
+        plain + 5.0
+    );
+
+    // A top border insets the text rather than only growing the box — the
+    // first baseline must move down by the same extent, or the rule would
+    // overprint the line it is supposed to sit above.
+    let top_props = ResolvedParaProps {
+        border_top: Some(BorderEdge {
+            color: LayoutColor::BLACK,
+            width: 2.0,
+            style: BorderStyle::Solid,
+            spacing: 3.0,
+        }),
+        ..Default::default()
+    };
+    let text = "Ruled above";
+    let bare = layout_paragraph(
+        &mut r,
+        text,
+        &[single_span(text, 12.0)],
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+    let topped = layout_paragraph(
+        &mut r,
+        text,
+        &[single_span(text, 12.0)],
+        &top_props,
+        400.0,
+        1.0,
+        false,
+    );
+    assert!(
+        (topped.first_baseline - (bare.first_baseline + 5.0)).abs() < 0.01,
+        "a top border must push the first baseline down by space + width: \
+         got {} vs {}",
+        topped.first_baseline,
+        bare.first_baseline + 5.0
+    );
+
+    // …and the *glyphs* must move with it. `first_baseline` is a reported
+    // field; the ink is in `items`. Shifting only the former leaves the text
+    // where it was while the box grows around it, so the rule prints over the
+    // line it is supposed to sit above — a defect no assertion on the reported
+    // baseline can see.
+    let run_y = |p: &ParagraphLayout| -> f32 {
+        p.items
+            .iter()
+            .find_map(|i| match i {
+                PositionedItem::GlyphRun(g) => Some(g.origin.y),
+                _ => None,
+            })
+            .expect("paragraph should emit a glyph run")
+    };
+    let (bare_y, topped_y) = (run_y(&bare), run_y(&topped));
+    assert!(
+        (topped_y - (bare_y + 5.0)).abs() < 0.01,
+        "a top border must move the painted glyphs down by space + width, \
+         not just the reported baseline: got {topped_y} vs {}",
+        bare_y + 5.0
+    );
+}
+
+#[test]
 fn empty_paragraph_with_bottom_border_emits_a_rule() {
     // Word's horizontal-rule idiom: an empty paragraph carrying only a bottom
     // border must emit a border rect spanning the content column.
@@ -577,6 +695,7 @@ fn empty_paragraph_with_bottom_border_emits_a_rule() {
         color: LayoutColor::BLACK,
         width: 1.0,
         style: BorderStyle::Solid,
+        spacing: 0.0,
     };
     let props = ResolvedParaProps {
         border_bottom: Some(edge),
@@ -604,6 +723,7 @@ fn border_follows_background() {
         color: LayoutColor::BLACK,
         width: 1.0,
         style: BorderStyle::Solid,
+        spacing: 0.0,
     };
     let props = ResolvedParaProps {
         background_color: Some(LayoutColor::WHITE),
@@ -639,6 +759,7 @@ fn paragraph_border_spans_the_content_column() {
         color: LayoutColor::BLACK,
         width: 1.0,
         style: BorderStyle::Solid,
+        spacing: 0.0,
     };
     let props = ResolvedParaProps {
         border_bottom: Some(edge),
