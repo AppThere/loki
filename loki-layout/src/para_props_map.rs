@@ -15,7 +15,10 @@ use loki_doc_model::style::props::tab_stop::TabAlignment;
 use parley::Alignment;
 
 use crate::geometry::LayoutInsets;
-use crate::para::{ResolvedLineHeight, ResolvedListMarker, ResolvedParaProps, ResolvedTabStop};
+use crate::para::{
+    DEFAULT_PARA_MARK_SIZE, ResolvedLineHeight, ResolvedListMarker, ResolvedParaProps,
+    ResolvedTabStop,
+};
 
 use super::{convert_border, pts_to_f32, resolve_color};
 
@@ -169,5 +172,9 @@ pub(super) fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
         // Set by `resolve_para_props` from the block's `direct_char_props`
         // revision (`ParaProps` does not carry the paragraph mark's CharProps).
         para_mark_deleted_color: None,
+        // Overwritten by the flow engine from the resolved character chain —
+        // `ParaProps` carries no character properties, so the paragraph mark's
+        // size is not knowable here. See `ResolvedParaProps::default_font_size`.
+        default_font_size: DEFAULT_PARA_MARK_SIZE,
     }
 }

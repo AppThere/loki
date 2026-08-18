@@ -28,7 +28,7 @@ fn resolved(inlines: Vec<Inline>) -> (String, Vec<loki_layout::para::StyleSpan>)
         attr: NodeAttr::default(),
     };
     let mut notes = 0u32;
-    let (text, spans, _, _) = loki_layout::resolve::flatten_paragraph_with_base(
+    let (text, spans, _, _, _) = loki_layout::resolve::flatten_paragraph_with_base(
         &para,
         &StyleCatalog::new(),
         &mut notes,
@@ -154,7 +154,7 @@ fn split_item(text: &str, marker: &str) -> (Vec<super::Run>, Vec<super::Run>) {
     };
     let para = loki_layout::flow::synthesize_list_item_para(&para, marker, 18.0);
     let mut notes = 0u32;
-    let (flat, spans, _, _) = loki_layout::resolve::flatten_paragraph_with_base(
+    let (flat, spans, _, _, _) = loki_layout::resolve::flatten_paragraph_with_base(
         &para,
         &StyleCatalog::new(),
         &mut notes,

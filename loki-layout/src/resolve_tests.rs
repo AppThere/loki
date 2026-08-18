@@ -124,7 +124,7 @@ fn revision_display_modes_change_flattened_text_and_decoration() {
         |mode| crate::resolve::flatten_paragraph_with_base(&para, &catalog, &mut 0u32, None, mode);
 
     // All-Markup: both runs shown; insertion underlined, deletion struck.
-    let (text, spans, _, _) = flatten(RevisionDisplay::AllMarkup);
+    let (text, spans, _, _, _) = flatten(RevisionDisplay::AllMarkup);
     assert_eq!(text, "keep newgone");
     assert!(
         spans.iter().any(|s| s.underline.is_some()),
@@ -136,7 +136,7 @@ fn revision_display_modes_change_flattened_text_and_decoration() {
     );
 
     // Final: deletion hidden, insertion shown as normal text (no decoration).
-    let (text, spans, _, _) = flatten(RevisionDisplay::Final);
+    let (text, spans, _, _, _) = flatten(RevisionDisplay::Final);
     assert_eq!(text, "keep new");
     assert!(
         spans.iter().all(|s| s.underline.is_none()),
@@ -145,7 +145,7 @@ fn revision_display_modes_change_flattened_text_and_decoration() {
     assert!(spans.iter().all(|s| s.strikethrough.is_none()));
 
     // Original: insertion hidden, deletion shown as normal text.
-    let (text, spans, _, _) = flatten(RevisionDisplay::Original);
+    let (text, spans, _, _, _) = flatten(RevisionDisplay::Original);
     assert_eq!(text, "keep gone");
     assert!(
         spans.iter().all(|s| s.strikethrough.is_none()),

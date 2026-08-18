@@ -228,7 +228,7 @@ fn collect_families(blocks: &[Block], catalog: &StyleCatalog, out: &mut Vec<Stri
             _ => continue,
         };
         let mut notes = 0u32;
-        let (_, spans, _, _) = loki_layout::resolve::flatten_paragraph_with_base(
+        let (_, spans, _, _, _) = loki_layout::resolve::flatten_paragraph_with_base(
             para,
             catalog,
             &mut notes,

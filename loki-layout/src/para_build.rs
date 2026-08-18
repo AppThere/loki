@@ -46,7 +46,10 @@ pub(crate) fn push_para_styles(
     style_spans: &[StyleSpan],
 ) {
     builder.push_default(StyleProperty::Brush(LayoutColor::BLACK));
-    builder.push_default(StyleProperty::FontSize(12.0));
+    // The paragraph-mark size, not a constant: an empty paragraph has no style
+    // span, so this default alone sets its line height. See
+    // `ResolvedParaProps::default_font_size`.
+    builder.push_default(StyleProperty::FontSize(para_props.default_font_size));
     // Table cells break over-long words to the column width (CSS
     // `overflow-wrap: anywhere`); body paragraphs keep words intact.
     if para_props.break_long_words {

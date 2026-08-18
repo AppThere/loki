@@ -151,14 +151,17 @@ fn build_chain_layouts<'s>(
         };
 
         if let Some(para) = effective_para {
-            let resolved = resolve_para_props(&para, state.catalog);
-            let (text, spans, images, notes) = crate::resolve::flatten_paragraph_with_base(
-                &para,
-                state.catalog,
-                &mut counter,
-                state.cell_char_defaults.as_ref(),
-                state.options.revision_display,
-            );
+            let mut resolved = resolve_para_props(&para, state.catalog);
+            let (text, spans, images, notes, para_mark_size) =
+                crate::resolve::flatten_paragraph_with_base(
+                    &para,
+                    state.catalog,
+                    &mut counter,
+                    state.cell_char_defaults.as_ref(),
+                    state.options.revision_display,
+                );
+            // Sizes an empty paragraph's line (`default_font_size`).
+            resolved.default_font_size = para_mark_size;
             let mut layout = layout_paragraph_spelled(
                 state.resources,
                 &text,

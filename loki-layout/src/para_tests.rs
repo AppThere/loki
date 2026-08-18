@@ -507,6 +507,68 @@ fn empty_paragraph_occupies_one_line() {
 }
 
 #[test]
+fn empty_paragraph_line_height_follows_the_document_default() {
+    // An empty paragraph carries no `StyleSpan`, so its line height comes
+    // entirely from `ResolvedParaProps::default_font_size` — the paragraph
+    // mark's own size, resolved from the document's character chain. A fixed
+    // fallback instead mis-sizes every blank line in a document whose default
+    // is not that size, and because blank paragraphs are the usual spacer the
+    // error accumulates down the page (measured against Word on
+    // `iris-blueprint.docx`: 13.80 pt per blank line against Word's 12.65,
+    // which paginated the document a full page long).
+    let mut r = test_resources();
+    let empty_at = |r: &mut FontResources, size: f32| {
+        let props = ResolvedParaProps {
+            default_font_size: size,
+            ..ResolvedParaProps::default()
+        };
+        layout_paragraph(r, "", &[], &props, 400.0, 1.0, false).height
+    };
+
+    // The blank line must scale with the paragraph mark. Two different marks
+    // must not produce the same height — that equality is exactly what a
+    // hardcoded default looks like, so it is the assertion that has to fail.
+    let h8 = empty_at(&mut r, 8.0);
+    let h16 = empty_at(&mut r, 16.0);
+    assert!(
+        h16 > h8,
+        "a 16 pt paragraph mark must give a taller blank line than an 8 pt one, \
+         got {h16} vs {h8} — the mark's size is being ignored"
+    );
+
+    // And it must track the mark *proportionally*, not merely differ: a line
+    // sized from natural font metrics is a fixed multiple of the point size.
+    let ratio = h16 / h8;
+    assert!(
+        (ratio - 2.0).abs() < 0.05,
+        "blank-line height must be proportional to the paragraph mark \
+         (16 pt / 8 pt should be ~2.0), got {ratio} ({h16} / {h8})"
+    );
+
+    // A non-empty paragraph at the same size is the reference: the blank line
+    // must match the height of a line of real text, which is what Word does.
+    let text_h = layout_paragraph(
+        &mut r,
+        "x",
+        &[single_span("x", 11.0)],
+        &ResolvedParaProps {
+            default_font_size: 11.0,
+            ..ResolvedParaProps::default()
+        },
+        400.0,
+        1.0,
+        false,
+    )
+    .height;
+    let blank_h = empty_at(&mut r, 11.0);
+    assert!(
+        (blank_h - text_h).abs() < 0.01,
+        "a blank line must be exactly as tall as a line of text at the same \
+         size, got {blank_h} vs {text_h}"
+    );
+}
+
+#[test]
 fn empty_paragraph_with_bottom_border_emits_a_rule() {
     // Word's horizontal-rule idiom: an empty paragraph carrying only a bottom
     // border must emit a border rect spanning the content column.

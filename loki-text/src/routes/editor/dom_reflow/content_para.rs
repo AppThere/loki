@@ -83,13 +83,17 @@ fn para_el(
     // footnotes, and advancing a shared counter for numbers nothing shows would
     // renumber the notes the canvas path does render.
     let mut notes = 0u32;
-    let (text, spans, images, _notes) = loki_layout::resolve::flatten_paragraph_with_base(
-        para,
-        catalog,
-        &mut notes,
-        None,
-        loki_layout::RevisionDisplay::default(),
-    );
+    // The paragraph-mark size (5th element) is dropped: this view lays out
+    // through the DOM, not Parley, so an empty paragraph's height comes from
+    // CSS rather than `ResolvedParaProps::default_font_size`.
+    let (text, spans, images, _notes, _para_mark_size) =
+        loki_layout::resolve::flatten_paragraph_with_base(
+            para,
+            catalog,
+            &mut notes,
+            None,
+            loki_layout::RevisionDisplay::default(),
+        );
     let runs = coalesce(&text, &spans, families);
     let Some(at) = marker_bytes else {
         return rsx! {

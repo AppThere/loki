@@ -225,14 +225,17 @@ pub fn flatten_paragraph(
     Vec<CollectedNote>,
 ) {
     // The convenience entry point renders full markup (the default view); the
-    // flow engine calls `_with_base` directly to pass the document's mode.
-    flatten_paragraph_with_base(
+    // flow engine calls `_with_base` directly to pass the document's mode — and
+    // to receive the paragraph-mark size, which only the flow needs (it is what
+    // sizes an empty paragraph's line, and only the flow lays paragraphs out).
+    let (text, spans, images, notes, _para_mark_size) = flatten_paragraph_with_base(
         block,
         catalog,
         note_counter,
         None,
         crate::options::RevisionDisplay::AllMarkup,
-    )
+    );
+    (text, spans, images, notes)
 }
 
 // ── Border conversion ──────────────────────────────────────────────────────────

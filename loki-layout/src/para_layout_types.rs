@@ -91,6 +91,18 @@ pub struct ResolvedParaProps {
     /// Author colour of a tracked paragraph-mark (¶) deletion on this block —
     /// paints a struck end-of-paragraph marker (Review, 4a.2). `None` = none.
     pub para_mark_deleted_color: Option<LayoutColor>,
+    /// Point size of this paragraph's **paragraph mark** — the strut Parley
+    /// sizes the line from when no run covers it.
+    ///
+    /// Only an *empty* paragraph shows it, having no `StyleSpan` at all: its
+    /// height is then this alone. Word takes it from the mark's own run
+    /// properties (inheriting `docDefaults`), so a fixed fallback mis-sizes
+    /// every blank line in a document whose default differs. Measured against
+    /// Word's PDF for `iris-blueprint.docx` (`w:sz` 22 ⇒ 11 pt): blank lines
+    /// came out 13.80 pt against Word's 12.65, and the 1.15 pt excess
+    /// accumulated until the document paginated a page long. Set from the
+    /// resolved chain by `flatten_paragraph_with_base` — its sole derivation.
+    pub default_font_size: f32,
 }
 
 /// A side band (a floating object) the first lines of a paragraph wrap around.
@@ -107,6 +119,11 @@ pub struct WrapBand {
     /// on the right (text narrows but does not shift).
     pub shift_text: bool,
 }
+
+/// Paragraph-mark size for props built without a resolved character chain
+/// (tests, synthetic paragraphs). Real documents overwrite it from their own
+/// `docDefaults` — see [`ResolvedParaProps::default_font_size`].
+pub const DEFAULT_PARA_MARK_SIZE: f32 = 12.0;
 
 impl Default for ResolvedParaProps {
     fn default() -> Self {
@@ -140,6 +157,7 @@ impl Default for ResolvedParaProps {
             drop_cap: None,
             wrap_band: None,
             para_mark_deleted_color: None,
+            default_font_size: DEFAULT_PARA_MARK_SIZE,
         }
     }
 }

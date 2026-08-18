@@ -80,13 +80,17 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     let effective_para: &StyledParagraph = marker.owned.as_ref().unwrap_or(para);
     // ────────────────────────────────────────────────────────────────────────
 
-    let (text, spans, mut images, mut notes) = crate::resolve::flatten_paragraph_with_base(
-        effective_para,
-        state.catalog,
-        &mut state.note_counter,
-        state.cell_char_defaults.as_ref(),
-        state.options.revision_display,
-    );
+    let (text, spans, mut images, mut notes, para_mark_size) =
+        crate::resolve::flatten_paragraph_with_base(
+            effective_para,
+            state.catalog,
+            &mut state.note_counter,
+            state.cell_char_defaults.as_ref(),
+            state.options.revision_display,
+        );
+    // An empty paragraph carries no span, so its line height comes from this
+    // alone (see `ResolvedParaProps::default_font_size`).
+    resolved.default_font_size = para_mark_size;
     // Tag each note with its owning block + per-block order. The notes render at
     // the foot of the page carrying their reference — see `flow_tail`.
     for (i, note) in notes.iter_mut().enumerate() {

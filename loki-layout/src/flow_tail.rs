@@ -76,15 +76,19 @@ fn measure_note_height(state: &mut FlowState, note: &CollectedNote) -> f32 {
                 p.inlines.insert(0, Inline::Str(mark.clone()));
             }
             first = false;
-            let resolved = crate::resolve::resolve_para_props(&p, state.catalog);
+            let mut resolved = crate::resolve::resolve_para_props(&p, state.catalog);
             let mut counter = state.note_counter;
-            let (text, spans, _images, _notes) = crate::resolve::flatten_paragraph_with_base(
-                &p,
-                state.catalog,
-                &mut counter,
-                None,
-                state.options.revision_display,
-            );
+            let (text, spans, _images, _notes, para_mark_size) =
+                crate::resolve::flatten_paragraph_with_base(
+                    &p,
+                    state.catalog,
+                    &mut counter,
+                    None,
+                    state.options.revision_display,
+                );
+            // Keeps the measured reservation consistent with the laid-out note
+            // (see `ResolvedParaProps::default_font_size`).
+            resolved.default_font_size = para_mark_size;
             let layout = crate::para::layout_paragraph_spelled(
                 state.resources,
                 &text,

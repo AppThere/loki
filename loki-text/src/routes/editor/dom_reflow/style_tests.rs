@@ -35,7 +35,7 @@ fn resolved_span() -> StyleSpan {
         attr: Default::default(),
     };
     let mut notes = 0u32;
-    let (_, spans, _, _) = loki_layout::resolve::flatten_paragraph_with_base(
+    let (_, spans, _, _, _) = loki_layout::resolve::flatten_paragraph_with_base(
         &para,
         &StyleCatalog::new(),
         &mut notes,

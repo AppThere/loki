@@ -38,6 +38,7 @@ pub fn flatten_paragraph_with_base(
     Vec<StyleSpan>,
     Vec<CollectedImage>,
     Vec<CollectedNote>,
+    f32,
 ) {
     let base: CharProps = catalog
         .effective_paragraph_style(block.style_id.as_ref())
@@ -55,6 +56,10 @@ pub fn flatten_paragraph_with_base(
     // `walk_inlines` takes `&mut` and mutates this in place (restoring after each
     // styled run) to avoid cloning `CharProps` per formatting span; `base` is a
     // throwaway local, so the mutation is not observable outside this call.
+    // The paragraph mark's size, captured before `walk_inlines` mutates `base`
+    // per run. Only this chain can size an *empty* paragraph's line — see
+    // `ResolvedParaProps::default_font_size`.
+    let para_mark_size = char_props_to_style_span(&base, 0..0).font_size;
     let mut base = base;
     // A tracked ¶-mark deletion on `direct_char_props` must not bleed onto the
     // runs: it belongs to the paragraph mark (struck ¶ marker), not the text.
@@ -77,7 +82,7 @@ pub fn flatten_paragraph_with_base(
         note_counter,
         &mut notes,
     );
-    (buf, spans, images, notes)
+    (buf, spans, images, notes, para_mark_size)
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────

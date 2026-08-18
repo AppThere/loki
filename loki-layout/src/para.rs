@@ -16,7 +16,7 @@ use parley::{AlignmentOptions, IndentOptions, InlineBox, InlineBoxKind, Position
 
 use crate::font::FontResources;
 use crate::geometry::LayoutRect;
-use crate::items::{PositionedBorderRect, PositionedItem};
+use crate::items::PositionedItem;
 
 #[path = "para_build.rs"]
 mod build;
@@ -26,6 +26,8 @@ mod clean;
 mod index_map;
 #[path = "para_layout_types.rs"]
 mod layout_types;
+#[path = "para_box.rs"]
+mod para_box;
 #[path = "para_query.rs"]
 mod query;
 #[path = "para_tab_underline.rs"]
@@ -37,9 +39,12 @@ mod types;
 #[path = "para_underlays.rs"]
 mod underlays;
 
+use para_box::prepend_para_box;
+
 pub use index_map::ByteIndexMap;
 pub use layout_types::{
-    Affinity, CursorRect, HitTestResult, ParagraphLayout, ResolvedParaProps, WrapBand,
+    Affinity, CursorRect, DEFAULT_PARA_MARK_SIZE, HitTestResult, ParagraphLayout,
+    ResolvedParaProps, WrapBand,
 };
 pub use types::{
     FontVariant, ResolvedLineHeight, ResolvedListMarker, ResolvedTabStop, StrikethroughStyle,
@@ -164,44 +169,6 @@ pub(crate) fn layout_paragraph_spelled(
     let shared = Arc::new(result);
     resources.para_cache.put(key, Arc::clone(&shared));
     shared
-}
-
-/// Prepends the paragraph's border and background-fill rects to `items` (so
-/// they render beneath the text). The box spans the **content column** — from
-/// the start indent to the end indent, for the paragraph's full height —
-/// matching Word, where a paragraph border/shading fills the column rather than
-/// hugging the text ink. `available_width` is the paragraph's available width
-/// (before indents). Background is inserted last so it sits behind the border.
-fn prepend_para_box(
-    items: &mut Vec<PositionedItem>,
-    para_props: &ResolvedParaProps,
-    available_width: f32,
-    height: f32,
-) {
-    let x = para_props.indent_start;
-    let w = (available_width - para_props.indent_start - para_props.indent_end).max(0.0);
-    let has_border = para_props.border_top.is_some()
-        || para_props.border_right.is_some()
-        || para_props.border_bottom.is_some()
-        || para_props.border_left.is_some();
-    if has_border {
-        items.insert(
-            0,
-            PositionedItem::BorderRect(PositionedBorderRect {
-                rect: LayoutRect::new(x, 0.0, w, height),
-                top: para_props.border_top,
-                right: para_props.border_right,
-                bottom: para_props.border_bottom,
-                left: para_props.border_left,
-            }),
-        );
-    }
-    // A `w:shd` texture paints as a hatch (bg + lines); a solid fill as a flat
-    // rect (`para_background_item`).
-    let bg_rect = LayoutRect::new(x, 0.0, w, height);
-    if let Some(item) = crate::resolve::para_background_item(para_props, bg_rect) {
-        items.insert(0, item);
-    }
 }
 
 /// Lays out a single paragraph using Parley, without consulting or populating

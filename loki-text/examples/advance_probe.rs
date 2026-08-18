@@ -114,7 +114,7 @@ fn rows(
             continue;
         };
         let mut notes = 0u32;
-        let (text, spans, _, _) = loki_layout::resolve::flatten_paragraph_with_base(
+        let (text, spans, _, _, _) = loki_layout::resolve::flatten_paragraph_with_base(
             para,
             &doc.styles,
             &mut notes,
