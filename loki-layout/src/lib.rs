@@ -27,6 +27,27 @@ pub mod error;
 pub mod flow;
 pub mod font;
 pub mod font_handle;
+/// Whether Parley snaps line metrics to the pixel grid while laying text out.
+///
+/// **`false`, and deliberately so.** Parley's `quantize` aligns layout
+/// coordinates to `1/scale` units, which is "the easiest way to avoid blurry
+/// text" only when the layout is built at the scale it will be painted at.
+/// Loki's is not: layout is computed in **points** (`display_scale` is `1.0` on
+/// the print, export and conformance paths) and painted later at an arbitrary
+/// zoom × DPI. Quantising there rounds every baseline to a whole point — two
+/// device pixels at the 144 dpi the goldens compare at — which is far coarser
+/// than the grid it is supposed to protect.
+///
+/// Parley's own guidance for this case is to pass `false` and quantise just
+/// before painting, which is what the renderers do (see
+/// [`items::clip_bottom_device_px`] for the clip edge; glyph baselines are
+/// snapped by the rasteriser).
+///
+/// Measured against Word's own PDF for `iris-blueprint.docx`: switching it off
+/// improved **all 14 pages** — mean SSIM rose on every one, failing 64×64
+/// regions fell 511 → 453, and page 9 became clean.
+pub(crate) const QUANTIZE_LAYOUT: bool = false;
+
 pub mod geometry;
 #[path = "hatch.rs"]
 pub mod hatch;

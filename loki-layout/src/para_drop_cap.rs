@@ -184,10 +184,12 @@ fn shape_cap(
     font_size: f32,
     display_scale: f32,
 ) -> Option<ShapedCap> {
-    let mut builder =
-        resources
-            .layout_cx
-            .ranged_builder(&mut resources.font_cx, cap_text, display_scale, true);
+    let mut builder = resources.layout_cx.ranged_builder(
+        &mut resources.font_cx,
+        cap_text,
+        display_scale,
+        crate::QUANTIZE_LAYOUT,
+    );
     builder.push_default(StyleProperty::Brush(base.color));
     builder.push_default(StyleProperty::FontSize(font_size));
     if base.weight != 400 {

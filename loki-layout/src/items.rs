@@ -12,9 +12,12 @@ use crate::color::LayoutColor;
 use crate::geometry::{LayoutPoint, LayoutRect};
 use crate::hatch::PositionedHatch;
 
+#[path = "items_clip.rs"]
+mod clip;
 #[path = "items_glyph.rs"]
 mod glyph;
 
+pub use clip::{FRAGMENT_CLIP_FLOOR_SLACK_PT, clip_bottom_device_px};
 pub use glyph::{GlyphEntry, GlyphSynthesis, PositionedGlyphRun};
 
 /// A single renderer-agnostic draw item with an absolute position in layout
@@ -210,26 +213,6 @@ pub struct PositionedImage {
     /// Alternate text for accessibility, if present.
     pub alt: Option<String>,
 }
-
-/// How much of a split fragment's bottom edge may be shaved by clip rounding, in
-/// points.
-///
-/// A paragraph split across a page or column boundary is emitted as a
-/// [`PositionedItem::ClippedGroup`] whose height is **floored to whole points**
-/// (`flow_split::emit_fragment`), so the clip can end up to this much above the
-/// line box bottom. The floor is deliberate: a fractional height times the display
-/// scale rounds up a physical pixel and leaks the next line's top row.
-///
-/// Its justification is that glyphs never reach the line box bottom, which is true
-/// of glyphs and **false of decorations**. A spelling squiggle is anchored below
-/// the descender, and with an exact line height there is no leading between the
-/// descender and the box bottom — so the band crossed the boundary and was cut on
-/// both sides of it (Spec 08 I-06).
-///
-/// Anything that must stay visible therefore has to sit at least this far above
-/// the line box bottom. Consumers: `flow_split::emit_fragment` applies the floor,
-/// `para_underlays::emit_spelling_squiggles` respects it.
-pub const FRAGMENT_CLIP_FLOOR_SLACK_PT: f32 = 1.0;
 
 /// A text decoration line (underline, strikethrough, or overline).
 #[derive(Debug, Clone)]

@@ -154,8 +154,10 @@ pub(super) fn split_and_place_loop(
                     split_y,
                     dx,
                 );
-                break_column(state);
                 frag_start = split_y;
+                if !break_for_remainder(state, para_layout, frag_start) {
+                    return;
+                }
                 flushed_without_progress = false;
             }
             Some(k) => {
@@ -190,12 +192,36 @@ pub(super) fn split_and_place_loop(
                     split_y,
                     dx,
                 );
-                break_column(state);
                 frag_start = split_y;
+                if !break_for_remainder(state, para_layout, frag_start) {
+                    return;
+                }
                 flushed_without_progress = false;
             }
         }
     }
+}
+
+/// Open the next column/page for the fragment starting at `frag_start`, and
+/// report whether there is one. `false` means the paragraph is fully placed and
+/// the caller should stop **without** breaking.
+///
+/// Splitting always ended a fragment by breaking and letting the next iteration
+/// notice it had nothing left. That left a column or page open for a fragment
+/// that does not exist, which the final `finish_page` then emits as a blank one.
+/// Whether it happened at all turned on whether the last line's
+/// `block_max_coord` sat above `Layout::height()` — a fraction of a point that
+/// pixel-quantised metrics happened to hide.
+fn break_for_remainder(
+    state: &mut FlowState,
+    para_layout: &ParagraphLayout,
+    frag_start: f32,
+) -> bool {
+    if para_layout.height - frag_start <= 0.0 {
+        return false;
+    }
+    break_column(state);
+    true
 }
 
 /// Emit a [`PositionedItem::ClippedGroup`] covering para-local y ∈ `[frag_start, split_y)`;
@@ -210,22 +236,23 @@ fn emit_fragment(
     split_y: f32,
     dx: f32,
 ) {
-    // Floor to prevent sub-pixel clip expansion.  Parley's max_coord equals
-    // baseline + descent + leading_below; glyphs never reach max_coord, so
-    // flooring never clips visible *glyph* ink.  Without this, a fractional
-    // max_coord × display-scale rounds up one physical pixel and leaks the next
-    // line's top row through the clip. Fragment B uses unrounded split_y for its
-    // translation (ty = -split_y), so the next page has no gap.
+    // The exact line boundary, deliberately *not* rounded here.
     //
-    // The amount shaved is bounded by `FRAGMENT_CLIP_FLOOR_SLACK_PT`, which is
-    // named rather than left implicit because decoration placement has to respect
-    // it — the "never clips visible ink" argument holds for glyphs and not for
-    // decorations, which is I-06. See that constant's docs.
-    let clip_height = (split_y - frag_start).floor();
-    debug_assert!(
-        (split_y - frag_start) - clip_height < crate::items::FRAGMENT_CLIP_FLOOR_SLACK_PT,
-        "the clip floor shaved more than the slack decoration placement assumes",
-    );
+    // The hazard this used to guard against is real but belongs a layer down: a
+    // fractional clip height times the display scale can round up one physical
+    // pixel and leak the next line's top row. That is a device-pixel effect, and
+    // layout has no device pixels — it works in points and is painted at an
+    // arbitrary zoom × DPI that it does not know. Flooring *here* therefore both
+    // over-shaved (a whole point, up to 2 device pixels at 144 dpi) and could
+    // not actually promise anything about the paint grid.
+    //
+    // The floor now lives in each renderer, which knows its own scale and floors
+    // the clip's bottom edge to a whole device pixel — see
+    // [`FRAGMENT_CLIP_FLOOR_SLACK_PT`](crate::items::FRAGMENT_CLIP_FLOOR_SLACK_PT).
+    // Keeping the boundary exact here is what lets Parley run unquantized:
+    // `split_y - frag_start` is then fractional, and flooring it in points cost
+    // decoration placement its entire reserve.
+    let clip_height = split_y - frag_start;
     let clip_rect = LayoutRect::new(0.0, state.cursor_y, state.content_width, clip_height);
     let ty = state.cursor_y - frag_start;
     if let Some(al) = arc_layout {

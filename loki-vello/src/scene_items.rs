@@ -60,7 +60,13 @@ pub(crate) fn paint_items(
                         ((clip_rect.x() + offset.0) * scale) as f64,
                         ((clip_rect.y() + offset.1) * scale) as f64,
                         ((clip_rect.max_x() + offset.0) * scale) as f64,
-                        ((clip_rect.max_y() + offset.1) * scale) as f64,
+                        // Floored to a whole device pixel so the clip cannot
+                        // round up and admit the next line's top row.
+                        loki_layout::items::clip_bottom_device_px(
+                            clip_rect.max_y(),
+                            offset.1,
+                            scale,
+                        ) as f64,
                     ),
                 );
                 paint_items(scene, items, font_cache, offset, scale);

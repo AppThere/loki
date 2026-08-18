@@ -51,6 +51,7 @@ pub use types::{
     StyleSpan, UnderlineStyle, VerticalAlign,
 };
 
+use crate::QUANTIZE_LAYOUT;
 use build::push_math_inline_boxes;
 pub(crate) use build::push_para_styles;
 
@@ -223,10 +224,12 @@ fn layout_paragraph_uncached(
         // paragraph takes vertical space and an empty paragraph with a bottom
         // border is a horizontal rule. Shape a phantom single space (no ink) for
         // the metrics, and keep it for the editor's caret.
-        let mut builder =
-            resources
-                .layout_cx
-                .ranged_builder(&mut resources.font_cx, " ", display_scale, true);
+        let mut builder = resources.layout_cx.ranged_builder(
+            &mut resources.font_cx,
+            " ",
+            display_scale,
+            QUANTIZE_LAYOUT,
+        );
         push_para_styles(&mut builder, para_props, &[]);
         let mut phantom = builder.build(" ");
         phantom.break_all_lines(Some(available_width));
@@ -376,7 +379,7 @@ fn layout_paragraph_uncached(
         &mut resources.font_cx,
         &clean_text,
         display_scale,
-        true,
+        QUANTIZE_LAYOUT,
     );
     push_para_styles(&mut builder, para_props, &clean_spans);
     for (idx, &pos) in tab_char_positions.iter().enumerate() {

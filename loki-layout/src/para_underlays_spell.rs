@@ -57,6 +57,27 @@ pub(crate) fn emit_spelling_squiggles(
             m.baseline + m.descent
         })
         .collect();
+    // Per-line box bottom — the boundary a split fragment's clip is placed on,
+    // and therefore the only correct ceiling for the band.
+    //
+    // Not the same as the selection rect's `bb.y1`, which is what this used to
+    // clamp against: `Selection::geometry` sizes its rect to the *font's* natural
+    // height, so under an exact line height shorter than the font (I-06's case —
+    // `Exact(12pt)` at 14pt) it overhangs the following line by the difference.
+    // Clamping to it therefore permitted a band below the very boundary it was
+    // meant to hold the band above.
+    //
+    // Clamped to the layout height as well, because the two bounds a clip can be
+    // placed on are *different derivations of the same fact* and disagree by a
+    // fraction of a point: a split fragment clips to the line's
+    // `block_max_coord`, while the final fragment clips to `Layout::height()`,
+    // and `flow_split` documents that the last line's max can sit either side of
+    // it. Taking the lower of the two is what makes this hold for both.
+    let layout_height = layout.height();
+    let line_box_bottom: Vec<f32> = layout
+        .lines()
+        .map(|l| l.metrics().block_max_coord.min(layout_height))
+        .collect();
     for (seg, checker) in language_segments(clean_text, clean_spans, spell) {
         for miss in checker.check_text(&clean_text[seg.clone()]) {
             let (start, end) = (seg.start + miss.range.start, seg.start + miss.range.end);
@@ -76,18 +97,23 @@ pub(crate) fn emit_spelling_squiggles(
                     .copied()
                     .unwrap_or(bb.y1 as f32);
                 // Keep the whole band inside the region a split fragment's clip is
-                // guaranteed to keep (I-06). The clip height is floored to whole
-                // points, so the last line of a fragment can lose up to
-                // `FRAGMENT_CLIP_FLOOR_SLACK_PT` of its bottom edge — and with an
-                // exact line height there is no leading between the descender and
-                // the line box bottom to absorb it, so the band crossed the
-                // boundary and was cut on both sides.
+                // guaranteed to keep (I-06). The clip is placed on the **line box
+                // bottom**, and the renderer floors it to a whole device pixel, so
+                // the last line of a fragment can lose up to
+                // `FRAGMENT_CLIP_FLOOR_SLACK_PT` of that edge — and with an exact
+                // line height there is no leading between the descender and the
+                // box bottom to absorb it, so the band crossed the boundary and
+                // was cut on both sides.
                 //
                 // Only ever raises the band, and only when the tight case leaves it
                 // no room, so ordinary leading is untouched and the rendering of
                 // every document that is not using exact line heights is
                 // unchanged — which is why this does not churn the goldens.
-                let latest_band_bottom = bb.y1 as f32 - FRAGMENT_CLIP_FLOOR_SLACK_PT;
+                let box_bottom = line_box_bottom
+                    .get(line_idx)
+                    .copied()
+                    .unwrap_or(bb.y1 as f32);
+                let latest_band_bottom = box_bottom - FRAGMENT_CLIP_FLOOR_SLACK_PT;
                 let y = (descender - thickness / 2.0).min(latest_band_bottom - thickness);
                 items.push(PositionedItem::Decoration(PositionedDecoration {
                     x: bb.x0 as f32 + indent,

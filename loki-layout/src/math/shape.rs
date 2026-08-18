@@ -39,10 +39,12 @@ pub(super) fn shape_token(
         return MBox::empty();
     }
 
-    let mut builder =
-        resources
-            .layout_cx
-            .ranged_builder(&mut resources.font_cx, text, display_scale, true);
+    let mut builder = resources.layout_cx.ranged_builder(
+        &mut resources.font_cx,
+        text,
+        display_scale,
+        crate::QUANTIZE_LAYOUT,
+    );
     builder.push_default(StyleProperty::Brush(color));
     builder.push_default(StyleProperty::FontSize(font_size));
     // Math is conventionally set in a serif/math face (Word uses Cambria Math),

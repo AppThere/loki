@@ -452,6 +452,70 @@ fn a_column_break_on_a_last_line_emits_no_empty_fragment() {
     );
 }
 
+/// Splitting a paragraph across pages must not *lose* height: the fragment
+/// clips have to sit exactly on the line boundaries, not be rounded down to
+/// them.
+///
+/// `emit_fragment` used to floor the clip to whole points, on the reasoning that
+/// a fractional height times the display scale rounds up one physical pixel and
+/// leaks the next line's top row. The hazard is real but it is a *device-pixel*
+/// one, and layout has no device pixels — it works in points and is painted at a
+/// zoom × DPI it does not know, so the floor both over-shaved (a whole point is
+/// two device pixels at 144 dpi) and promised nothing about the paint grid. The
+/// floor now lives in the renderers ([`crate::items::clip_bottom_device_px`]).
+///
+/// Stated as conservation over the whole paragraph rather than as "this clip is
+/// not an integer", because the latter passes or fails on whichever face the
+/// test host happens to resolve, and because losing a fraction per fragment is
+/// exactly the shape of the bug: invisible in any one fragment, cumulative down
+/// the document.
+#[test]
+fn splitting_a_paragraph_conserves_its_height() {
+    let mut r = test_resources();
+    // Long enough to split several times across the 90 pt content height, so a
+    // per-fragment loss accumulates into something an epsilon cannot absorb.
+    let text = "Wrapping text ".repeat(40);
+    let (pages, _) = flow_paginated(&mut r, &section_of(vec![make_para(&text)], tiny_layout()));
+
+    fn clip_heights(items: &[PositionedItem], out: &mut Vec<f32>) {
+        for item in items {
+            if let PositionedItem::ClippedGroup { clip_rect, items } = item {
+                out.push(clip_rect.size.height);
+                clip_heights(items, out);
+            }
+        }
+    }
+    let mut heights = Vec::new();
+    for page in &pages {
+        clip_heights(&page.content_items, &mut heights);
+    }
+    assert!(
+        heights.len() >= 2,
+        "fixture must actually split — got {} fragment(s) over {} page(s)",
+        heights.len(),
+        pages.len()
+    );
+
+    // Every fragment of a split paragraph is a clipped group, so the clips
+    // tile the paragraph exactly.
+    let total: f32 = heights.iter().sum();
+    let expected = {
+        let catalog = StyleCatalog::new();
+        let (t, spans, _i, _n) =
+            crate::resolve::flatten_paragraph(&make_para(&text), &catalog, &mut 0u32);
+        let props = crate::resolve::resolve_para_props(&make_para(&text), &catalog);
+        // 180 pt content width, matching `tiny_layout`.
+        crate::para::layout_paragraph(&mut r, &t, &spans, &props, 180.0, 1.0, false).height
+    };
+    assert!(
+        (total - expected).abs() < 0.05,
+        "fragment clips must tile the paragraph exactly: {} fragments sum to \
+         {total} against a paragraph height of {expected} (a per-fragment floor \
+         shows up here as a shortfall)",
+        heights.len(),
+    );
+}
+
 /// The production paginated path (`layout_paginated_full`) flows every group
 /// through [`flow_section_group`]; a single-section group must route through
 /// the balanced flow (previously only direct `flow_section` callers balanced).

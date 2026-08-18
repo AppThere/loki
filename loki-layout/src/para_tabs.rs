@@ -226,10 +226,12 @@ pub(super) fn measure_tab_plans(
         return vec![];
     }
     let n = tab_char_positions.len();
-    let mut probe =
-        resources
-            .layout_cx
-            .ranged_builder(&mut resources.font_cx, clean_text, display_scale, true);
+    let mut probe = resources.layout_cx.ranged_builder(
+        &mut resources.font_cx,
+        clean_text,
+        display_scale,
+        crate::QUANTIZE_LAYOUT,
+    );
     push_para_styles(&mut probe, para_props, clean_spans);
     for (idx, &pos) in tab_char_positions.iter().enumerate() {
         probe.push_inline_box(InlineBox {

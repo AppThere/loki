@@ -49,7 +49,13 @@ pub(crate) fn paint_items(
                         f64::from((clip_rect.x() + offset.0) * scale),
                         f64::from((clip_rect.y() + offset.1) * scale),
                         f64::from((clip_rect.max_x() + offset.0) * scale),
-                        f64::from((clip_rect.max_y() + offset.1) * scale),
+                        // Floored to a whole device pixel so the clip cannot
+                        // round up and admit the next line's top row.
+                        f64::from(loki_layout::items::clip_bottom_device_px(
+                            clip_rect.max_y(),
+                            offset.1,
+                            scale,
+                        )),
                     )
                     .path_elements(0.1),
                 );

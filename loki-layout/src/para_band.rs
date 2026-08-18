@@ -178,10 +178,12 @@ fn build_layout(
     max_w: f32,
     display_scale: f32,
 ) -> parley::Layout<LayoutColor> {
-    let mut builder =
-        resources
-            .layout_cx
-            .ranged_builder(&mut resources.font_cx, text, display_scale, true);
+    let mut builder = resources.layout_cx.ranged_builder(
+        &mut resources.font_cx,
+        text,
+        display_scale,
+        crate::QUANTIZE_LAYOUT,
+    );
     push_para_styles(&mut builder, para_props, spans);
     let mut layout = builder.build(text);
     layout.break_all_lines(Some(max_w));
