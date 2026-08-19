@@ -750,49 +750,77 @@ fn border_follows_background() {
 }
 
 #[test]
-fn paragraph_border_spans_the_content_column() {
+fn paragraph_border_spans_the_content_column_plus_the_word_outset() {
     // A bordered paragraph fills the content column — from the start indent to
-    // the end indent — not just the (~short) text ink, matching Word.
+    // the end indent — not just the (~short) text ink, and Word additionally
+    // holds the box 1.5 pt off the column on each side. Measured from a probe
+    // printed by Word 16.0: nine bottom-border cases spanning `w:sz` 4→48 and
+    // `w:space` 0→10 all landed on the *same* x, 1.5 pt beyond the column, and
+    // a second probe showed it tracks `w:ind` rather than the page.
     let mut r = test_resources();
     let text = "Short.";
-    let edge = BorderEdge {
+    let edge = |spacing| BorderEdge {
         color: LayoutColor::BLACK,
         width: 1.0,
         style: BorderStyle::Solid,
-        spacing: 0.0,
+        spacing,
     };
-    let props = ResolvedParaProps {
-        border_bottom: Some(edge),
+    let laid = |r: &mut FontResources, props: &ResolvedParaProps| {
+        let result = layout_paragraph(
+            r,
+            text,
+            &[single_span(text, 12.0)],
+            props,
+            400.0,
+            1.0,
+            false,
+        );
+        let b = result
+            .items
+            .iter()
+            .find_map(|i| match i {
+                PositionedItem::BorderRect(b) => Some(b),
+                _ => None,
+            })
+            .expect("border rect");
+        (b.rect.origin.x, b.rect.size.width)
+    };
+
+    // Bottom-only rule: the flat outset, and its own `w:space` must not widen
+    // it — that is the case every header underline and Word horizontal rule
+    // takes, and the nine-case probe is what pins it.
+    let bottom_only = ResolvedParaProps {
+        border_bottom: Some(edge(0.0)),
         indent_start: 30.0,
         indent_end: 20.0,
         ..Default::default()
     };
-    let result = layout_paragraph(
-        &mut r,
-        text,
-        &[single_span(text, 12.0)],
-        &props,
-        400.0,
-        1.0,
-        false,
-    );
-    let b = result
-        .items
-        .iter()
-        .find_map(|i| match i {
-            PositionedItem::BorderRect(b) => Some(b),
-            _ => None,
-        })
-        .expect("border rect");
+    let (x, w) = laid(&mut r, &bottom_only);
     assert!(
-        (b.rect.origin.x - 30.0).abs() < 0.5,
-        "border must start at the start indent (30), got {}",
-        b.rect.origin.x
+        (x - 28.5).abs() < 0.01 && (w - 353.0).abs() < 0.01,
+        "a bottom-only border must sit 1.5pt outside the column          (x 30-1.5=28.5, w 350+3=353), got x={x} w={w}"
     );
+    let wide_space = ResolvedParaProps {
+        border_bottom: Some(edge(8.0)),
+        ..bottom_only.clone()
+    };
+    assert_eq!(
+        laid(&mut r, &wide_space),
+        (x, w),
+        "a bottom border's `w:space` is vertical — it must not widen the box"
+    );
+
+    // Left/right borders *do* contribute their space horizontally: Word put an
+    // all-round `w:space` 8pt box 9.5pt outside the column.
+    let all_round = ResolvedParaProps {
+        border_left: Some(edge(8.0)),
+        border_right: Some(edge(8.0)),
+        ..bottom_only.clone()
+    };
+    let (x2, w2) = laid(&mut r, &all_round);
     assert!(
-        (b.rect.size.width - 350.0).abs() < 0.5,
-        "border must span the column (400-30-20=350), not the short text ink; got {}",
-        b.rect.size.width
+        (x2 - 20.5).abs() < 0.01 && (w2 - 369.0).abs() < 0.01,
+        "left/right `w:space` 8 must push the box to 8+1.5 per side          (x 30-9.5=20.5, w 350+19=369), got x={x2} w={w2}"
     );
 }
 
