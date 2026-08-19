@@ -8,7 +8,7 @@
 
 use loki_doc_model::content::block::StyledParagraph;
 use loki_doc_model::content::inline::Inline;
-use loki_doc_model::style::list_style::{BulletChar, ListLevelKind};
+use loki_doc_model::style::list_style::{BulletChar, LabelAlignment, ListLevelKind};
 
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedImage, PositionedItem};
@@ -24,6 +24,54 @@ pub(super) struct ListMarker {
     /// A picture-bullet image reference, when the level's bullet is an image.
     /// `flow_paragraph` places it out-of-band via [`picture_bullet_item`].
     pub bullet_src: Option<String>,
+    /// The label text and its `w:lvlJc` alignment, for a non-`Left` level.
+    ///
+    /// `None` for the common left-aligned case, which needs no adjustment.
+    /// `flow_paragraph` consumes it via [`align_hanging_indent`] once the
+    /// paragraph is flattened — the label's width has to be measured in the
+    /// font it will actually render in, and that is only known from the
+    /// flattened spans.
+    pub label: Option<(String, LabelAlignment)>,
+}
+
+/// Widen `indent_hanging` so a non-`Left` [`LabelAlignment`] places the label
+/// correctly (ECMA-376 §17.9.8 `w:lvlJc`).
+///
+/// The label sits *within* the hanging box `[indent_start − indent_hanging,
+/// indent_start]`, and only `left` starts it at that box's left edge. Word
+/// right-aligns lower-roman levels by default, which is where this shows:
+/// `acid2-docx.docx` ilvl 2 declares `w:ind left=1080 hanging=180` with
+/// `w:lvlJc="right"`, so Word *ends* "i." 45 pt from the margin and starts it
+/// about 5 pt earlier — Loki started it **at** 45 pt, 10 px right of Word's.
+///
+/// Widening the hanging indent is the whole fix: line 0 begins at
+/// `indent_start − indent_hanging`, so a larger hanging moves the label left by
+/// exactly that much, while the tab following it still lands on the absolute
+/// `indent_start` — the body text does not move, and neither do lines 2+, which
+/// Parley indents by the same hanging amount.
+pub(super) fn align_hanging_indent(
+    resources: &mut crate::font::FontResources,
+    resolved: &mut ResolvedParaProps,
+    label: &(String, LabelAlignment),
+    spans: &[crate::para::StyleSpan],
+) {
+    let (text, alignment) = label;
+    // Measured in the label's own span — it is the first one, because
+    // `synthesize` prepends it — so the width is the one that will be laid out
+    // rather than a second guess at the character chain.
+    let first = spans.first();
+    let family = first.and_then(|s| s.font_name.as_deref());
+    let size = first.map_or(crate::para::DEFAULT_PARA_MARK_SIZE, |s| s.font_size);
+    let Some(width) = crate::measure::sample_advance_pt(resources, text, family, size) else {
+        return;
+    };
+    resolved.indent_hanging += match *alignment {
+        LabelAlignment::Right => width,
+        LabelAlignment::Center => width / 2.0,
+        // `Left` never reaches here — `synthesize` records no label for it —
+        // and a future variant should behave like it rather than guess.
+        _ => 0.0,
+    };
 }
 
 /// Advance the list counters and prepend the marker label to `para`.
@@ -60,6 +108,7 @@ pub(super) fn synthesize(
         return ListMarker {
             owned: None,
             bullet_src: None,
+            label: None,
         };
     };
     let Some(list_style) = state.catalog.list_styles.get(&lm.list_id) else {
@@ -67,6 +116,7 @@ pub(super) fn synthesize(
         return ListMarker {
             owned: None,
             bullet_src: None,
+            label: None,
         };
     };
     let Some(level_def) = list_style.levels.get(lm.level as usize) else {
@@ -74,6 +124,7 @@ pub(super) fn synthesize(
         return ListMarker {
             owned: None,
             bullet_src: None,
+            label: None,
         };
     };
 
@@ -110,6 +161,8 @@ pub(super) fn synthesize(
     ListMarker {
         owned: Some(cloned),
         bullet_src,
+        label: (level_def.label_alignment != LabelAlignment::Left)
+            .then_some((marker_text, level_def.label_alignment)),
     }
 }
 

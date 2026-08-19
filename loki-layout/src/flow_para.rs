@@ -91,6 +91,17 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     // An empty paragraph carries no span, so its line height comes from this
     // alone (see `ResolvedParaProps::default_font_size`).
     resolved.default_font_size = para_mark_size;
+    // A `w:lvlJc` other than `left` places the label by its right/centre edge,
+    // which needs the label's shaped width — knowable only now that the spans
+    // carry the font it will render in. See `align_hanging_indent`.
+    if let Some(label) = &marker.label {
+        super::flow_list_marker::align_hanging_indent(
+            state.resources,
+            &mut resolved,
+            label,
+            &spans,
+        );
+    }
     // Tag each note with its owning block + per-block order. The notes render at
     // the foot of the page carrying their reference — see `flow_tail`.
     for (i, note) in notes.iter_mut().enumerate() {

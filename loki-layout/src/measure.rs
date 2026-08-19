@@ -82,7 +82,7 @@ pub fn mean_advance_pt(resources: &mut FontResources, family: &str, size_pt: f32
         return None;
     }
     let chars = PROSE_SAMPLE.chars().count() as f32;
-    let width = sample_advance_pt(resources, PROSE_SAMPLE, family, size_pt)?;
+    let width = sample_advance_pt(resources, PROSE_SAMPLE, Some(family), size_pt)?;
     let mean = width / chars;
     (mean.is_finite() && mean > 0.0).then_some(mean)
 }
@@ -91,23 +91,34 @@ pub fn mean_advance_pt(resources: &mut FontResources, family: &str, size_pt: f32
 ///
 /// Laid out unconstrained (a single line), so the result is the run's own
 /// advance and not a wrapped block's widest line.
-fn sample_advance_pt(
+///
+/// `family` is `None` when the caller has no name to offer — a run that
+/// specifies no font — and the sample is then shaped in Parley's own default.
+/// Pushing an empty family name instead resolves to nothing and shapes to a
+/// zero advance, which reads as "unmeasurable" and would make a caller skip
+/// silently rather than measure the face that will actually be used.
+pub(crate) fn sample_advance_pt(
     resources: &mut FontResources,
     sample: &str,
-    family: &str,
+    family: Option<&str>,
     size_pt: f32,
 ) -> Option<f32> {
     use parley::{FontFamily, StyleProperty};
 
-    let resolved = resources.resolve_font_name(family);
+    let resolved = family.map(|f| resources.resolve_font_name(f));
     let FontResources {
         font_cx, layout_cx, ..
     } = resources;
-    let mut builder = layout_cx.ranged_builder(font_cx, sample, 1.0, true);
+    // Same quantisation as layout: at scale 1.0 snapping would round the
+    // advance to a whole point, which for a short run — a list label of a few
+    // points — is a large fraction of the value being measured.
+    let mut builder = layout_cx.ranged_builder(font_cx, sample, 1.0, crate::QUANTIZE_LAYOUT);
     builder.push_default(StyleProperty::FontSize(size_pt));
-    builder.push_default(StyleProperty::FontFamily(FontFamily::named(
-        resolved.as_str(),
-    )));
+    if let Some(resolved) = &resolved {
+        builder.push_default(StyleProperty::FontFamily(FontFamily::named(
+            resolved.as_str(),
+        )));
+    }
     let mut layout: parley::Layout<crate::color::LayoutColor> = builder.build(sample);
     // `None` = do not wrap: one line, whose width is the advance being asked for.
     layout.break_all_lines(None);

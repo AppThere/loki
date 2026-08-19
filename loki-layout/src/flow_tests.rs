@@ -1568,6 +1568,88 @@ fn flow_with_catalog(
     }
 }
 
+/// `w:lvlJc` (ECMA-376 §17.9.8) places the label *within* the hanging box, and
+/// only `left` starts it at that box's left edge.
+///
+/// Word right-aligns lower-roman levels by default, so this is not an exotic
+/// path: `acid2-docx.docx` ilvl 2 declares `w:ind left=1080 hanging=180` with
+/// `w:lvlJc="right"`, and Word ends "i." 45 pt from the margin where Loki
+/// started it there — 10 px right of Word's, measured off the two renders.
+///
+/// Asserted as a *shift relative to the left-aligned case* rather than an
+/// absolute x, because the label's width is the font's to decide and pinning a
+/// number here would fail on whichever face the test host resolves.
+#[test]
+fn a_right_aligned_list_label_ends_at_the_hanging_position() {
+    let mut r = test_resources();
+
+    let first_glyph_x = |r: &mut FontResources, alignment: LabelAlignment| -> f32 {
+        let mut catalog = list_catalog();
+        // Lower-roman "i." — a *narrow* label, so left- and right-alignment are
+        // far enough apart to tell one from the other.
+        catalog.list_styles.insert(
+            ListId::new("3"),
+            ListStyle {
+                id: ListId::new("3"),
+                display_name: None,
+                levels: vec![ListLevel {
+                    level: 0,
+                    kind: ListLevelKind::Numbered {
+                        scheme: NumberingScheme::LowerRoman,
+                        start_value: 1,
+                        format: "%1.".to_string(),
+                        display_levels: 1,
+                    },
+                    indent_start: Points::new(54.0),
+                    hanging_indent: Points::new(9.0),
+                    label_alignment: alignment,
+                    tab_stop_after_label: None,
+                    char_props: Default::default(),
+                }],
+                extensions: ExtensionBag::default(),
+            },
+        );
+        let mut para = list_para("Floating figures and captions.", "3", 0);
+        if let Some(pp) = para.direct_para_props.as_mut() {
+            pp.indent_start = Some(Points::new(54.0));
+            pp.indent_hanging = Some(Points::new(9.0));
+        }
+        let section = section_of(vec![para], PageLayout::default());
+        let (items, _h, _w) = flow_with_catalog(r, &section, &catalog);
+        items
+            .iter()
+            .filter_map(|i| match i {
+                PositionedItem::GlyphRun(g) => Some(g.origin.x),
+                _ => None,
+            })
+            .fold(f32::MAX, f32::min)
+    };
+
+    let left = first_glyph_x(&mut r, LabelAlignment::Left);
+    let right = first_glyph_x(&mut r, LabelAlignment::Right);
+    let centre = first_glyph_x(&mut r, LabelAlignment::Center);
+
+    // Right-aligned must start *earlier* by the label's own width, so its right
+    // edge lands where the left-aligned label's left edge did.
+    let shift = left - right;
+    assert!(
+        shift > 1.0,
+        "a right-aligned label must start earlier than a left-aligned one          (left x={left}, right x={right})"
+    );
+    // Centre sits halfway between — this is what separates "honours lvlJc" from
+    // "shifts anything that is not Left by the full width".
+    let centre_shift = left - centre;
+    assert!(
+        (centre_shift - shift / 2.0).abs() < 0.5,
+        "a centred label must shift half as far as a right-aligned one:          centre shift {centre_shift}, right shift {shift}"
+    );
+    // And the body text must not move: only the label is repositioned.
+    assert!(
+        shift < 20.0,
+        "the shift must be the label's width, not the whole indent ({shift})"
+    );
+}
+
 #[test]
 fn list_items_produce_glyph_runs() {
     let mut r = test_resources();
