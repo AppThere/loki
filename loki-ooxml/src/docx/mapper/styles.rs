@@ -3,6 +3,9 @@
 
 //! Styles mapper: [`DocxStyles`] → [`StyleCatalog`].
 
+#[path = "styles_defaults.rs"]
+mod defaults;
+
 use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
 use loki_doc_model::style::char_style::CharacterStyle;
@@ -24,8 +27,8 @@ use super::props::{map_ppr, map_rpr};
 /// Translates a [`DocxStyles`] collection into a [`StyleCatalog`].
 ///
 /// Document defaults (`w:docDefaults`) are synthesised as a special
-/// `ParagraphStyle` with id `"__DocDefault"` and `is_default = true`;
-/// it serves as the root of the inheritance chain.
+/// `ParagraphStyle` with id `"__DocDefault"`; it roots the inheritance chain
+/// for every style that declares no `w:basedOn` (see [`defaults`]).
 ///
 /// Table styles carry band sizes, base cell shading, and `w:tblStylePr`
 /// conditional (banding/region) shading; numbering styles are skipped silently.
@@ -72,6 +75,7 @@ pub(crate) fn map_styles(styles: &DocxStyles) -> StyleCatalog {
         catalog.default_character_style = Some(id);
     }
 
+    let parent_of = defaults::root_parent_resolver(&catalog);
     for style in &styles.styles {
         let id = StyleId::new(&style.style_id);
         match style.style_type {
@@ -79,7 +83,7 @@ pub(crate) fn map_styles(styles: &DocxStyles) -> StyleCatalog {
                 let s = ParagraphStyle {
                     id: id.clone(),
                     display_name: style.name.clone(),
-                    parent: style.based_on.as_deref().map(StyleId::new),
+                    parent: parent_of(style.based_on.as_deref(), &id),
                     linked_char_style: style.link.as_deref().map(StyleId::new),
                     next_style_id: style.next.clone(),
                     para_props: style.ppr.as_ref().map(map_ppr).unwrap_or_default(),
@@ -148,14 +152,9 @@ pub(crate) fn map_styles(styles: &DocxStyles) -> StyleCatalog {
             .paragraph_styles
             .contains_key(&StyleId::new("Normal"))
     {
-        let parent = if catalog
-            .paragraph_styles
-            .contains_key(&StyleId::new("__DocDefault"))
-        {
-            Some(StyleId::new("__DocDefault"))
-        } else {
-            None
-        };
+        // Same derivation the mapped styles above use, so a synthesised
+        // `Normal` and a declared one root identically.
+        let parent = parent_of(None, &StyleId::new("Normal"));
         let normal_style = ParagraphStyle {
             id: StyleId::new("Normal"),
             display_name: Some("Normal".into()),
