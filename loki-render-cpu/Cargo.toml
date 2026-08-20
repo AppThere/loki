@@ -13,6 +13,8 @@ loki-layout = { path = "../loki-layout" }
 # together with a golden/calibration re-check.
 vello_cpu = { version = "=0.0.9", features = ["text"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
+# Data-URI image payloads (`data:image/png;base64,…`) — see `src/image.rs`.
+base64 = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

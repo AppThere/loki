@@ -172,14 +172,14 @@ fn build_chain_layouts<'s>(
                 state.options.preserve_for_editing,
                 state.options.spell.as_ref(),
             );
-            // Block-stack any inline images (a captioned figure with
-            // `keepNext` on its image paragraph would otherwise vanish —
-            // the chain path formerly discarded the collected images).
-            // Copy-on-write only when there are images to stack (S9-1).
+            // Block-stack inline images (a captioned figure with `keepNext` on
+            // its image paragraph would otherwise vanish — this path formerly
+            // discarded them). Copy-on-write only when there are any (S9-1).
             if !images.is_empty() {
                 let l = Arc::make_mut(&mut layout);
                 let fit = state.mode.fits_oversized_to_column();
-                let overlay = super::stack_block_images(l, &images, state.content_width, fit);
+                let w = state.content_width;
+                let overlay = super::stack_block_images(l, &images, w, fit, resolved.alignment);
                 super::apply_overlay_images(l, overlay);
             }
             out.push((resolved, layout, notes));

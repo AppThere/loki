@@ -4929,6 +4929,7 @@ name = "loki-render-cpu"
 version = "0.1.0"
 dependencies = [
  "appthere-conformance",
+ "base64",
  "image",
  "loki-doc-model",
  "loki-fonts",

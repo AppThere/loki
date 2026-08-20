@@ -26,9 +26,11 @@
 
 #![forbid(unsafe_code)]
 
+mod image;
 mod paint;
 
-use image::RgbaImage;
+// `::` — `mod image` (the painter) would otherwise shadow the `image` crate.
+use ::image::RgbaImage;
 use loki_layout::{LayoutRect, PaginatedLayout, PositionedItem, PositionedRect};
 use vello_cpu::{Pixmap, RenderContext, Resources};
 

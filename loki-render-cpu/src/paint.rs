@@ -7,18 +7,10 @@
 
 use loki_layout::{
     BorderEdge, DecorationKind, LayoutColor, PositionedBorderRect, PositionedDecoration,
-    PositionedGlyphRun, PositionedImage, PositionedItem, PositionedRect,
+    PositionedGlyphRun, PositionedItem, PositionedRect,
 };
 use vello_cpu::kurbo::{Affine, BezPath, Line, Rect, Shape, Stroke};
 use vello_cpu::{RenderContext, Resources, color::AlphaColor, peniko};
-
-/// The grey placeholder `loki-vello` paints for unresolved images.
-const IMAGE_PLACEHOLDER: LayoutColor = LayoutColor {
-    r: 0.8,
-    g: 0.8,
-    b: 0.8,
-    a: 1.0,
-};
 
 fn to_color(c: &LayoutColor) -> AlphaColor<vello_cpu::color::Srgb> {
     AlphaColor::new([c.r, c.g, c.b, c.a])
@@ -41,7 +33,7 @@ pub(crate) fn paint_items(
             }
             PositionedItem::BorderRect(b) => paint_border_rect(ctx, b, scale, offset),
             PositionedItem::Decoration(d) => paint_decoration(ctx, d, scale, offset),
-            PositionedItem::Image(img) => paint_image_placeholder(ctx, img, scale, offset),
+            PositionedItem::Image(img) => crate::image::paint_image(ctx, img, scale, offset),
             PositionedItem::ClippedGroup { clip_rect, items } => {
                 let mut path = BezPath::new();
                 path.extend(
@@ -245,24 +237,4 @@ fn paint_decoration(
         );
     }
     ctx.stroke_path(&path);
-}
-
-/// TODO(conformance-render): decode and draw the actual image; today this is
-/// the same grey placeholder `loki-vello` paints for unresolved images, so
-/// image-bearing fixtures diff on the placeholder box, not garbage.
-fn paint_image_placeholder(
-    ctx: &mut RenderContext,
-    img: &PositionedImage,
-    scale: f32,
-    offset: (f32, f32),
-) {
-    paint_filled_rect(
-        ctx,
-        &PositionedRect {
-            rect: img.rect,
-            color: IMAGE_PLACEHOLDER,
-        },
-        scale,
-        offset,
-    );
 }

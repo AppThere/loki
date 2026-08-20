@@ -51,6 +51,11 @@ pub(crate) fn fit_to_column(w: f32, h: f32, max_width: f32) -> (f32, f32) {
 /// when set, an image wider than `content_width` is scaled to it with its aspect
 /// preserved. See [`fit_to_column`] for why the paginated view must not.
 ///
+/// `alignment` is the paragraph's own (`w:jc`): a block image is laid out in
+/// the text column and follows it, so a centred figure paragraph centres its
+/// picture. Every image used to be pinned to `x = 0`, which put `acid2-docx`'s
+/// centred chart hard against the left margin.
+///
 /// TODO(inline-image-flow): Parley has no inline image boxes, so images are a
 /// block-level prefix — existing items shift down to make room. Shared by
 /// [`flow_paragraph`] and the keep-with-next chain (`flow_para_chain`) so an
@@ -60,6 +65,7 @@ pub(crate) fn stack_block_images(
     images: &[crate::resolve::CollectedImage],
     content_width: f32,
     fit_oversized: bool,
+    alignment: parley::Alignment,
 ) -> Vec<(bool, PositionedItem)> {
     let mut total_image_height = 0.0f32;
     let mut image_items: Vec<PositionedItem> = Vec::new();
@@ -97,8 +103,15 @@ pub(crate) fn stack_block_images(
             ));
             continue;
         }
+        // Justified behaves as start for a lone object, matching Word: there is
+        // nothing to stretch between.
+        let x = match alignment {
+            parley::Alignment::Center => ((content_width - w) / 2.0).max(0.0),
+            parley::Alignment::End => (content_width - w).max(0.0),
+            _ => 0.0,
+        };
         image_items.push(PositionedItem::Image(PositionedImage {
-            rect: LayoutRect::new(0.0, total_image_height, w, h),
+            rect: LayoutRect::new(x, total_image_height, w, h),
             src: img.src.clone(),
             alt: img.alt.clone(),
         }));
@@ -138,66 +151,5 @@ pub(crate) fn apply_overlay_images(
 }
 
 #[cfg(test)]
-mod fit_tests {
-    use super::fit_to_column;
-    use crate::mode::LayoutMode;
-
-    /// An element already inside the column is untouched — fit-to-column is a
-    /// ceiling, not a resize.
-    #[test]
-    fn an_element_that_fits_is_left_alone() {
-        assert_eq!(fit_to_column(100.0, 50.0, 400.0), (100.0, 50.0));
-        assert_eq!(fit_to_column(400.0, 50.0, 400.0), (400.0, 50.0));
-    }
-
-    /// **Oversized shrinks to the column with its aspect preserved.** The aspect
-    /// is the assertion that matters: scaling only the width would squash the
-    /// image, which is a worse defect than the sideways scroll being removed.
-    #[test]
-    fn an_oversized_element_shrinks_with_its_aspect_preserved() {
-        let (w, h) = fit_to_column(800.0, 400.0, 400.0);
-        assert_eq!(w, 400.0, "the width did not come down to the column");
-        assert!(
-            (h - 200.0).abs() < 1e-3,
-            "height {h} does not preserve the 2:1 aspect — expected 200"
-        );
-        // A non-integer ratio, so the assertion above is not passing on a
-        // halving that a width-only scale would also produce.
-        let (w, h) = fit_to_column(1000.0, 300.0, 375.0);
-        assert!((w - 375.0).abs() < 1e-3);
-        assert!(
-            (h - 112.5).abs() < 1e-3,
-            "height {h} does not preserve the 10:3 aspect — expected 112.5"
-        );
-    }
-
-    /// A degenerate input returns unchanged rather than dividing by zero or
-    /// resizing on a measurement that has not arrived.
-    #[test]
-    fn degenerate_inputs_change_nothing() {
-        assert_eq!(fit_to_column(0.0, 50.0, 400.0), (0.0, 50.0));
-        assert_eq!(fit_to_column(800.0, 400.0, 0.0), (800.0, 400.0));
-        assert_eq!(fit_to_column(800.0, 400.0, -1.0), (800.0, 400.0));
-        // The inverse: a good input does shrink, so "unchanged" is not the only
-        // answer this function knows.
-        assert_ne!(fit_to_column(800.0, 400.0, 400.0), (800.0, 400.0));
-    }
-
-    /// **Only the reflow view fits to the column.** The paginated and pageless
-    /// views are fidelity views of a page with a real width, where an oversized
-    /// image overhangs exactly as Word and LibreOffice paint it.
-    #[test]
-    fn only_the_reflow_view_fits_oversized_elements() {
-        assert!(
-            LayoutMode::Reflow {
-                available_width: 400.0
-            }
-            .fits_oversized_to_column()
-        );
-        assert!(
-            !LayoutMode::Paginated.fits_oversized_to_column(),
-            "the paginated view would silently shrink an oversized image"
-        );
-        assert!(!LayoutMode::Pageless.fits_oversized_to_column());
-    }
-}
+#[path = "flow_para_images_tests.rs"]
+mod tests;

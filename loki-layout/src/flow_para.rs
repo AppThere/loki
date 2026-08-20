@@ -198,6 +198,7 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
             &images,
             state.content_width,
             state.mode.fits_oversized_to_column(),
+            resolved.alignment,
         );
 
         // Emit the float beside the wrapped text; a float taller than its text
