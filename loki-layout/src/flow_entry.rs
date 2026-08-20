@@ -91,7 +91,19 @@ pub fn flow_section(
     comments: &[loki_doc_model::content::annotation::Comment],
 ) -> FlowOutput {
     if mode.is_paginated() {
-        // Top-level paginated flow: balances multi-column single-page sections.
+        // `false`: a section reaching `flow_section` on its own is, by how
+        // `layout_paginated_full` groups them, one that is *not* followed by a
+        // `continuous` section — so it is ended by a page break or by the end of
+        // the document, and Word fills its columns first rather than balancing
+        // them. See `flow_paginated_balanced` for the measurements.
+        //
+        // TODO(column-balance-continuous): the case Word *does* balance — a
+        // section ended by a `continuous` break — lands in a multi-section group,
+        // which `flow_section_group` flows fill-first because a group tail can
+        // start mid-page inside another member and the checkpoint-based
+        // last-page balancing cannot resume from there. Balancing is therefore
+        // currently unreachable rather than wrong; see `docs/fidelity-status.md`
+        // (Multi-column Sections).
         return balance::flow_paginated_balanced(
             resources,
             section,
@@ -100,6 +112,7 @@ pub fn flow_section(
             display_scale,
             options,
             comments,
+            false,
         );
     }
 

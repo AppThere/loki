@@ -39,8 +39,36 @@ use crate::resolve::pts_to_f32;
 const MAX_ITERS: u32 = 16;
 
 /// Flows a paginated section, balancing the columns when it is a multi-column
-/// section without footnotes: the whole section when it fits on one page,
-/// otherwise the last page only (resumed from its clean-top checkpoint).
+/// section without footnotes **that is ended by a `continuous` break**: the
+/// whole section when it fits on one page, otherwise the last page only
+/// (resumed from its clean-top checkpoint).
+///
+/// # `ended_by_continuous` is the whole trigger
+///
+/// Word balances a multi-column section's columns only when the section break
+/// that *ends* it is `continuous`. A section ended by a page break — or by the
+/// end of the document — is filled column-first and left unbalanced, however
+/// short its content. Measured on Word 16.0 with a probe carrying its own
+/// control (one document, three 2-column sections of twelve identical lines):
+///
+/// ```text
+/// S1, ended by a `continuous` break   6 lines in col 1, 6 in col 2   balanced
+/// S2, ended by `nextPage`            12 lines in col 1, 0 in col 2   fill-first
+/// S3, document end                   12 lines in col 1, 0 in col 2   fill-first
+/// ```
+///
+/// and again with 70 lines in one `nextPage`-ended section, which overflows a
+/// column: col 1 ran to the page bottom (48 lines, y 81→707 of a 72→720 band)
+/// and col 2 took the remaining 22. So it is not "balance only when short" —
+/// a page-break-ended section is never balanced.
+///
+/// `acid2-docx.docx`'s newsletter section is `nextPage`-ended, and Word leaves
+/// its second column entirely empty; Loki balanced it and split the page down
+/// the middle, which is what this parameter fixes.
+// One over the limit: the flow-context bundle plus the one flag that decides
+// whether balancing applies at all. The five context arguments are already
+// threaded as a unit through every flow entry point.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn flow_paginated_balanced(
     resources: &mut FontResources,
     section: &Section,
@@ -49,6 +77,7 @@ pub(super) fn flow_paginated_balanced(
     display_scale: f32,
     options: &LayoutOptions,
     comments: &[Comment],
+    ended_by_continuous: bool,
 ) -> FlowOutput {
     let ctx = Ctx {
         section,
@@ -59,7 +88,7 @@ pub(super) fn flow_paginated_balanced(
         comments,
     };
     let (natural, pages, has_notes, candidate) = run_capped(resources, &ctx, None, None);
-    if !is_multicolumn(section) || has_notes {
+    if !ended_by_continuous || !is_multicolumn(section) || has_notes {
         return natural;
     }
     if pages > 1 {

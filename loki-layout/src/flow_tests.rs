@@ -317,12 +317,22 @@ fn unequal_columns_place_second_band_at_first_width() {
     );
 }
 
+/// A multi-column section ended by a **page break** (or by the end of the
+/// document) fills its first column and leaves the rest empty — Word does not
+/// balance it.
+///
+/// This asserted the opposite until 2026-08-20. Measured on Word 16.0 with a
+/// three-section probe carrying its own control (twelve identical lines, two
+/// columns, one document): the section ended by a `continuous` break split
+/// 6 lines / 6 lines, while the `nextPage`-ended one and the document-final one
+/// both put all twelve in column 1 and left column 2 empty. `acid2-docx.docx`'s
+/// newsletter section is `nextPage`-ended, and Word leaves its second column
+/// entirely blank where Loki had been splitting the page down the middle.
 #[test]
-fn short_multi_column_section_balances_across_columns() {
+fn short_multi_column_section_ended_by_a_page_break_fills_the_first_column() {
     let mut r = test_resources();
-    // Four short paragraphs — well under one column's height, so a fill-first
-    // layout would stack them all in column 0 and leave column 1 empty. Column
-    // balancing (5.10) spreads them so the second column (x ≈ 99) is used too.
+    // Four short paragraphs — well under one column's height. Balancing would
+    // spread them into the second column (x ≈ 99); fill-first must not.
     let paras: Vec<_> = (0..4).map(|i| make_para(&format!("Line {i}"))).collect();
     let two_col = PageLayout {
         columns: Some(SectionColumns {
@@ -345,16 +355,22 @@ fn short_multi_column_section_balances_across_columns() {
         "the first column must be used: {xs:?}"
     );
     assert!(
-        xs.iter().any(|&x| x >= 99.0),
-        "balancing must spread content into the second column: {xs:?}"
+        !xs.iter().any(|&x| x >= 99.0),
+        "a page-break-ended section must not balance into the second column: {xs:?}"
     );
 }
 
-/// 5.10 multi-page: only the *last* page of a multi-page two-column section is
-/// balanced. Earlier (full) pages keep their fill-first packing, the page
-/// count is preserved, and no paragraph is lost or duplicated.
+/// A multi-page two-column section ended by a page break keeps fill-first
+/// packing on **every** page, including the short last one, and loses no
+/// content.
+///
+/// The "balance the last page" behaviour this used to assert is Word's only
+/// for a `continuous`-ended section. Verified with 70 lines in one
+/// `nextPage`-ended two-column section, which overflows a column: Word ran
+/// column 1 to the page bottom (48 lines, y 81→707 of a 72→720 band) and gave
+/// column 2 the remaining 22 — so it is not "balance only when short" either.
 #[test]
-fn multi_page_two_column_section_balances_only_the_last_page() {
+fn multi_page_two_column_section_keeps_fill_first_on_every_page() {
     let mut r = test_resources();
     let paras: Vec<_> = (0..14).map(|i| make_para(&format!("Line {i}"))).collect();
     let n = paras.len();
@@ -376,17 +392,19 @@ fn multi_page_two_column_section_balances_only_the_last_page() {
     // Content preserved: every short paragraph is exactly one glyph run.
     let runs: usize = pages.iter().map(|p| glyph_x_origins(p).len()).sum();
     assert_eq!(runs, n, "no paragraph may be lost or duplicated");
-    // The short tail on the last page is spread across both columns …
+    // The short tail on the last page stays in column one …
     let xs = glyph_x_origins(pages.last().expect("at least one page"));
     assert!(
         xs.iter().any(|&x| x < 50.0),
         "last page must use column one: {xs:?}"
     );
     assert!(
-        xs.iter().any(|&x| x >= 99.0),
-        "last-page tail must be balanced into the second column: {xs:?}"
+        !xs.iter().any(|&x| x >= 99.0),
+        "the last page's short tail must not be balanced into column two: {xs:?}"
     );
-    // … while the full first page already used both columns (fill-first).
+    // … while the full first page still used both columns, because it filled
+    // column one to the bottom. That is the inversion that matters: without it
+    // this test would pass on a layout that never used a second column at all.
     let xs0 = glyph_x_origins(&pages[0]);
     assert!(
         xs0.iter().any(|&x| x >= 99.0),
@@ -517,10 +535,13 @@ fn splitting_a_paragraph_conserves_its_height() {
 }
 
 /// The production paginated path (`layout_paginated_full`) flows every group
-/// through [`flow_section_group`]; a single-section group must route through
-/// the balanced flow (previously only direct `flow_section` callers balanced).
+/// through [`flow_section_group`], and a single-section group must reach the
+/// same layout a direct [`flow_section`] call does.
+///
+/// A single-section group is, by that grouping, a section *not* followed by a
+/// `continuous` one — so it is page-break-ended and must fill column-first.
 #[test]
-fn single_section_group_routes_through_column_balancing() {
+fn single_section_group_matches_the_direct_flow_section_path() {
     let mut r = test_resources();
     let paras: Vec<_> = (0..4).map(|i| make_para(&format!("Line {i}"))).collect();
     let two_col = PageLayout {
@@ -548,8 +569,15 @@ fn single_section_group_routes_through_column_balancing() {
     assert_eq!(pages.len(), 1, "the short section fits one page");
     let xs = glyph_x_origins(&pages[0]);
     assert!(
-        xs.iter().any(|&x| x >= 99.0),
-        "the group path must balance a single-section group: {xs:?}"
+        !xs.iter().any(|&x| x >= 99.0),
+        "a page-break-ended single-section group must fill column one: {xs:?}"
+    );
+    // Same result through the direct entry point, so the two paths cannot drift.
+    let (direct, _) = flow_paginated(&mut r, &section);
+    assert_eq!(
+        glyph_x_origins(&direct[0]),
+        xs,
+        "the group path and the direct path must agree"
     );
 }
 
