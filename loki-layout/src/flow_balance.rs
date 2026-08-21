@@ -3,25 +3,22 @@
 
 //! Column-height balancing for paginated multi-column sections.
 //!
-//! Word balances the columns of a multi-column section's **last** page so they
-//! end at roughly equal heights, rather than filling column 1 to the page
-//! bottom before starting column 2. This module implements that for the common
-//! case: a multi-column section whose content fits on a single page (which *is*
-//! its last page). It re-flows the section with the per-page content height
-//! capped to the smallest value that still fits every column on one page — the
-//! tightest, evenly-filled packing — found by a bounded binary search.
+//! Word balances a multi-column section's **last** page — so the columns end at
+//! roughly equal heights instead of filling column 1 to the page bottom —
+//! **only when the section break that ends it is `continuous`**. See
+//! [`flow_paginated_balanced`] for the measurements behind that trigger, and
+//! `docs/fidelity-status.md` (Multi-column Sections) for its current reach.
 //!
-//! A **multi-page** section balances its *last page only*: the natural flow
-//! records a *tail candidate* (the block that started the newest page, plus a
-//! resume snapshot — see `FlowState::tail_candidate`), the tail is re-flowed
-//! uncapped once to **verify** the candidate reproduces the natural last page
-//! (a page starting mid-paragraph fails this and keeps fill-first), then the
-//! verified tail is re-flowed with the balanced cap and spliced over the
-//! natural last page — earlier pages are untouched. `continuous` section
-//! groups and sections carrying footnotes keep the fill-first behaviour
-//! (capping the content height would misplace footnotes, and a group tail can
-//! start mid-page inside another section); those remain documented
-//! limitations. See `docs/fidelity-status.md` (Multi-column Sections).
+//! The mechanism, when it applies: re-flow with the per-page content height
+//! capped to the smallest value that still fits every column on one page — the
+//! tightest, evenly-filled packing — found by a bounded binary search. A
+//! multi-page section caps its *last page only*: the natural flow records a
+//! *tail candidate* (the block that started the newest page plus a resume
+//! snapshot — `FlowState::tail_candidate`), the tail is re-flowed uncapped once
+//! to **verify** it reproduces that page (one starting mid-paragraph fails and
+//! keeps fill-first), then the verified tail is re-flowed capped and spliced
+//! over it. Sections carrying footnotes keep fill-first regardless: capping the
+//! content height would misplace the notes.
 
 use loki_doc_model::StyleCatalog;
 use loki_doc_model::content::annotation::Comment;
@@ -58,9 +55,8 @@ const MAX_ITERS: u32 = 16;
 /// ```
 ///
 /// and again with 70 lines in one `nextPage`-ended section, which overflows a
-/// column: col 1 ran to the page bottom (48 lines, y 81→707 of a 72→720 band)
-/// and col 2 took the remaining 22. So it is not "balance only when short" —
-/// a page-break-ended section is never balanced.
+/// column: col 1 ran to the page bottom (48 lines of a 72→720 band) and col 2
+/// took the other 22 — so it is not "balance only when short" either.
 ///
 /// `acid2-docx.docx`'s newsletter section is `nextPage`-ended, and Word leaves
 /// its second column entirely empty; Loki balanced it and split the page down

@@ -24,6 +24,7 @@ pub const FLOATING_CLASS: &str = "floating";
 const KV_WRAP: &str = "float-wrap";
 const KV_SIDE: &str = "float-wrap-side";
 const KV_BEHIND: &str = "float-behind";
+const KV_ALIGN: &str = "float-align";
 
 /// How body text wraps around a floating object.
 ///
@@ -69,6 +70,26 @@ pub enum WrapSide {
     Largest,
 }
 
+/// Where a floating object sits horizontally in its anchor's column.
+///
+/// OOXML `wp:positionH/wp:align`; ODF `style:horizontal-pos`.
+///
+/// Distinct from [`WrapSide`], which says which sides *text* may occupy. The
+/// two agree for `left`/`right` wrap — text on the left implies the object is
+/// on the right — but `bothSides` and `largest` constrain nothing, and then
+/// only the position says where the object goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum FloatAlign {
+    /// Against the column's leading edge.
+    Left,
+    /// Against the column's trailing edge.
+    Right,
+    /// Centred in the column.
+    Center,
+}
+
 /// Text-wrap configuration for a floating object.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -77,6 +98,15 @@ pub struct FloatWrap {
     pub wrap: TextWrap,
     /// Which side(s) text may occupy (meaningful for `Square`/`Tight`/`Through`).
     pub side: WrapSide,
+    /// The object's own horizontal placement, when the producer stated one.
+    ///
+    /// `None` means unstated, and the side is then inferred from
+    /// [`side`](Self::side) — which is all ODF and legacy content offers. An
+    /// explicit value **wins**, because `wrapText="bothSides"` says nothing
+    /// about where the object is: `acid2-docx.docx`'s newsletter figure is
+    /// `bothSides` with `<wp:align>right</wp:align>`, and inferring from the
+    /// wrap side alone put it on the left, mirror-imaging the page.
+    pub align: Option<FloatAlign>,
     /// `true` when the object sits behind the text (OOXML `wp:wrapNone` with
     /// `behindDoc="1"`; ODF `style:run-through="background"`).
     pub behind_text: bool,
@@ -125,6 +155,37 @@ impl WrapSide {
     }
 }
 
+impl FloatAlign {
+    fn as_kv(self) -> &'static str {
+        match self {
+            FloatAlign::Left => "left",
+            FloatAlign::Right => "right",
+            FloatAlign::Center => "center",
+        }
+    }
+
+    fn from_kv(s: &str) -> Option<Self> {
+        Self::from_str_kw(s)
+    }
+
+    /// Parses an OOXML `wp:positionH/wp:align` keyword.
+    ///
+    /// `inside`/`outside` are book-fold aliases that depend on page parity;
+    /// they map to the recto reading (`inside` = left, `outside` = right) since
+    /// mirrored margins are handled elsewhere. Anything unrecognised — notably a
+    /// `wp:posOffset` number — is `None`, i.e. *unstated*, so the caller falls
+    /// back to inferring from the wrap side rather than guessing a placement.
+    #[must_use]
+    pub fn from_str_kw(s: &str) -> Option<Self> {
+        Some(match s {
+            "left" | "inside" => FloatAlign::Left,
+            "right" | "outside" => FloatAlign::Right,
+            "center" | "centre" => FloatAlign::Center,
+            _ => return None,
+        })
+    }
+}
+
 impl FloatWrap {
     /// Writes this wrap configuration into `attr`: ensures the [`FLOATING_CLASS`]
     /// class is present and records the wrap mode/side/behind flag in `kv`.
@@ -134,13 +195,19 @@ impl FloatWrap {
             attr.classes.push(FLOATING_CLASS.to_string());
         }
         attr.kv
-            .retain(|(k, _)| k != KV_WRAP && k != KV_SIDE && k != KV_BEHIND);
+            .retain(|(k, _)| k != KV_WRAP && k != KV_SIDE && k != KV_BEHIND && k != KV_ALIGN);
         attr.kv
             .push((KV_WRAP.to_string(), self.wrap.as_kv().to_string()));
         attr.kv
             .push((KV_SIDE.to_string(), self.side.as_kv().to_string()));
         if self.behind_text {
             attr.kv.push((KV_BEHIND.to_string(), "true".to_string()));
+        }
+        // Written only when stated, so a round-trip cannot invent a placement
+        // the producer never gave (see `align`).
+        if let Some(align) = self.align {
+            attr.kv
+                .push((KV_ALIGN.to_string(), align.as_kv().to_string()));
         }
     }
 
@@ -170,6 +237,7 @@ impl FloatWrap {
         FloatWrap {
             wrap: TextWrap::Square,
             side: WrapSide::Both,
+            align: None,
             behind_text: false,
         }
     }
@@ -190,109 +258,20 @@ impl FloatWrap {
             .map(|(_, v)| WrapSide::from_kv(v))
             .unwrap_or_default();
         let behind_text = attr.kv.iter().any(|(k, v)| k == KV_BEHIND && v == "true");
+        let align = attr
+            .kv
+            .iter()
+            .find(|(k, _)| k == KV_ALIGN)
+            .and_then(|(_, v)| FloatAlign::from_kv(v));
         Some(FloatWrap {
             wrap,
             side,
+            align,
             behind_text,
         })
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn store_then_read_round_trips() {
-        let mut attr = NodeAttr::default();
-        let fw = FloatWrap {
-            wrap: TextWrap::Tight,
-            side: WrapSide::Left,
-            behind_text: false,
-        };
-        fw.store(&mut attr);
-        assert!(attr.classes.iter().any(|c| c == FLOATING_CLASS));
-        assert_eq!(FloatWrap::read(&attr), Some(fw));
-    }
-
-    #[test]
-    fn class_only_attr_reads_as_default_float() {
-        // An anchored image tagged floating but with no wrap keys (e.g. a DOCX
-        // `wp:anchor` with no wrap child) is floating, not inline.
-        let mut attr = NodeAttr::default();
-        attr.classes.push(FLOATING_CLASS.to_string());
-        assert_eq!(FloatWrap::read(&attr), None, "no wrap keys → read is None");
-        let fw = FloatWrap::read_or_class_default(&attr).expect("class marks it floating");
-        assert_eq!(fw.wrap, TextWrap::Square);
-        assert_eq!(fw.side, WrapSide::Both);
-        assert!(!fw.behind_text);
-    }
-
-    #[test]
-    fn inline_attr_reads_or_class_default_is_none() {
-        // No wrap keys and no floating class → genuinely inline.
-        let attr = NodeAttr::default();
-        assert_eq!(FloatWrap::read_or_class_default(&attr), None);
-    }
-
-    #[test]
-    fn explicit_wrap_wins_over_class_default() {
-        // When wrap keys are present, the stored config is returned verbatim.
-        let mut attr = NodeAttr::default();
-        let fw = FloatWrap {
-            wrap: TextWrap::Tight,
-            side: WrapSide::Left,
-            behind_text: false,
-        };
-        fw.store(&mut attr);
-        assert_eq!(FloatWrap::read_or_class_default(&attr), Some(fw));
-    }
-
-    #[test]
-    fn behind_text_round_trips() {
-        let mut attr = NodeAttr::default();
-        let fw = FloatWrap {
-            wrap: TextWrap::None,
-            side: WrapSide::Both,
-            behind_text: true,
-        };
-        fw.store(&mut attr);
-        assert_eq!(FloatWrap::read(&attr), Some(fw));
-    }
-
-    #[test]
-    fn store_is_idempotent() {
-        let mut attr = NodeAttr::default();
-        FloatWrap {
-            wrap: TextWrap::Square,
-            side: WrapSide::Both,
-            behind_text: false,
-        }
-        .store(&mut attr);
-        FloatWrap {
-            wrap: TextWrap::Through,
-            side: WrapSide::Right,
-            behind_text: false,
-        }
-        .store(&mut attr);
-        // Only one floating class, one set of wrap keys.
-        assert_eq!(
-            attr.classes.iter().filter(|c| *c == FLOATING_CLASS).count(),
-            1
-        );
-        assert_eq!(attr.kv.iter().filter(|(k, _)| k == KV_WRAP).count(), 1);
-        assert_eq!(
-            FloatWrap::read(&attr),
-            Some(FloatWrap {
-                wrap: TextWrap::Through,
-                side: WrapSide::Right,
-                behind_text: false,
-            })
-        );
-    }
-
-    #[test]
-    fn read_none_when_absent() {
-        assert_eq!(FloatWrap::read(&NodeAttr::default()), None);
-    }
-}
+#[path = "float_tests.rs"]
+mod tests;

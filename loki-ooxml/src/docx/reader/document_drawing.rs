@@ -7,7 +7,7 @@
 
 use quick_xml::{Reader, events::Event};
 
-use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
+use loki_doc_model::content::float::{FloatAlign, FloatWrap, TextWrap, WrapSide};
 
 use crate::docx::model::paragraph::DocxDrawing;
 use crate::docx::reader::util::{attr_val, local_name, parse_emu};
@@ -21,6 +21,10 @@ pub(crate) fn parse_drawing(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxDrawi
     let mut wrap_mode: Option<TextWrap> = None;
     let mut wrap_side = WrapSide::Both;
     let mut behind_doc = false;
+    // `wp:positionH` holds the object's own horizontal placement as the *text*
+    // of a nested `wp:align`, so the value arrives on the following Text event.
+    let mut align: Option<FloatAlign> = None;
+    let mut in_position_h = false;
     // `true` while inside an `a:ln` (border) element, so its `a:srgbClr` is read
     // as the border colour rather than the shape fill.
     let mut in_ln = false;
@@ -72,8 +76,22 @@ pub(crate) fn parse_drawing(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxDrawi
                     }
                     b"wrapTopAndBottom" => wrap_mode = Some(TextWrap::TopAndBottom),
                     b"wrapNone" => wrap_mode = Some(TextWrap::None),
+                    b"positionH" => in_position_h = true,
                     _ => {}
                 }
+            }
+            Ok(Event::Text(ref t)) if in_position_h => {
+                // Only `wp:align` carries a keyword; a `wp:posOffset` is an EMU
+                // number, which this leaves unstated rather than guessing a
+                // side from — see `TODO(float-pos-offset)` below.
+                if let Ok(v) = crate::xml_util::event_text(&Event::Text(t.clone()))
+                    && let Some(a) = FloatAlign::from_str_kw(v.trim())
+                {
+                    align = Some(a);
+                }
+            }
+            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"positionH" => {
+                in_position_h = false;
             }
             Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"ln" => {
                 in_ln = false;
@@ -93,9 +111,14 @@ pub(crate) fn parse_drawing(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxDrawi
         buf.clear();
     }
     if let Some(wrap) = wrap_mode {
+        // TODO(float-pos-offset): `wp:positionH/wp:posOffset` (an absolute EMU
+        // offset instead of a keyword) is left unstated, so such a float falls
+        // back to inferring its side from `wrapText`. Honouring it needs an
+        // offset in the model, not just a three-way alignment.
         drawing.wrap = Some(FloatWrap {
             wrap,
             side: wrap_side,
+            align,
             behind_text: behind_doc,
         });
     }
@@ -156,6 +179,50 @@ mod tests {
             }
         }
         parse_drawing(&mut reader).unwrap()
+    }
+
+    /// A float's own horizontal placement (`wp:positionH`) is read, and is
+    /// distinct from the side text may wrap on (`@wrapText`).
+    ///
+    /// Nothing covered the import of `wp:positionH`, so the reader could stop
+    /// reading it and only a golden would notice — a mutation that never set
+    /// it survived the layout-side test.
+    #[test]
+    fn reads_the_float_position_separately_from_the_wrap_side() {
+        let drawing = |position_h: &str| {
+            let xml = format!(
+                r#"<w:drawing xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+                  <wp:anchor behindDoc="0">{position_h}<wp:extent cx="914400" cy="914400"/>
+                    <wp:wrapSquare wrapText="bothSides"/>
+                  </wp:anchor></w:drawing>"#
+            );
+            parse(&xml).wrap.expect("a wrap is recorded")
+        };
+
+        // The `acid2-docx` newsletter figure's shape: `bothSides` wrap with an
+        // explicit right placement. The two must not be conflated — the wrap
+        // side stays `Both` while the placement is read as `Right`.
+        let right = drawing(
+            "<wp:positionH relativeFrom=\"column\"><wp:align>right</wp:align></wp:positionH>",
+        );
+        assert_eq!(right.align, Some(FloatAlign::Right));
+        assert_eq!(right.side, WrapSide::Both, "the wrap side is unchanged");
+
+        let left = drawing(
+            "<wp:positionH relativeFrom=\"column\"><wp:align>left</wp:align></wp:positionH>",
+        );
+        assert_eq!(left.align, Some(FloatAlign::Left));
+
+        // Absent, and the un-keyworded `posOffset` form, are both *unstated* —
+        // the layout then falls back to inferring from the wrap side rather
+        // than guessing a placement. Without these two the test would pass on a
+        // reader that answered `Right` for everything.
+        assert_eq!(drawing("").align, None, "no `wp:positionH` states nothing");
+        assert_eq!(
+            drawing("<wp:positionH relativeFrom=\"column\"><wp:posOffset>457200</wp:posOffset></wp:positionH>").align,
+            None,
+            "a `wp:posOffset` is an EMU number, not a placement keyword"
+        );
     }
 
     #[test]

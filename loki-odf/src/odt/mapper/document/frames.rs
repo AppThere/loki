@@ -34,6 +34,9 @@ pub(super) fn map_graphic_wrap(gw: &OdfGraphicWrap) -> Option<FloatWrap> {
     Some(FloatWrap {
         wrap,
         side,
+        // ODF states no separate horizontal placement here; the side is
+        // inferred from `style:wrap` (see `FloatWrap::align`).
+        align: None,
         behind_text,
     })
 }

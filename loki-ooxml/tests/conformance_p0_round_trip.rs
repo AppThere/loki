@@ -165,26 +165,31 @@ fn tc_docx_023_floating_image_wrap_modes_round_trip() {
         FloatWrap {
             wrap: TextWrap::Square,
             side: WrapSide::Both,
+            align: None,
             behind_text: false,
         },
         FloatWrap {
             wrap: TextWrap::Tight,
             side: WrapSide::Left,
+            align: None,
             behind_text: false,
         },
         FloatWrap {
             wrap: TextWrap::Through,
             side: WrapSide::Right,
+            align: None,
             behind_text: false,
         },
         FloatWrap {
             wrap: TextWrap::TopAndBottom,
             side: WrapSide::Both,
+            align: None,
             behind_text: false,
         },
         FloatWrap {
             wrap: TextWrap::None,
             side: WrapSide::Both,
+            align: None,
             behind_text: true,
         },
     ];

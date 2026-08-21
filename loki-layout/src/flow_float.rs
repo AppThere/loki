@@ -26,7 +26,7 @@
 //! the float reserves its remaining height instead of wrapping. OOXML
 //! `wp:anchor` wrap children; ODF `style:wrap`.
 
-use loki_doc_model::content::float::{TextWrap, WrapSide};
+use loki_doc_model::content::float::{FloatAlign, TextWrap, WrapSide};
 
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedImage, PositionedItem};
@@ -158,10 +158,29 @@ pub(crate) fn plan_float(
         return None;
     }
 
-    // WrapSide names the side TEXT occupies, so the float sits opposite:
-    //   side=Right → text right → float LEFT;   side=Left → text left → float RIGHT.
-    //   Both/Largest → default to a left float (text flows to its right).
-    let float_left = !matches!(fw.side, WrapSide::Left);
+    // Where the object sits is its *own* placement when the producer stated one
+    // (`wp:positionH`), and only otherwise inferred from the wrap side.
+    //
+    // `WrapSide` names the side TEXT occupies, so the inference puts the float
+    // opposite: side=Right → text right → float LEFT; side=Left → text left →
+    // float RIGHT; Both/Largest constrain nothing and fall to a left float.
+    // That inference is all ODF and legacy content offers, but it is *wrong* to
+    // apply over an explicit position: `acid2-docx.docx`'s newsletter figure is
+    // `wrapText="bothSides"` with `<wp:align>right</wp:align>`, and inferring
+    // from the wrap side alone put it left — mirror-imaging the page against
+    // Word, whose own body copy reads "text flows around the sidebar image on
+    // its left".
+    //
+    // Centre has no band representation here (Loki reserves one contiguous
+    // side band, Word wraps a centred object on both), so it takes the left
+    // float — TODO(float-center-band).
+    let float_left = match fw.align {
+        Some(FloatAlign::Right) => false,
+        // `FloatAlign` is `#[non_exhaustive]`; a future placement should behave
+        // like the left float rather than silently pick the other side.
+        Some(_) => true,
+        None => !matches!(fw.side, WrapSide::Left),
+    };
 
     let (indent_start_delta, indent_end_delta, x) = if float_left {
         (band, 0.0, 0.0)

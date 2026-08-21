@@ -410,6 +410,7 @@ fn floating_text_box_round_trips_through_odt() {
     FloatWrap {
         wrap: TextWrap::Square,
         side: WrapSide::Right,
+        align: None,
         behind_text: false,
     }
     .store(&mut attr);

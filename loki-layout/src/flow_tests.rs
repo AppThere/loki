@@ -2281,6 +2281,7 @@ mod page_fields {
             FloatWrap {
                 wrap: TextWrap::Square,
                 side: WrapSide::Right,
+                align: None,
                 behind_text: false,
             }
             .store(&mut attr);
@@ -2368,6 +2369,7 @@ mod page_fields {
             FloatWrap {
                 wrap: TextWrap::None,
                 side: WrapSide::Both,
+                align: None,
                 behind_text: false,
             }
             .store(&mut attr);

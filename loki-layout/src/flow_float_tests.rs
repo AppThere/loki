@@ -4,7 +4,7 @@
 //! Tests for [`crate::flow::float_impl`].
 
 use super::*;
-use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
+use loki_doc_model::content::float::{FloatAlign, FloatWrap, TextWrap, WrapSide};
 
 /// One inch = 914400 EMU; build an image of `w_in` × `h_in` inches.
 fn img(w_in: f64, h_in: f64, float: Option<FloatWrap>) -> CollectedImage {
@@ -22,8 +22,63 @@ fn square(side: WrapSide) -> FloatWrap {
     FloatWrap {
         wrap: TextWrap::Square,
         side,
+        align: None,
         behind_text: false,
     }
+}
+
+/// An explicit `wp:positionH` decides which side the float sits on; the wrap
+/// side is only consulted when the producer stated no position.
+///
+/// `wrapText` says which sides *text* may occupy, which pins the object only
+/// for `left`/`right`. `bothSides` constrains nothing, and Loki read it as "put
+/// the float left" — so `acid2-docx.docx`'s newsletter figure, which is
+/// `bothSides` with `<wp:align>right</wp:align>`, came out on the left and
+/// mirror-imaged the page against Word. Word's own body copy on that page
+/// reads "text flows around the sidebar image on its left".
+#[test]
+fn an_explicit_position_beats_the_inferred_wrap_side() {
+    let plan = |fw: FloatWrap| {
+        let images = vec![img(1.0, 1.0, Some(fw))];
+        let (_, p) = plan_float(&images, 468.0).expect("a square float is planned");
+        // A left float indents the text's start; a right float indents its end.
+        (p.indent_start_delta > 0.0, p.indent_end_delta > 0.0)
+    };
+    let with_align = |side, align| FloatWrap {
+        wrap: TextWrap::Square,
+        side,
+        align,
+        behind_text: false,
+    };
+
+    // The regressing case: `bothSides` + an explicit right position.
+    assert_eq!(
+        plan(with_align(WrapSide::Both, Some(FloatAlign::Right))),
+        (false, true),
+        "an explicit `right` position must put the float on the right"
+    );
+    // …and the same wrap side with no position keeps the old inference, which
+    // is all ODF and legacy content offers.
+    assert_eq!(
+        plan(with_align(WrapSide::Both, None)),
+        (true, false),
+        "with no stated position, `bothSides` still falls back to a left float"
+    );
+    // The position must also be able to *override* a wrap side that would have
+    // inferred the opposite, or it is not really deciding.
+    assert_eq!(
+        plan(with_align(WrapSide::Left, Some(FloatAlign::Left))),
+        (true, false),
+        "an explicit `left` must win over `wrapText=left`, which infers right"
+    );
+    assert_eq!(
+        plan(with_align(WrapSide::Right, Some(FloatAlign::Right))),
+        (false, true),
+        "an explicit `right` must win over `wrapText=right`, which infers left"
+    );
+    // Inference unchanged where the wrap side does pin the object.
+    assert_eq!(plan(with_align(WrapSide::Left, None)), (false, true));
+    assert_eq!(plan(with_align(WrapSide::Right, None)), (true, false));
 }
 
 #[test]
@@ -40,6 +95,7 @@ fn top_and_bottom_float_is_not_side_wrapped() {
         Some(FloatWrap {
             wrap: TextWrap::TopAndBottom,
             side: WrapSide::Both,
+            align: None,
             behind_text: false,
         }),
     )];
@@ -58,6 +114,7 @@ fn wrap_none_is_not_side_wrapped() {
             Some(FloatWrap {
                 wrap: TextWrap::None,
                 side: WrapSide::Both,
+                align: None,
                 behind_text,
             }),
         )];
@@ -76,6 +133,7 @@ fn behind_text_float_is_not_side_wrapped() {
         Some(FloatWrap {
             wrap: TextWrap::Square,
             side: WrapSide::Both,
+            align: None,
             behind_text: true,
         }),
     )];

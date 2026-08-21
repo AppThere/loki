@@ -185,6 +185,7 @@ fn floating_image_emits_css_float() {
     FloatWrap {
         wrap: TextWrap::Square,
         side: WrapSide::Right,
+        align: None,
         behind_text: false,
     }
     .store(&mut attr);
@@ -214,6 +215,7 @@ fn behind_text_float_is_not_floated() {
     FloatWrap {
         wrap: TextWrap::Square,
         side: WrapSide::Both,
+        align: None,
         behind_text: true,
     }
     .store(&mut attr);

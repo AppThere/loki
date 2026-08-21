@@ -196,6 +196,7 @@ fn anchor_drawing_carries_wrap_mode() {
         wrap: Some(FloatWrap {
             wrap: TextWrap::Tight,
             side: WrapSide::Left,
+            align: None,
             behind_text: false,
         }),
         txbx: Vec::new(),
@@ -211,6 +212,7 @@ fn anchor_drawing_carries_wrap_mode() {
             Some(FloatWrap {
                 wrap: TextWrap::Tight,
                 side: WrapSide::Left,
+                align: None,
                 behind_text: false,
             })
         );
