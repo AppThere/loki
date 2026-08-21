@@ -14,8 +14,8 @@ use loki_primitives::units::Points;
 use crate::result::{LayoutPage, PageEditingData};
 
 use super::{
-    FlowState, columns_impl, comments_impl, float_impl, flow_hrule, flow_paragraph, para_between,
-    synthesize_heading_para, synthesize_plain_para, table_main,
+    BreakCause, FlowState, columns_impl, comments_impl, float_impl, flow_hrule, flow_paragraph,
+    para_between, synthesize_heading_para, synthesize_plain_para, table_main,
 };
 
 // ── Block dispatch ────────────────────────────────────────────────────────────
@@ -172,7 +172,9 @@ fn flow_blocks(state: &mut FlowState, blocks: &[Block], idx: usize) {
 
 // ── Page management ───────────────────────────────────────────────────────────
 
-pub(crate) fn finish_page(state: &mut FlowState) {
+/// Closes the current page. `cause` decides how paragraph spacing carries into
+/// the next one — see [`BreakCause`].
+pub(crate) fn finish_page(state: &mut FlowState, cause: BreakCause) {
     // Lay out this page's footnotes in the band reserved at their reference (per
     // the `pending_footnotes` doc). Runs before column positioning so the note
     // items are placed with the rest of the page's content.
@@ -224,9 +226,9 @@ pub(crate) fn finish_page(state: &mut FlowState) {
     }
     // Cross-paragraph float wrap does not continue onto the next page.
     state.active_float = None;
-    // Nor does paragraph-spacing collapsing: the block whose `space_after` is
-    // pending is on the page just closed, so collapsing the next block's
-    // `space_before` against it would pull its first line up against the top
-    // margin.
-    state.clear_pending_space();
+    // Paragraph-spacing collapsing carries across only a *forced* break: after
+    // a flow break the block whose `space_after` is pending is on the page just
+    // closed, so collapsing against it would pull the next block's first line
+    // up against the top margin.
+    state.end_page_at(cause);
 }

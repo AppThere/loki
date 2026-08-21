@@ -16,7 +16,11 @@ use loki_doc_model::content::block::{Block, StyledParagraph};
 use crate::para::{ByteIndexMap, ParagraphLayout, ResolvedParaProps, layout_paragraph_spelled};
 use crate::resolve::{CollectedNote, resolve_para_props};
 
-use super::{FlowState, LayoutWarning, break_column, finish_page, place_paragraph_layout};
+use super::{FlowState, LayoutWarning, break_column};
+
+#[path = "flow_para_chain_place.rs"]
+mod place;
+use place::{place_chain_blocks, place_chain_too_tall};
 
 /// A speculatively-built chain member: its resolved props, laid-out paragraph,
 /// and the footnotes/endnotes it collected (committed to `pending_footnotes`
@@ -25,7 +29,7 @@ use super::{FlowState, LayoutWarning, break_column, finish_page, place_paragraph
 ///
 /// The layout is the shaping cache's `Arc` (S9-1); a chain member with images
 /// takes a private copy via `Arc::make_mut`, the rest share the entry.
-type ChainEntry = (ResolvedParaProps, Arc<ParagraphLayout>, Vec<CollectedNote>);
+pub(super) type ChainEntry = (ResolvedParaProps, Arc<ParagraphLayout>, Vec<CollectedNote>);
 
 /// Maximum keep-with-next chain length before truncation (ADR 004 §4).
 const CHAIN_LIMIT: usize = 5;
@@ -207,94 +211,4 @@ fn build_chain_layouts<'s>(
         }
     }
     out
-}
-
-/// Commit a placed chain block's notes: tag them with their owning block and
-/// per-block order, hand them to `pending_footnotes`, and advance the real note
-/// counter (mirrors `flow_paragraph`, so a `keepNext` caption's footnote is
-/// rendered rather than dropped).
-fn collect_chain_notes(state: &mut FlowState, mut notes: Vec<CollectedNote>, block_index: usize) {
-    if notes.is_empty() {
-        return;
-    }
-    for (i, note) in notes.iter_mut().enumerate() {
-        note.owner_block_index = block_index;
-        note.note_in_block = i;
-    }
-    state.note_counter += notes.len() as u32;
-    // The chain is placed as a single-page unit (it was measured to fit), so its
-    // notes land on the current page — reserve their band immediately so
-    // post-chain content stops above it.
-    state.footnote_reserved += super::super::tail::footnote_reservation(state, &notes);
-    state.pending_footnotes.extend(notes);
-}
-
-/// Place chain blocks in order, adding `space_before` to `cursor_y` before each.
-fn place_chain_blocks(state: &mut FlowState, chain: Vec<ChainEntry>, start: usize) {
-    for (i, (resolved, layout, notes)) in chain.into_iter().enumerate() {
-        state.advance_space_before(resolved.space_before);
-        if resolved.page_break_before && state.mode.is_paginated() {
-            finish_page(state);
-        }
-        collect_chain_notes(state, notes, start + i);
-        place_paragraph_layout(state, &resolved, layout, start + i);
-    }
-}
-
-/// Handle a chain that is taller than one page: find the prefix that fits,
-/// emit `KeepWithNextChainTooTall`, flush if needed, place the prefix.
-///
-/// Returns the number of blocks consumed (the fitting prefix only; remaining
-/// blocks fall back to the caller's main loop).
-fn place_chain_too_tall(
-    state: &mut FlowState,
-    chain: Vec<ChainEntry>,
-    start: usize,
-    chain_end: usize,
-    _total_h: f32,
-) -> usize {
-    // Find largest prefix whose total height fits on one fresh page.
-    let mut prefix_h = 0.0f32;
-    let mut last_fits = start;
-    for (i, (resolved, layout, _)) in chain.iter().enumerate() {
-        let block_h = resolved.space_before + layout.height + resolved.space_after;
-        if prefix_h + block_h > state.page_content_height {
-            break;
-        }
-        prefix_h += block_h;
-        last_fits = start + i;
-    }
-    let break_at = last_fits + 1;
-
-    state
-        .warnings
-        .push(LayoutWarning::KeepWithNextChainTooTall {
-            start_block: start,
-            break_at,
-        });
-    tracing::warn!(
-        start_block = start,
-        end_block = chain_end,
-        "keep-with-next chain too tall for one page; breaking at block {break_at}"
-    );
-
-    if state.cursor_y > 0.0 {
-        break_column(state);
-    }
-
-    let consumed = last_fits - start + 1;
-    for (i, (resolved, layout, notes)) in chain.into_iter().enumerate() {
-        if start + i > last_fits {
-            // Un-placed suffix falls back to the caller's main loop, which
-            // re-flows it (re-collecting its notes) — so drop these here.
-            break;
-        }
-        state.advance_space_before(resolved.space_before);
-        if resolved.page_break_before && state.mode.is_paginated() {
-            finish_page(state);
-        }
-        collect_chain_notes(state, notes, start + i);
-        place_paragraph_layout(state, &resolved, layout, start + i);
-    }
-    consumed
 }

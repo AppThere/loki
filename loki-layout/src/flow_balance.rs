@@ -24,7 +24,7 @@ use loki_doc_model::StyleCatalog;
 use loki_doc_model::content::annotation::Comment;
 use loki_doc_model::layout::section::Section;
 
-use super::{FlowOutput, new_flow_state, run_paginated_loop};
+use super::{BreakCause, FlowOutput, new_flow_state, run_paginated_loop};
 use crate::LayoutOptions;
 use crate::font::FontResources;
 use crate::incremental::FlowCheckpoint;
@@ -224,14 +224,14 @@ fn run_capped(
     run_paginated_loop(&mut state, &ctx.section.blocks, start, 0, |_, _| false);
     let has_notes = state.note_counter > 0;
     // `finish_page` lays out the final page's footnote band (per-page placement).
-    super::finish_page(&mut state);
+    super::finish_page(&mut state, BreakCause::Flow);
     // Endnotes render at the **section end** (Word's default), on a fresh page
     // after the last content — not in the per-page band like footnotes (which
     // `finish_page` already placed). They paginate if they overflow.
     if !state.pending_endnotes.is_empty() {
         let notes = std::mem::take(&mut state.pending_endnotes);
         super::tail::render_footnote_bodies(&mut state, notes);
-        super::finish_page(&mut state);
+        super::finish_page(&mut state, BreakCause::Flow);
     }
     let pages = state.pages.len();
     let candidate = state.tail_candidate.take();

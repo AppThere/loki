@@ -22,7 +22,7 @@ use crate::resolve::resolve_para_props;
 
 use super::columns_impl::break_column;
 use super::editing::push_editing_para;
-use super::{FlowState, LayoutWarning, finish_page};
+use super::{BreakCause, FlowState, LayoutWarning, finish_page};
 
 #[path = "flow_para_chain.rs"]
 mod chain;
@@ -133,7 +133,7 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     // let the *following* paragraph consume the suppression instead of this
     // one, which is the paragraph actually starting the new page.
     if resolved.page_break_before && state.mode.is_paginated() {
-        finish_page(state);
+        finish_page(state, BreakCause::Forced);
     }
 
     state.advance_space_before(resolved.space_before);
@@ -250,7 +250,11 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         }
     }
 
+    // `TODO(page-break-after-cause)`: treated as a flow break because it has
+    // not been measured. OOXML has no `pageBreakAfter` — this arrives from
+    // ODF's `fo:break-after`, so the reference is LibreOffice rather than Word
+    // and the `BreakCause` table above does not cover it.
     if resolved.page_break_after && state.mode.is_paginated() {
-        finish_page(state);
+        finish_page(state, BreakCause::Flow);
     }
 }

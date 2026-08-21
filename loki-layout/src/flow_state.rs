@@ -125,18 +125,55 @@ pub(crate) struct FlowState<'a> {
     /// against it rather than added to it — see
     /// [`advance_space_before`](FlowState::advance_space_before).
     ///
-    /// Reset to `0` at every page and column boundary: collapsing across a
-    /// break would let a paragraph's `space_before` be swallowed by an
-    /// `space_after` that is now on the previous page, pulling its first line
-    /// up against the top margin.
+    /// Reset to `0` at a [`BreakCause::Flow`] boundary: collapsing across one
+    /// would let a paragraph's `space_before` be swallowed by a `space_after`
+    /// that is now on the previous page, pulling its first line up against the
+    /// top margin. **Kept** across a [`BreakCause::Forced`] one, where Word
+    /// does collapse — see that variant.
     pub(super) last_space_after: f32,
-    /// Set when the flow arrives at a fresh page or column **via a break**, so
-    /// the next block's `space_before` is dropped rather than applied.
+    /// Set when the flow arrives at a fresh page or column via a
+    /// [`BreakCause::Flow`] break, so the next block's `space_before` is
+    /// dropped rather than applied.
     ///
     /// Not the same as "the cursor is at the top of the band": Word applies
     /// `space_before` on the document's very first paragraph (measured: 24 pt
-    /// requested, 24 pt applied) and drops it after a page break (measured:
-    /// 18 pt requested, 0 pt applied). Only the arrival route separates those
+    /// requested, 24 pt applied) and drops it after a flow break (measured:
+    /// 36 pt requested, 0 pt applied). Only the arrival route separates those
     /// two, which a cursor-position test cannot see.
     pub(super) suppress_space_before: bool,
+}
+
+/// Why a page or column ended. Word treats a paragraph's `space_before` at the
+/// top of the new page differently depending on how the flow got there, so the
+/// cause has to travel with the break rather than be inferred at the far end.
+///
+/// Measured against Word 16.0 (`w:before` = 36 pt on the first paragraph of the
+/// new page, PDF export, first-baseline against the same document with
+/// `w:before` = 0):
+///
+/// | how the page ended                | applied |
+/// |-----------------------------------|---------|
+/// | ran out of room (natural overflow)| 0 pt    |
+/// | `<w:br w:type="page"/>` run       | 0 pt    |
+/// | `w:pageBreakBefore` paragraph     | 36 pt   |
+/// | `nextPage` section break          | 36 pt   |
+///
+/// and with 20 pt of `space_after` on the preceding paragraph, the two
+/// *forced* rows fall to 15.96 pt — i.e. they collapse against it by the
+/// ordinary `max(after, before)` rule rather than being applied whole. So the
+/// distinction is exactly Flow-versus-Forced, not page-break-versus-section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BreakCause {
+    /// The column or page ran out of vertical room, or a `<w:br w:type="page"/>`
+    /// run asked for a new page. The next block's `space_before` is dropped.
+    Flow,
+    /// A `w:pageBreakBefore` paragraph asked for the break. The next block's
+    /// `space_before` survives, collapsed against the preceding block's
+    /// `space_after`.
+    ///
+    /// A `nextPage` section start behaves identically in Word, but Loki flows
+    /// each such section as its own page sequence with a fresh `FlowState`, so
+    /// it cannot reach this path — see `TODO(section-space-before-collapse)`
+    /// in `flow_group.rs`.
+    Forced,
 }

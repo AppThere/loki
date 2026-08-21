@@ -2861,19 +2861,44 @@ fn adjacent_paragraph_spacing_collapses_to_the_larger() {
     );
 }
 
-/// `space_before` is suppressed at a page break, but **not** on the document's
-/// first paragraph.
+/// `space_before` at the top of a new page depends on **why** the page broke.
 ///
-/// Both halves measured against Word 16.0: a paragraph carrying
-/// `PageBreakBefore` puts its first ink at the same `y` whether it declares
-/// `before = 0` or `before = 18pt`, while the document's first paragraph moves
-/// down by exactly its declared 24pt. Only the arrival route separates the two
-/// cases, which is why the flow tracks it rather than testing the cursor.
+/// Measured against Word 16.0 (`w:before` = 36pt on the first paragraph of the
+/// new page, PDF export, first-baseline read against the same document with
+/// `w:before` = 0):
+///
+/// | how the page ended                 | applied |
+/// |------------------------------------|---------|
+/// | `w:pageBreakBefore` paragraph      | 36 pt   |
+/// | …with 20 pt `w:after` before it    | 15.96pt |
+/// | ran out of room (natural overflow) | 0 pt    |
+/// | `<w:br w:type="page"/>` run        | 0 pt    |
+///
+/// So a *forced* break keeps `space_before`, collapsed against the preceding
+/// paragraph's `space_after` by the ordinary `max(after, before)` rule; only a
+/// *flow* break drops it. See [`super::BreakCause`].
+///
+/// This test previously asserted the opposite for the forced case — that Word
+/// drops `space_before` after a `PageBreakBefore` — citing a measurement whose
+/// two arms were never compared in one document. Re-measuring with the
+/// `before = 0` control in the same document shape gives 0 pt and 36 pt, a
+/// difference of exactly the declared space.
 #[test]
-fn space_before_is_dropped_after_a_page_break_but_not_at_the_document_start() {
+fn space_before_survives_a_forced_break_and_is_dropped_by_a_flow_break() {
     fn first_run_y_on_page(page: usize, before: f64, page_break: bool) -> f32 {
+        first_run_y_after(page, before, page_break, 0.0)
+    }
+
+    /// First glyph `y` on `page`, with `after` on the preceding paragraph.
+    fn first_run_y_after(page: usize, before: f64, page_break: bool, after: f64) -> f32 {
         let mut r = test_resources();
-        let p1 = make_para("Page one");
+        let p1 = StyledParagraph {
+            direct_para_props: Some(Box::new(ParaProps {
+                space_after: Some(Spacing::Exact(Points::new(after))),
+                ..Default::default()
+            })),
+            ..make_para("Page one")
+        };
         let p2 = StyledParagraph {
             direct_para_props: Some(Box::new(ParaProps {
                 space_before: Some(Spacing::Exact(Points::new(before))),
@@ -2894,12 +2919,74 @@ fn space_before_is_dropped_after_a_page_break_but_not_at_the_document_start() {
             .expect("a glyph run on the page")
     }
 
-    // After a page break: the declared space_before must not move the content.
+    /// First glyph `y` on page two when the marked paragraph got there by
+    /// **overflow** — no `page_break_before` anywhere.
+    ///
+    /// The filler count is searched rather than hard-coded so the test does not
+    /// silently stop testing overflow when a font or metric change alters how
+    /// many lines fit: it accepts only the count that puts exactly the marked
+    /// paragraph (one glyph run) alone on page two.
+    fn overflow_page_two_y(before: f64) -> f32 {
+        for n in 1..200 {
+            let mut r = test_resources();
+            let mut paras: Vec<StyledParagraph> =
+                (0..n).map(|_| make_para("filler")).collect::<Vec<_>>();
+            paras.push(StyledParagraph {
+                direct_para_props: Some(Box::new(ParaProps {
+                    space_before: Some(Spacing::Exact(Points::new(before))),
+                    ..Default::default()
+                })),
+                ..make_para("marker")
+            });
+            let section = section_of(paras, PageLayout::default());
+            let (pages, _) = flow_paginated(&mut r, &section);
+            if pages.len() != 2 {
+                continue;
+            }
+            let runs: Vec<f32> = pages[1]
+                .content_items
+                .iter()
+                .filter_map(|i| match i {
+                    PositionedItem::GlyphRun(run) => Some(run.origin.y),
+                    _ => None,
+                })
+                .collect();
+            if let [only] = runs[..] {
+                return only;
+            }
+        }
+        panic!("no filler count put the marked paragraph alone on page two")
+    }
+
+    // A forced break keeps the declared space_before in full.
     let none = first_run_y_on_page(1, 0.0, true);
     let some = first_run_y_on_page(1, 18.0, true);
     assert!(
-        (some - none).abs() < 0.01,
-        "space_before must be dropped after a page break: {none} vs {some}"
+        (some - none - 18.0).abs() < 0.01,
+        "a forced break must keep space_before: {none} vs {some}"
+    );
+
+    // …and collapses it against the preceding paragraph's space_after, rather
+    // than applying it whole. 18pt before against 12pt after tops up by 6.
+    let collapsed = first_run_y_after(1, 18.0, true, 12.0);
+    assert!(
+        (collapsed - none - 6.0).abs() < 0.01,
+        "a forced break must collapse space_before against the preceding \
+         space_after (expected +6pt over {none}, got {collapsed})"
+    );
+    // The inversion: with `after` >= `before` the collapse must consume it
+    // entirely, or "collapsing" would just be "subtract a bit".
+    let swallowed = first_run_y_after(1, 18.0, true, 24.0);
+    assert!(
+        (swallowed - none).abs() < 0.01,
+        "an after larger than before must swallow it whole: {none} vs {swallowed}"
+    );
+
+    // A *flow* break drops it — the distinction the rule exists to make.
+    let (flow_none, flow_some) = (overflow_page_two_y(0.0), overflow_page_two_y(18.0));
+    assert!(
+        (flow_some - flow_none).abs() < 0.01,
+        "a flow break must drop space_before: {flow_none} vs {flow_some}"
     );
 
     // At the document start it must still apply — the inversion that keeps the

@@ -142,7 +142,7 @@ pub enum LayoutWarning {
 
 #[path = "flow_state.rs"]
 mod state;
-pub(super) use state::FlowState;
+pub(super) use state::{BreakCause, FlowState};
 
 impl FlowState<'_> {
     /// Snapshots the resumable flow state at a clean page top.

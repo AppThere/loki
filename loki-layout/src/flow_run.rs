@@ -19,7 +19,8 @@ use crate::resolve::para_map::para_keep_with_next;
 use crate::resolve::pts_to_f32;
 
 use super::{
-    FlowState, columns_impl, float_impl, flow_block, flow_keep_with_next_chain, para_between,
+    BreakCause, FlowState, columns_impl, float_impl, flow_block, flow_keep_with_next_chain,
+    para_between,
 };
 
 /// Builds a fresh [`FlowState`] for `section` in `mode`.
@@ -135,16 +136,12 @@ impl FlowState<'_> {
     /// `max()`: the previous block's `space_after` has already moved the
     /// cursor, so adding the difference tops it up to the larger of the two
     /// and adds nothing when it is already the larger.
-    /// At the very top of a page or column, `space_before` is **suppressed
-    /// entirely** rather than collapsed. Also measured: a paragraph carrying
-    /// `PageBreakBefore` puts its first ink at the same `y` whether it declares
-    /// `before = 0` or `before = 18pt` — Word drops it, because the page margin
-    /// already provides the separation the spacing exists to create.
     ///
-    /// This is why the reset at a break clears the pending `space_after`
-    /// *without* leaving `space_before` to be applied in full: the two rules
-    /// are one decision, and splitting them across two places is how the
-    /// paginator would end up honouring one and not the other.
+    /// At the top of a page or column reached by a [`BreakCause::Flow`] break,
+    /// `space_before` is **suppressed entirely** rather than collapsed — the
+    /// page margin already provides the separation the spacing exists to
+    /// create. A [`BreakCause::Forced`] break keeps the ordinary collapse; see
+    /// [`BreakCause`] for the measurements that separate the two.
     pub(super) fn advance_space_before(&mut self, before: f32) {
         if std::mem::take(&mut self.suppress_space_before) {
             self.last_space_after = 0.0;
@@ -161,12 +158,24 @@ impl FlowState<'_> {
         self.last_space_after = after;
     }
 
-    /// Forgets any pending `space_after` — called at a page or column break,
-    /// where there is no longer a preceding block on this page to collapse
-    /// against.
-    pub(super) fn clear_pending_space(&mut self) {
-        self.last_space_after = 0.0;
-        self.suppress_space_before = true;
+    /// Settles paragraph-spacing collapse across a page or column boundary,
+    /// according to [why the boundary happened](BreakCause).
+    ///
+    /// A [`Flow`](BreakCause::Flow) break forgets the pending `space_after` and
+    /// suppresses the next block's `space_before`: there is no longer a
+    /// preceding block on this page to collapse against, and Word drops the
+    /// spacing outright.
+    ///
+    /// A [`Forced`](BreakCause::Forced) break leaves **both** alone, which is
+    /// what makes the next block's `space_before` collapse against the
+    /// preceding block's `space_after` exactly as it would mid-page. Clearing
+    /// either one here would silently turn Word's `max(0, before - after)` into
+    /// `before` (clearing `last_space_after`) or into `0` (suppressing).
+    pub(super) fn end_page_at(&mut self, cause: BreakCause) {
+        if cause == BreakCause::Flow {
+            self.last_space_after = 0.0;
+            self.suppress_space_before = true;
+        }
     }
 }
 

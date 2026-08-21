@@ -14,7 +14,7 @@ use crate::incremental::FlowCheckpoint;
 use crate::mode::LayoutMode;
 
 use super::{
-    FlowOutput, FlowState, balance, columns_impl, finish_page, float_impl, flow_block,
+    BreakCause, FlowOutput, FlowState, balance, columns_impl, finish_page, float_impl, flow_block,
     flow_footnotes, new_flow_state, para_between, run_paginated_loop,
 };
 
@@ -62,7 +62,7 @@ pub(crate) fn flow_section_resume(
         // lays out its footnote band). On a resync stop the current page is an
         // empty clean page top, intentionally left unflushed for the caller to
         // splice the reused suffix.
-        finish_page(&mut state);
+        finish_page(&mut state, BreakCause::Flow);
     }
     crate::incremental::ResumedFlow {
         pages: state.pages,

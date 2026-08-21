@@ -10,7 +10,7 @@
 //! column's absolute offset when the column is finished — see
 //! [`position_current_column`].
 
-use super::{FlowState, finish_page};
+use super::{BreakCause, FlowState, finish_page};
 use crate::color::LayoutColor;
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedItem, PositionedRect};
@@ -92,11 +92,11 @@ pub(super) fn break_column(state: &mut FlowState) {
         // The next column starts at the band top (page content top, or mid-page
         // for a continuous section that opened its band below earlier content).
         state.cursor_y = state.column_top_y;
-        // Spacing does not collapse across a column break, for the same reason
-        // it does not across a page break (see `finish_page`).
-        state.clear_pending_space();
+        // A column break is always space exhaustion, so spacing does not
+        // collapse across it — see `BreakCause`.
+        state.end_page_at(BreakCause::Flow);
     } else {
-        finish_page(state);
+        finish_page(state, BreakCause::Flow);
     }
 }
 
