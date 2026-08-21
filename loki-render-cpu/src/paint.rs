@@ -7,7 +7,7 @@
 
 use loki_layout::{
     BorderEdge, DecorationKind, LayoutColor, PositionedBorderRect, PositionedDecoration,
-    PositionedGlyphRun, PositionedItem, PositionedRect,
+    PositionedGlyphRun, PositionedHatch, PositionedItem, PositionedRect,
 };
 use vello_cpu::kurbo::{Affine, BezPath, Line, Rect, Shape, Stroke};
 use vello_cpu::{RenderContext, Resources, color::AlphaColor, peniko};
@@ -31,6 +31,7 @@ pub(crate) fn paint_items(
             PositionedItem::FilledRect(r) | PositionedItem::HorizontalRule(r) => {
                 paint_filled_rect(ctx, r, scale, offset);
             }
+            PositionedItem::HatchRect(h) => paint_hatch(ctx, h, scale, offset),
             PositionedItem::BorderRect(b) => paint_border_rect(ctx, b, scale, offset),
             PositionedItem::Decoration(d) => paint_decoration(ctx, d, scale, offset),
             PositionedItem::Image(img) => crate::image::paint_image(ctx, img, scale, offset),
@@ -153,6 +154,49 @@ pub(crate) fn paint_filled_rect(
         f64::from((item.rect.max_x() + offset.0) * scale),
         f64::from((item.rect.max_y() + offset.1) * scale),
     ));
+}
+
+/// CPU twin of `loki_vello::rect::paint_hatch`: the optional background fill,
+/// then the pattern's line segments stroked over it.
+///
+/// A `w:shd` texture (`pct25`, `diagStripe`, …) arrives as a `HatchRect`. This
+/// renderer had no arm for that variant at all, so every textured cell fell
+/// through the catch-all and painted *nothing* — `acid2-docx.docx`'s
+/// "diagonal stripe" cell came out blank where Word fills it orange.
+///
+/// The geometry is `PositionedHatch`'s own (`segments`/`line_width`), shared
+/// with the Vello twin, so the two cannot disagree about the pattern.
+fn paint_hatch(ctx: &mut RenderContext, item: &PositionedHatch, scale: f32, offset: (f32, f32)) {
+    if let Some(fill) = item.fill {
+        paint_filled_rect(
+            ctx,
+            &PositionedRect {
+                rect: item.rect,
+                color: fill,
+            },
+            scale,
+            offset,
+        );
+    }
+    ctx.set_paint(to_color(&item.color));
+    ctx.set_stroke(Stroke::new(f64::from(item.line_width() * scale)));
+    for seg in item.segments() {
+        let mut path = BezPath::new();
+        path.extend(
+            Line::new(
+                (
+                    f64::from((seg.x0 + offset.0) * scale),
+                    f64::from((seg.y0 + offset.1) * scale),
+                ),
+                (
+                    f64::from((seg.x1 + offset.0) * scale),
+                    f64::from((seg.y1 + offset.1) * scale),
+                ),
+            )
+            .path_elements(0.1),
+        );
+        ctx.stroke_path(&path);
+    }
 }
 
 /// CPU twin of `loki_vello::rect::paint_border_rect`: each present edge is a

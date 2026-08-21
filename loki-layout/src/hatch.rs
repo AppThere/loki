@@ -71,6 +71,14 @@ impl PositionedHatch {
     }
 
     /// Perpendicular spacing between adjacent hatch lines in points.
+    ///
+    // TODO(hatch-pitch): coarser than Word. Measured on the ACID2 "diagonal
+    // stripe" cell at 144 dpi, Word's stripes average a 2.17px horizontal pitch
+    // (≈1.5pt perpendicular) against Loki's 17px (6.0 × √2 for a 45° line), so
+    // the cell reads sparse where Word reads as a dense tint. These are shared
+    // by every pattern and only `diagStripe` has been measured — measure
+    // `pctN`/`horzStripe`/`diagCross` before retuning. See §"Line/cross w:shd
+    // texture patterns" in docs/fidelity-status.md.
     #[must_use]
     pub fn spacing(&self) -> f32 {
         if self.thin { 3.5 } else { 6.0 }

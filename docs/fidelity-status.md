@@ -364,11 +364,29 @@ alongside the flattened-tint `background_color` fallback); the flow engine emits
 a `PositionedItem::HatchRect` for a shaded cell/paragraph
 (`resolve::hatch_from_shading`); `loki-layout`'s `hatch.rs` turns the rect +
 pattern into rect-clipped line segments (Liang–Barsky clip, a perpendicular
-family for the cross variants); and both renderers draw them — `loki-vello`
+family for the cross variants); and the renderers draw them — `loki-vello`
 strokes each segment (`rect::paint_hatch`), `loki-pdf` fills a thin quad per
-segment (`render_hatch`, keeping its fill-only colour pipeline). The appendix's
-"diagonal stripe" cell now shows real orange `/` stripes matching Word, verified
-by rendering the ACID2 DOCX to PDF. Tested by
+segment (`render_hatch`, keeping its fill-only colour pipeline), and
+`loki-render-cpu` strokes them via a twin of the Vello painter
+(`paint::paint_hatch`, sharing `PositionedHatch`'s own geometry so the two
+cannot disagree about the pattern).
+**`loki-render-cpu` was missed by the original landing (fixed 2026-08-21):** its
+paint dispatch had no `HatchRect` arm at all, so the item fell through the
+catch-all and every textured cell painted **nothing**. The claim above that the
+stripes "match Word" was verified *by rendering to PDF* — a renderer that does
+implement the variant — so the instrument could not see the renderer that
+didn't, which is also the renderer the conformance harness rasterizes with.
+Tested by `hatch_render.rs` (ink appears; paper still shows *between* the lines,
+so a flood fill is not mistaken for a hatch; the background `fill` paints under
+them), each assertion mutation-checked independently.
+**Pattern pitch does not match Word.** Measured on the ACID2 "diagonal stripe"
+cell at 144 dpi: Word's stripes average a **2.17 px** horizontal pitch with 1 px
+lines; Loki's are **17 px** (= `spacing()` 6.0pt × √2 for a 45° line) with 2–3 px
+lines — roughly 8× too coarse, so the cell reads as sparse stripes where Word
+reads as a dense near-solid tint. `spacing()`/`line_width()` are single shared
+constants across *all* hatch patterns and only `diagStripe` has been measured, so
+they are left alone rather than tuned to one sample. `TODO(hatch-pitch)`: measure
+`pctN`/`horzStripe`/`diagCross` against Word before changing them. Tested by
 `shading_pattern_preserves_geometry_and_colors` (mapper) and the `hatch.rs`
 geometry unit tests (horizontal/vertical/cross span the rect; diagonals stay
 clipped inside it; `thin*` is thinner + closer). The flattened-tint path
