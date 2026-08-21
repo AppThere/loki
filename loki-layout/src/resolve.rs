@@ -38,6 +38,7 @@ mod walk;
 
 use char_span::{char_props_to_style_span, effective_run_char_props};
 pub use inlines::flatten_paragraph_with_base;
+pub(crate) use inlines::note_mark_digits;
 
 // ── Public API ────────────────────────────────────────────────────────────────
 

@@ -66,14 +66,14 @@ pub(super) fn footnote_reservation(state: &mut FlowState, notes: &[CollectedNote
 /// Height one footnote will occupy, laid out (with its reference mark) exactly
 /// as [`render_footnote_bodies`] will render it, so the reserved band matches.
 fn measure_note_height(state: &mut FlowState, note: &CollectedNote) -> f32 {
-    let mark = format!("{} ", footnote_mark(note.number));
+    let mark = footnote_mark_inlines(note.number);
     let mut h = 0.0;
     let mut first = true;
     for block in &note.blocks {
         if let Block::StyledPara(p) = block {
             let mut p = p.clone();
             if first {
-                p.inlines.insert(0, Inline::Str(mark.clone()));
+                p.inlines.splice(0..0, mark.iter().cloned());
             }
             first = false;
             let mut resolved = crate::resolve::resolve_para_props(&p, state.catalog);
@@ -161,7 +161,7 @@ pub(super) fn render_footnote_bodies(state: &mut FlowState, notes: Vec<Collected
     state.cursor_y += SEP_HEIGHT + SEP_GAP;
 
     for note in notes {
-        let mark = format!("{} ", footnote_mark(note.number));
+        let mark = footnote_mark_inlines(note.number);
         let mut first = true;
         for (body_block, block) in note.blocks.iter().enumerate() {
             // Tag body paragraph(s) so a click into the footnote resolves to the
@@ -175,7 +175,7 @@ pub(super) fn render_footnote_bodies(state: &mut FlowState, notes: Vec<Collected
                 first = false;
                 if let Block::StyledPara(p) = block {
                     let mut p = p.clone();
-                    p.inlines.insert(0, Inline::Str(mark.clone()));
+                    p.inlines.splice(0..0, mark.iter().cloned());
                     flow_paragraph(state, &p, 0);
                     continue;
                 }
@@ -186,20 +186,21 @@ pub(super) fn render_footnote_bodies(state: &mut FlowState, notes: Vec<Collected
     state.nested_editing = None;
 }
 
-/// Return the Unicode superscript mark for note number `n`.
-fn footnote_mark(n: u32) -> String {
-    match n {
-        1 => "\u{00B9}".to_string(),
-        2 => "\u{00B2}".to_string(),
-        3 => "\u{00B3}".to_string(),
-        4 => "\u{2074}".to_string(),
-        5 => "\u{2075}".to_string(),
-        6 => "\u{2076}".to_string(),
-        7 => "\u{2077}".to_string(),
-        8 => "\u{2078}".to_string(),
-        9 => "\u{2079}".to_string(),
-        _ => format!("[{n}]"),
-    }
+/// The reference mark that opens a note's body at the foot of the page: the
+/// number as a superscript run, plus the space separating it from the text.
+///
+/// Built from the same `note_mark_digits` as the in-text reference, and
+/// superscripted the same way — by the *inline*, not by picking a pre-raised
+/// Unicode character. This file used to carry its own byte-identical copy of
+/// that Unicode table, so one fact had two derivations; they agreed only
+/// because nobody had changed either. (The body copy was the less wrong of the
+/// two: it applied the superscript once, where the reference path applied it
+/// twice — see `note_mark_digits` for the measurement.)
+fn footnote_mark_inlines(n: u32) -> Vec<Inline> {
+    vec![
+        Inline::Superscript(vec![Inline::Str(crate::resolve::note_mark_digits(n))]),
+        Inline::Str(" ".to_string()),
+    ]
 }
 
 // ── Table layout ─────────────────────────────────────────────────────────────

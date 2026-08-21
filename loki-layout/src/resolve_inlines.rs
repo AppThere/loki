@@ -192,23 +192,23 @@ pub(super) fn field_display_text(f: &Field) -> String {
     }
 }
 
-/// Return the Unicode superscript string for note number `n`.
+/// The text of a note's reference mark: the number in **plain digits**.
 ///
-/// Uses Unicode superscript digits (U+00B9, U+00B2, U+00B3, U+2074–U+2079)
-/// for n ≤ 9, and `[n]` for larger numbers.
-pub(super) fn superscript_mark(n: u32) -> String {
-    match n {
-        1 => "\u{00B9}".to_string(),
-        2 => "\u{00B2}".to_string(),
-        3 => "\u{00B3}".to_string(),
-        4 => "\u{2074}".to_string(),
-        5 => "\u{2075}".to_string(),
-        6 => "\u{2076}".to_string(),
-        7 => "\u{2077}".to_string(),
-        8 => "\u{2078}".to_string(),
-        9 => "\u{2079}".to_string(),
-        _ => format!("[{n}]"),
-    }
+/// Shrinking and raising it is the caller's job, via
+/// [`VerticalAlign::Superscript`](crate::para::VerticalAlign::Superscript) —
+/// which is what Word does (a reference is an ordinary digit in a superscript
+/// run) and the only way the mark can carry the run's own font.
+///
+/// This used to return the **Unicode superscript digits** (U+00B9, U+00B2, …),
+/// which the font already draws small and raised; the reference path then
+/// applied the superscript transform on top, shrinking and raising it twice.
+/// Measured on `acid2-docx.docx` page 3 at 144 dpi: Word's mark is 9 px tall
+/// raised 8 px, Loki's was 5 px raised 13 px — a tick, not a digit.
+///
+/// It also makes numbers above nine work: the Unicode set stops at ⁹, so the
+/// old fallback rendered a literal `[10]`, brackets and all.
+pub(crate) fn note_mark_digits(n: u32) -> String {
+    n.to_string()
 }
 
 /// Collect an `Inline::Image` for post-Parley placement (gap #9); emits no text.

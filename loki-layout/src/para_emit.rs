@@ -22,7 +22,7 @@ use crate::items::{
     DecorationKind, DecorationStyle, GlyphEntry, GlyphSynthesis, PositionedDecoration,
     PositionedGlyphRun, PositionedItem, PositionedRect,
 };
-use crate::para::{StrikethroughStyle, StyleSpan, UnderlineStyle, VerticalAlign, span_at_offset};
+use crate::para::{StrikethroughStyle, StyleSpan, UnderlineStyle, span_at_offset};
 
 pub(crate) fn underline_deco_style(u: UnderlineStyle) -> DecorationStyle {
     match u {
@@ -176,17 +176,12 @@ pub(crate) fn emit_glyph_run(
     let link_url = covering_span.and_then(|s| s.link_url.clone());
 
     // ── Vertical offset for super/subscript (gap #3) ──────────────────────────
-    // Parley does not expose baseline-shift, so font size is reduced to 58 % in
-    // push_para_styles. We manually shift the run origin here so the text
-    // actually appears above/below the baseline.
-    // Superscript: raise by 35 % of the original (pre-reduction) font size.
-    // Subscript:   lower by 20 % of the original font size.
+    // Parley does not expose baseline-shift, so `push_para_styles` reduces the
+    // font size and we shift the run origin here. Both halves read
+    // `VerticalAlign`'s measured constants — see them for the Word probe.
     let va_offset = covering_span
         .and_then(|s| s.vertical_align.map(|va| (va, s.font_size)))
-        .map(|(va, orig_size)| match va {
-            VerticalAlign::Superscript => -orig_size * 0.35,
-            VerticalAlign::Subscript => orig_size * 0.20,
-        })
+        .map(|(va, orig_size)| orig_size * va.baseline_shift_ratio())
         .unwrap_or(0.0);
 
     // ── Highlight colour (gap #10) ────────────────────────────────────────────

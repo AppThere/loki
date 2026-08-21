@@ -824,37 +824,98 @@ fn paragraph_border_spans_the_content_column_plus_the_word_outset() {
     );
 }
 
+/// Super/subscript runs are drawn at [`VerticalAlign::SIZE_RATIO`] of the
+/// declared size and shifted by [`VerticalAlign::baseline_shift_ratio`].
+///
+/// Both constants are measured against Word 16.0 (see `VerticalAlign`); this
+/// pins the values the layout actually produces, at a large size so a subpixel
+/// of hinting cannot move the ratio.
+///
+/// The previous test here asserted only that a superscript span "produces at
+/// least one glyph run" while its comment claimed to be checking the 0.58 size
+/// ratio — it passed for every possible constant, which is how three wrong ones
+/// survived (0.58 size, 0.35 rise, and a subscript drop of 0.20 against Word's
+/// 0.094).
 #[test]
-fn superscript_span_uses_smaller_font() {
-    // A span with vertical_align=Superscript should use font_size * 0.58.
-    // We verify by checking that the layout of a superscript run produces a
-    // GlyphRun with a smaller ascent than a plain run at the same font_size.
-    // The simplest proxy: just ensure the paragraph lays out without panic and
-    // produces at least one glyph run.
-    let mut r = test_resources();
-    let text = "x2";
-    let spans = [StyleSpan {
-        range: 0..2,
-        vertical_align: Some(VerticalAlign::Superscript),
-        ..single_span(text, 12.0)
-    }];
-    let result = layout_paragraph(
-        &mut r,
-        text,
-        &spans,
-        &ResolvedParaProps::default(),
-        400.0,
-        1.0,
-        false,
-    );
-    let runs = result
-        .items
-        .iter()
-        .filter(|i| matches!(i, PositionedItem::GlyphRun(_)))
-        .count();
+fn super_and_subscript_use_words_measured_size_and_shift() {
+    const SIZE: f32 = 100.0;
+
+    /// Lays out `HH` with the second `H` carrying `va`, and returns
+    /// `((plain_advance, plain_y), (shifted_advance, shifted_y))`.
+    ///
+    /// Both runs must be on **one line of one paragraph**: a smaller font
+    /// changes the line's own metrics, so two separate single-run paragraphs
+    /// differ in baseline for reasons that have nothing to do with the shift
+    /// (measured -0.66 of the declared size that way, against the true -0.327).
+    /// Sharing a line cancels that entirely.
+    fn laid_out(va: VerticalAlign) -> ((f32, f32), (f32, f32)) {
+        let mut r = test_resources();
+        let text = "HH";
+        let spans = [
+            StyleSpan {
+                range: 0..1,
+                vertical_align: None,
+                ..single_span(text, SIZE)
+            },
+            StyleSpan {
+                range: 1..2,
+                vertical_align: Some(va),
+                ..single_span(text, SIZE)
+            },
+        ];
+        let result = layout_paragraph(
+            &mut r,
+            text,
+            &spans,
+            &ResolvedParaProps::default(),
+            4000.0,
+            1.0,
+            false,
+        );
+        let mut runs: Vec<_> = result
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                PositionedItem::GlyphRun(g) => Some((
+                    g.origin.x,
+                    g.glyphs.iter().map(|gl| gl.advance).sum::<f32>(),
+                    g.origin.y,
+                )),
+                _ => None,
+            })
+            .collect();
+        runs.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let [(_, a0, y0), (_, a1, y1)] = runs[..] else {
+            panic!("expected exactly two glyph runs, got {}", runs.len())
+        };
+        ((a0, y0), (a1, y1))
+    }
+
+    for (va, want_size, want_shift) in [
+        (VerticalAlign::Superscript, 0.65_f32, -0.327_f32),
+        (VerticalAlign::Subscript, 0.65, 0.094),
+    ] {
+        let ((plain_adv, plain_y), (adv, y)) = laid_out(va);
+        assert!(plain_adv > 0.0, "the plain run must have advance");
+        let size_ratio = adv / plain_adv;
+        assert!(
+            (size_ratio - want_size).abs() < 0.02,
+            "{va:?} advance ratio {size_ratio:.4}, want {want_size}              (Word draws both at 0.65 of the declared size)"
+        );
+        let shift_ratio = (y - plain_y) / SIZE;
+        assert!(
+            (shift_ratio - want_shift).abs() < 0.01,
+            "{va:?} baseline shift {shift_ratio:+.4} of the declared size,              want {want_shift:+}"
+        );
+    }
+
+    // The inversion: the two directions must land on *opposite* sides of the
+    // plain baseline, so a sign error cannot pass by matching magnitudes.
+    let ((_, plain_y), (_, sup_y)) = laid_out(VerticalAlign::Superscript);
+    let (_, (_, sub_y)) = laid_out(VerticalAlign::Subscript);
     assert!(
-        runs >= 1,
-        "superscript span must produce at least one glyph run"
+        sup_y < plain_y && sub_y > plain_y,
+        "superscript must sit above and subscript below the plain baseline:          sup={sup_y} plain={plain_y} sub={sub_y}"
     );
 }
 

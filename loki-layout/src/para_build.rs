@@ -11,7 +11,7 @@ use parley::{
     OverflowWrap, RangedBuilder, StyleProperty,
 };
 
-use super::{MATH_ID_BASE, ResolvedLineHeight, ResolvedParaProps, StyleSpan};
+use super::{MATH_ID_BASE, ResolvedLineHeight, ResolvedParaProps, StyleSpan, VerticalAlign};
 use crate::color::LayoutColor;
 
 /// Pushes one Parley inline box per typeset math placeholder, sized to the
@@ -85,10 +85,13 @@ pub(crate) fn push_para_styles(
         if r.start >= r.end {
             continue;
         }
-        // For super/subscript (gap #3), reduce font size to 58 %. The shift is
-        // applied in `para_emit` (`va_offset`) — TODO(super-sub): no native API.
+        // For super/subscript (gap #3), reduce the font size; the matching
+        // baseline shift is applied in `para_emit` (`va_offset`).
+        // TODO(super-sub): Parley exposes no native baseline-shift API, so the
+        // two halves are applied in two passes — but they read one set of
+        // constants (`VerticalAlign`), so they cannot disagree about the size.
         let effective_font_size = if span.vertical_align.is_some() {
-            span.font_size * 0.58
+            span.font_size * VerticalAlign::SIZE_RATIO
         } else {
             span.font_size
         };

@@ -17,7 +17,7 @@ use loki_doc_model::style::props::char_props::{
 use crate::para::StyleSpan;
 
 use super::char_span::{char_props_to_style_span, effective_run_char_props};
-use super::inlines::{collect_inline_image, field_display_text, push_text, superscript_mark};
+use super::inlines::{collect_inline_image, field_display_text, note_mark_digits, push_text};
 use super::{CollectedImage, CollectedNote};
 
 /// Recursively collect text from an [`Inline`] tree, building `buf` + `spans`.
@@ -244,7 +244,7 @@ pub(super) fn walk_inlines(
             // Note (gap #2): emit a superscript reference mark and collect the body.
             Inline::Note(kind, blocks) => {
                 *note_counter += 1;
-                let mark = superscript_mark(*note_counter);
+                let mark = note_mark_digits(*note_counter);
                 let prev = effective
                     .vertical_align
                     .replace(DocVerticalAlign::Superscript);

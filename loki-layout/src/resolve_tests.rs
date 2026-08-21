@@ -607,8 +607,18 @@ fn flatten_footnote_emits_superscript_mark_and_collects_body() {
     let (text, _spans, _images, notes) = flatten_paragraph(&para, &catalog, &mut counter);
     assert!(text.contains("text"), "main text must be present");
     assert!(
-        text.contains('\u{00B9}'),
-        "superscript ¹ must be emitted for note 1"
+        text.contains('1'),
+        "the note number must be emitted in plain digits"
+    );
+    // The inversion, and the defect this guards: the mark must NOT be a
+    // pre-raised Unicode superscript character. The layout shrinks and raises
+    // it via `VerticalAlign::Superscript` (asserted by
+    // `flatten_footnote_mark_superscript_vertical_align`), so a character that
+    // is *already* small and raised gets the treatment twice — measured on
+    // Word's page 3 as a 5px tick where Word draws a 9px digit.
+    assert!(
+        !text.contains('\u{00B9}'),
+        "the mark must not also be a Unicode superscript digit: {text:?}"
     );
     assert_eq!(notes.len(), 1, "one note must be collected");
     assert_eq!(notes[0].number, 1);
@@ -628,9 +638,28 @@ fn flatten_multiple_footnotes_increment_counter() {
     assert_eq!(notes.len(), 2);
     assert_eq!(notes[0].number, 1);
     assert_eq!(notes[1].number, 2);
-    // ¹ = U+00B9, ² = U+00B2
-    assert!(text.contains('\u{00B9}'));
-    assert!(text.contains('\u{00B2}'));
+    // Plain digits — the superscript comes from the span's vertical_align, not
+    // from the character (see the sibling test).
+    assert!(text.contains('1'), "note 1's number: {text:?}");
+    assert!(text.contains('2'), "note 2's number: {text:?}");
+    assert!(
+        !text.contains('\u{00B9}') && !text.contains('\u{00B2}'),
+        "marks must not be pre-raised Unicode superscripts: {text:?}"
+    );
+}
+
+/// Note numbers above nine work. The old Unicode-superscript table stopped at
+/// ⁹ and fell back to a literal `[10]`, brackets and all, where Word renders a
+/// superscript `10`.
+#[test]
+fn a_note_number_above_nine_is_plain_digits_without_brackets() {
+    let catalog = StyleCatalog::new();
+    let para = empty_para(vec![Inline::Note(NoteKind::Footnote, vec![])]);
+    let mut counter = 9u32;
+    let (text, _spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut counter);
+    assert_eq!(counter, 10);
+    assert!(text.contains("10"), "expected a bare 10: {text:?}");
+    assert!(!text.contains('['), "no bracket fallback: {text:?}");
 }
 
 #[test]

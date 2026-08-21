@@ -25,6 +25,41 @@ pub enum VerticalAlign {
     Subscript,
 }
 
+impl VerticalAlign {
+    /// Fraction of the run's declared font size that a raised/lowered run is
+    /// actually drawn at.
+    ///
+    /// Both variants use the same reduction. Measured on Word 16.0 — the same
+    /// `H` set normal, superscript, and subscript in one run at 20 / 40 / 80 pt,
+    /// exported to PDF and read from the text spans (so these are exact sizes,
+    /// not pixel estimates): 12.960/20.040 = 0.6467, 26.040/39.960 = 0.6517,
+    /// 51.960/80.064 = 0.6490, identical for sub and super.
+    ///
+    /// Loki used 0.58, which drew the ACID 2 footnote reference visibly small.
+    pub(crate) const SIZE_RATIO: f32 = 0.65;
+
+    /// Baseline shift as a fraction of the run's **declared** (pre-reduction)
+    /// font size — negative up, positive down, matching layout `y`.
+    ///
+    /// From the same probe: superscript rose by 0.3234 / 0.3243 / 0.3316 of the
+    /// declared size, subscript dropped by 0.1018 / 0.0871 / 0.0944. Loki used
+    /// 0.35 up and **0.20** down — the subscript was more than twice as far
+    /// below the baseline as Word puts it.
+    ///
+    /// `TODO(super-sub-metrics)`: Word most likely derives these from the
+    /// font's OS/2 `ySuperscriptYOffset` / `ySubscriptYOffset` rather than a
+    /// constant, which would explain why the three samples agree to ~3 % rather
+    /// than exactly. These values are the Calibri/Carlito family's, which is
+    /// what the corpus uses; a font with very different OS/2 offsets will be
+    /// placed to Calibri's proportions.
+    pub(crate) fn baseline_shift_ratio(self) -> f32 {
+        match self {
+            Self::Superscript => -0.327,
+            Self::Subscript => 0.094,
+        }
+    }
+}
+
 /// Caps variant for a text run. TR 29166 §6.2.1.
 /// ODF `fo:font-variant` / `fo:text-transform`; OOXML `w:smallCaps` / `w:caps`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
