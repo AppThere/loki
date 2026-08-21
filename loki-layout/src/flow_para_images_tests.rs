@@ -153,3 +153,154 @@ mod fit_tests {
         assert!(!LayoutMode::Pageless.fits_oversized_to_column());
     }
 }
+
+#[cfg(test)]
+mod line_box_tests {
+    use super::super::stack_block_images;
+    use crate::color::LayoutColor;
+    use crate::geometry::{LayoutPoint, LayoutRect};
+    use crate::items::{GlyphSynthesis, PositionedGlyphRun, PositionedItem, PositionedRect};
+    use crate::para::ParagraphLayout;
+    use crate::resolve::CollectedImage;
+
+    /// An image `pt` points tall (EMU: 12700 per point).
+    fn image(pt: f32) -> CollectedImage {
+        CollectedImage {
+            src: "data:image/png;base64,".into(),
+            alt: None,
+            cx_emu: 914_400,
+            cy_emu: (pt * 12_700.0) as u64,
+            float: None,
+            textbox: None,
+        }
+    }
+
+    fn layout_of_height(h: f32) -> ParagraphLayout {
+        ParagraphLayout {
+            height: h,
+            width: 0.0,
+            items: Vec::new(),
+            first_baseline: 0.0,
+            last_baseline: 0.0,
+            line_boundaries: Vec::new(),
+            parley_layout: None,
+            orig_to_clean: crate::para::ByteIndexMap::from_indices(&[]),
+            clean_to_orig: crate::para::ByteIndexMap::from_indices(&[]),
+            indent_start: 0.0,
+            indent_hanging: 0.0,
+            drop_lines: 0,
+            drop_shift: 0.0,
+        }
+    }
+
+    /// A paragraph carrying a glyph run — i.e. one that actually has text.
+    fn with_text(h: f32) -> ParagraphLayout {
+        let mut l = layout_of_height(h);
+        l.items.push(PositionedItem::GlyphRun(PositionedGlyphRun {
+            origin: LayoutPoint::new(0.0, 0.0),
+            font_data: std::sync::Arc::new(Vec::new()),
+            font_index: 0,
+            font_size: 11.0,
+            glyphs: Vec::new(),
+            color: LayoutColor::BLACK,
+            synthesis: GlyphSynthesis::default(),
+            normalized_coords: Vec::new(),
+            link_url: None,
+        }));
+        l
+    }
+
+    /// A paragraph whose only content is an image is as tall as the image, not
+    /// the image *plus* an empty line.
+    ///
+    /// Word puts an inline image in the line box. Loki added the two, so
+    /// `acid2-docx.docx`'s chart paragraph — a 108 pt drawing with `w:after="0"`
+    /// and no text — measured 121.65 pt and pushed its "Figure 1" caption
+    /// 13.65 pt below where Word puts it, carrying the rest of page 3 down with
+    /// it. Page 3 went 87 → 59 failing regions when this was fixed.
+    #[test]
+    fn an_image_only_paragraph_is_as_tall_as_its_image() {
+        let mut l = layout_of_height(13.65);
+        stack_block_images(
+            &mut l,
+            &[image(108.0)],
+            400.0,
+            false,
+            parley::Alignment::Left,
+        );
+        assert!(
+            (l.height - 108.0).abs() < 0.01,
+            "expected the image's 108pt, got {}",
+            l.height
+        );
+    }
+
+    /// The inversion: an image *shorter* than the line still leaves a
+    /// line-height paragraph, so the rule is `max`, not "replace with the
+    /// image". Without this, a small inline image would collapse its line.
+    #[test]
+    fn an_image_shorter_than_the_line_keeps_the_line_height() {
+        let mut l = layout_of_height(13.65);
+        stack_block_images(&mut l, &[image(4.0)], 400.0, false, parley::Alignment::Left);
+        assert!(
+            (l.height - 13.65).abs() < 0.01,
+            "a 4pt image must not shrink a 13.65pt line, got {}",
+            l.height
+        );
+    }
+
+    /// The other inversion: with text present the images still **stack above
+    /// it**, so the heights add. That is Loki's block-image model, and it is
+    /// what keeps this fix from silently swallowing a caption's own line.
+    #[test]
+    fn images_still_stack_above_text_when_the_paragraph_has_any() {
+        let mut l = with_text(13.65);
+        stack_block_images(
+            &mut l,
+            &[image(108.0)],
+            400.0,
+            false,
+            parley::Alignment::Left,
+        );
+        assert!(
+            (l.height - 121.65).abs() < 0.01,
+            "text + image must add (13.65 + 108), got {}",
+            l.height
+        );
+    }
+
+    /// Paragraph shading covers the image in both shapes — expanded when the
+    /// image stacks above text, and at least the image's height when it does
+    /// not.
+    #[test]
+    fn a_background_fill_covers_the_image_in_both_shapes() {
+        for (mut l, want) in [(layout_of_height(13.65), 108.0), (with_text(13.65), 121.65)] {
+            l.items.insert(
+                0,
+                PositionedItem::FilledRect(PositionedRect {
+                    rect: LayoutRect::new(0.0, 0.0, 400.0, 13.65),
+                    color: LayoutColor::BLACK,
+                }),
+            );
+            stack_block_images(
+                &mut l,
+                &[image(108.0)],
+                400.0,
+                false,
+                parley::Alignment::Left,
+            );
+            let bg = l
+                .items
+                .iter()
+                .find_map(|i| match i {
+                    PositionedItem::FilledRect(r) => Some(r.rect.size.height),
+                    _ => None,
+                })
+                .expect("the background rect");
+            assert!(
+                (bg - want).abs() < 0.01,
+                "background height {bg}, want {want}"
+            );
+        }
+    }
+}

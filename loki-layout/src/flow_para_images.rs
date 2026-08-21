@@ -118,15 +118,39 @@ pub(crate) fn stack_block_images(
         total_image_height += h;
     }
     if total_image_height > 0.0 {
-        // Expand background fill to cover image area (first item when present).
-        if let Some(PositionedItem::FilledRect(bg)) = para_layout.items.first_mut() {
-            bg.rect.size.height += total_image_height;
+        // An inline image sits *in* Word's line box, so a paragraph whose only
+        // content is images is as tall as the images — not the images plus an
+        // empty line. Loki was adding both: `acid2-docx.docx`'s chart paragraph
+        // (a 108 pt drawing, `w:after="0"`, no text) came out 121.65 pt tall,
+        // pushing its "Figure 1" caption 13.65 pt below where Word puts it and
+        // shifting the rest of page 3 with it.
+        //
+        // `max`, not a plain replacement: an image shorter than the line still
+        // leaves a line-height paragraph, which is also what Word does.
+        //
+        // With text present the images keep stacking *above* it — that is
+        // Loki's block-image model, and making an image share the line with
+        // text is a larger change than this one (`TODO(inline-image-line-box)`).
+        let has_text = para_layout
+            .items
+            .iter()
+            .any(|i| matches!(i, PositionedItem::GlyphRun(_)));
+        if has_text {
+            // Expand background fill to cover image area (first item when present).
+            if let Some(PositionedItem::FilledRect(bg)) = para_layout.items.first_mut() {
+                bg.rect.size.height += total_image_height;
+            }
+            // Shift all existing paragraph items down by total image height.
+            for item in &mut para_layout.items {
+                item.translate(0.0, total_image_height);
+            }
+            para_layout.height += total_image_height;
+        } else {
+            if let Some(PositionedItem::FilledRect(bg)) = para_layout.items.first_mut() {
+                bg.rect.size.height = bg.rect.size.height.max(total_image_height);
+            }
+            para_layout.height = para_layout.height.max(total_image_height);
         }
-        // Shift all existing paragraph items down by total image height.
-        for item in &mut para_layout.items {
-            item.translate(0.0, total_image_height);
-        }
-        para_layout.height += total_image_height;
         // Prepend image items (they render before paragraph text).
         image_items.append(&mut para_layout.items);
         para_layout.items = image_items;
