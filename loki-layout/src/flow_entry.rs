@@ -104,6 +104,10 @@ pub fn flow_section(
         // last-page balancing cannot resume from there. Balancing is therefore
         // currently unreachable rather than wrong; see `docs/fidelity-status.md`
         // (Multi-column Sections).
+        // `&mut 0.0`: a section flowed on its own has no predecessor whose
+        // `space_after` its first paragraph could collapse against, and no
+        // successor to hand its own trailing value to. `flow_section_group`
+        // is where a real carry is threaded.
         return balance::flow_paginated_balanced(
             resources,
             section,
@@ -113,6 +117,7 @@ pub fn flow_section(
             options,
             comments,
             false,
+            &mut 0.0,
         );
     }
 

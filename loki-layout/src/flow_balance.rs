@@ -29,7 +29,6 @@ use crate::LayoutOptions;
 use crate::font::FontResources;
 use crate::incremental::FlowCheckpoint;
 use crate::mode::LayoutMode;
-use crate::resolve::pts_to_f32;
 
 /// Maximum binary-search iterations when locating the balanced column height.
 /// ~16 halvings resolve a full page height to well under a point.
@@ -74,8 +73,10 @@ pub(super) fn flow_paginated_balanced(
     options: &LayoutOptions,
     comments: &[Comment],
     ended_by_continuous: bool,
+    carry: &mut f32,
 ) -> FlowOutput {
     let ctx = Ctx {
+        carry_in: *carry,
         section,
         catalog,
         mode,
@@ -83,7 +84,8 @@ pub(super) fn flow_paginated_balanced(
         options,
         comments,
     };
-    let (natural, pages, has_notes, candidate) = run_capped(resources, &ctx, None, None);
+    let (natural, pages, has_notes, candidate, trailing) = run_capped(resources, &ctx, None, None);
+    *carry = trailing;
     if !ended_by_continuous || !is_multicolumn(section) || has_notes {
         return natural;
     }
@@ -94,7 +96,7 @@ pub(super) fn flow_paginated_balanced(
     let Some(cap) = find_balanced_height(resources, &ctx, full_h, None) else {
         return natural;
     };
-    let (balanced, bpages, _, _) = run_capped(resources, &ctx, Some(cap), None);
+    let (balanced, bpages, _, _, _) = run_capped(resources, &ctx, Some(cap), None);
     // Guard: only adopt the balanced layout if it still fits on one page.
     if bpages == 1 { balanced } else { natural }
 }
@@ -125,14 +127,14 @@ fn balance_last_page(
         // Verify: the uncapped tail replay must reproduce the natural last
         // page (same single page, same glyph-run and item counts) — otherwise
         // the page starts mid-block and cannot be resumed from a block seed.
-        let (probe, ppages, _, _) = run_capped(resources, ctx, None, tail);
+        let (probe, ppages, _, _, _) = run_capped(resources, ctx, None, tail);
         let reproduces = ppages == 1
             && matches!(&probe, FlowOutput::Pages { pages: pp, .. }
                 if pp.first().is_some_and(|p| pages_match(p, &pages[last])));
         if reproduces {
             let full_h = full_content_height(ctx.section);
             if let Some(cap) = find_balanced_height(resources, ctx, full_h, tail) {
-                let (balanced, bpages, _, _) = run_capped(resources, ctx, Some(cap), tail);
+                let (balanced, bpages, _, _, _) = run_capped(resources, ctx, Some(cap), tail);
                 if bpages == 1
                     && let FlowOutput::Pages {
                         pages: mut tail_pages,
@@ -152,30 +154,17 @@ fn balance_last_page(
     }
 }
 
-/// Whether two pages carry the same content by cheap structural digest: equal
-/// item counts and equal (recursive) glyph-run counts. Floats are not compared
-/// — identical inputs produce identical counts, which is all the verification
-/// needs to reject a mid-block tail (it re-places the whole block, changing
-/// both counts).
-fn pages_match(a: &crate::result::LayoutPage, b: &crate::result::LayoutPage) -> bool {
-    a.content_items.len() == b.content_items.len()
-        && count_glyph_runs(&a.content_items) == count_glyph_runs(&b.content_items)
-}
-
-/// Recursively counts glyph runs, descending into clipped groups.
-fn count_glyph_runs(items: &[crate::items::PositionedItem]) -> usize {
-    items
-        .iter()
-        .map(|i| match i {
-            crate::items::PositionedItem::GlyphRun(_) => 1,
-            crate::items::PositionedItem::ClippedGroup { items, .. } => count_glyph_runs(items),
-            _ => 0,
-        })
-        .sum()
-}
+#[path = "flow_balance_measure.rs"]
+mod measure;
+use measure::{full_content_height, is_multicolumn, pages_match};
 
 /// The unchanging arguments threaded through the repeated flow probes.
 struct Ctx<'a> {
+    /// Paragraph spacing carried in from the previous section's last block, so
+    /// this section's first `space_before` collapses against it the way Word
+    /// collapses across a `nextPage` section start. Zero for a section that
+    /// nothing precedes.
+    carry_in: f32,
     section: &'a Section,
     catalog: &'a StyleCatalog,
     mode: &'a LayoutMode,
@@ -188,7 +177,9 @@ struct Ctx<'a> {
 /// `tail = Some((start_block, seed))` resumes from a clean-page-top checkpoint
 /// (the [`super::flow_section_resume`] seeding) — optionally capping the
 /// per-page content height (the column-break threshold). Returns the output,
-/// the page count, and whether any footnote was emitted.
+/// the page count, whether any footnote was emitted, the tail candidate, and
+/// the section's **trailing `space_after`** for the next section to collapse
+/// against (a property of the content, so every capped run agrees on it).
 fn run_capped(
     resources: &mut FontResources,
     ctx: &Ctx<'_>,
@@ -199,6 +190,7 @@ fn run_capped(
     usize,
     bool,
     Option<crate::incremental::PageStart>,
+    f32,
 ) {
     let mut state = new_flow_state(
         resources,
@@ -209,6 +201,7 @@ fn run_capped(
         ctx.options,
         ctx.comments,
     );
+    state.last_space_after = ctx.carry_in;
     if let Some(h) = cap {
         state.page_content_height = h.clamp(1.0, state.page_content_height);
     }
@@ -222,6 +215,8 @@ fn run_capped(
         start = start_block;
     }
     run_paginated_loop(&mut state, &ctx.section.blocks, start, 0, |_, _| false);
+    // Read before `finish_page`, which clears it on a `Flow` break.
+    let trailing_space_after = state.last_space_after;
     let has_notes = state.note_counter > 0;
     // `finish_page` lays out the final page's footnote band (per-page placement).
     super::finish_page(&mut state, BreakCause::Flow);
@@ -244,6 +239,7 @@ fn run_capped(
         pages,
         has_notes,
         candidate,
+        trailing_space_after,
     )
 }
 
@@ -270,7 +266,7 @@ fn find_balanced_height(
             break;
         }
         let mid = 0.5 * (lo + hi);
-        let (_, pages, _, _) = run_capped(resources, ctx, Some(mid), tail);
+        let (_, pages, _, _, _) = run_capped(resources, ctx, Some(mid), tail);
         if pages == 1 {
             hi = mid;
         } else {
@@ -278,22 +274,4 @@ fn find_balanced_height(
         }
     }
     Some(hi)
-}
-
-/// Whether the section requests two or more columns.
-fn is_multicolumn(section: &Section) -> bool {
-    section
-        .layout
-        .columns
-        .as_ref()
-        .is_some_and(|c| c.count >= 2)
-}
-
-/// The full per-page content height (page height minus vertical margins), the
-/// same value `new_flow_state` derives — the upper bound of the search.
-fn full_content_height(section: &Section) -> f32 {
-    let pl = &section.layout;
-    let page_h = pts_to_f32(pl.page_size.height);
-    let vmargin = pts_to_f32(pl.margins.top) + pts_to_f32(pl.margins.bottom);
-    (page_h - vmargin).max(0.0)
 }

@@ -175,6 +175,11 @@ pub fn layout_paginated_full(
     // Document-section index of the current group's first section (for checkpoint
     // tagging / incremental).
     let mut primary_section_index = 0usize;
+    // Paragraph spacing handed from each group's last block to the next group's
+    // first, so a `nextPage` section start collapses its `space_before` the way
+    // Word does. Groups are separate page sequences, so this is the only channel
+    // between them — see `flow_section_group`.
+    let mut carry_space_after = 0.0f32;
     for group in &groups {
         let primary = group[0];
         let pl = &primary.layout;
@@ -210,6 +215,7 @@ pub fn layout_paginated_full(
             display_scale,
             options,
             &doc.comments,
+            &mut carry_space_after,
         )
         else {
             unreachable!("flow_section_group in Paginated mode always returns Pages");

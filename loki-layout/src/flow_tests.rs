@@ -562,6 +562,7 @@ fn single_section_group_matches_the_direct_flow_section_path() {
         1.0,
         &LayoutOptions::default(),
         &[],
+        &mut 0.0,
     );
     let FlowOutput::Pages { pages, .. } = out else {
         unreachable!("paginated group returns Pages");

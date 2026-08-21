@@ -313,3 +313,111 @@ fn continuous_break_with_same_page_size_still_shares_the_page() {
         "a same-geometry continuous section shares the page"
     );
 }
+
+/// A `nextPage` section start collapses its first paragraph's `space_before`
+/// against the **previous section's** trailing `space_after`.
+///
+/// Measured on Word 16.0 — three documents, each a `nextPage` section break
+/// whose following paragraph requests 36pt `before`, differing only in the
+/// `after` on the paragraph carrying the break. First-baselines, read against
+/// the same document with `before = 0`:
+///
+/// | break paragraph's `after` | applied |
+/// |---------------------------|---------|
+/// | 0 pt                      | 36.00pt |
+/// | 8 pt                      | 27.96pt |
+/// | 20 pt                     | 15.96pt |
+///
+/// i.e. `max(0, before - after)` — the same collapse Word applies mid-page and
+/// across a `w:pageBreakBefore`, not the full `before`.
+///
+/// Each section is its own page sequence with its own `FlowState`, so the value
+/// has to be threaded across that boundary (`flow_section_group`'s `carry`).
+/// Nothing inside one section can observe the previous one.
+#[test]
+fn a_section_start_collapses_space_before_against_the_previous_sections_space_after() {
+    use loki_doc_model::style::props::para_props::{ParaProps, Spacing};
+    use loki_primitives::units::Points;
+
+    /// First baseline of section two's first paragraph, given the `after` on
+    /// section one's last paragraph and the `before` on section two's first.
+    fn head_baseline(after: f64, before: f64) -> f32 {
+        let mut s1 = section(&["tail of section one"]);
+        let Block::StyledPara(p) = &mut s1.blocks[0] else {
+            panic!("a paragraph")
+        };
+        p.direct_para_props = Some(Box::new(ParaProps {
+            space_after: Some(Spacing::Exact(Points::new(after))),
+            ..Default::default()
+        }));
+
+        let mut s2 = section(&["head of section two"]);
+        s2.start = loki_doc_model::layout::SectionStart::NewPage;
+        let Block::StyledPara(p) = &mut s2.blocks[0] else {
+            panic!("a paragraph")
+        };
+        p.direct_para_props = Some(Box::new(ParaProps {
+            space_before: Some(Spacing::Exact(Points::new(before))),
+            ..Default::default()
+        }));
+
+        let mut doc = Document::default();
+        doc.sections = vec![s1, s2];
+        let mut r = resources();
+        let DocumentLayout::Paginated(layout) = layout_document(
+            &mut r,
+            &doc,
+            LayoutMode::Paginated,
+            1.0,
+            &LayoutOptions {
+                preserve_for_editing: true,
+                ..LayoutOptions::default()
+            },
+        ) else {
+            panic!("paginated")
+        };
+        assert_eq!(
+            layout.pages.len(),
+            2,
+            "the section break makes a second page"
+        );
+        let page = &layout.pages[1];
+        let ed = page.editing_data.as_ref().expect("editing data");
+        let para = ed.paragraphs.first().expect("a paragraph on page two");
+        page.margins.top + para.origin.1 + para.layout.first_baseline
+    }
+
+    // The control: no space_before at all.
+    let none = head_baseline(0.0, 0.0);
+
+    // Nothing to collapse against — the whole 36pt applies.
+    let full = head_baseline(0.0, 36.0);
+    assert!(
+        (full - none - 36.0).abs() < 0.01,
+        "with no preceding space_after the whole space_before applies: \
+         {none} vs {full}"
+    );
+
+    // 8pt of it is already spent at the foot of the previous page.
+    let collapsed = head_baseline(8.0, 36.0);
+    assert!(
+        (collapsed - none - 28.0).abs() < 0.01,
+        "36pt before behind an 8pt after must apply 28pt: {none} vs {collapsed}"
+    );
+
+    // The inversion: a larger `after` collapses more, so this cannot pass on a
+    // layout that subtracts a fixed amount.
+    let more = head_baseline(20.0, 36.0);
+    assert!(
+        (more - none - 16.0).abs() < 0.01,
+        "36pt before behind a 20pt after must apply 16pt: {none} vs {more}"
+    );
+
+    // …and one at least as large as `before` swallows it entirely, rather than
+    // pushing the paragraph *above* the top margin.
+    let swallowed = head_baseline(40.0, 36.0);
+    assert!(
+        (swallowed - none).abs() < 0.01,
+        "an after larger than before must swallow it whole: {none} vs {swallowed}"
+    );
+}
