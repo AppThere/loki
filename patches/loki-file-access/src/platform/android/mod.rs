@@ -46,6 +46,7 @@ mod jni_fd;
 mod jni_ime;
 mod jni_insets;
 mod jni_intents;
+mod jni_keyboard;
 
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -106,6 +107,18 @@ pub fn query_window_insets_dp(activity_ptr: *mut std::ffi::c_void) -> Option<(f3
 // ── Soft-keyboard (IME) visibility signal ─────────────────────────────────────
 
 pub use jni_ime::{install_ime_listener, set_ime_visibility_listener};
+
+// ── Physical-keyboard presence ────────────────────────────────────────────────
+
+/// Whether a physical keyboard is attached **and** currently usable.
+///
+/// Used to decide whether asking for the soft keyboard is appropriate at all —
+/// see [`jni_keyboard`] for the exact predicate and the `android:configChanges`
+/// requirement that keeps it current.
+#[must_use]
+pub fn has_hardware_keyboard() -> bool {
+    jni_keyboard::has_hardware_keyboard()
+}
 
 // ── JNI result callback (called from Java FilePickerActivity) ─────────────────
 

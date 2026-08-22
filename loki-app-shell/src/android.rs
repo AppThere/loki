@@ -131,6 +131,17 @@ macro_rules! android_main {
             ::loki_file_access::set_ime_visibility_listener(::std::boxed::Box::new(|visible| {
                 ::blitz_shell::notify_ime_visibility_changed(visible);
             }));
+            // Let the shell ask whether a physical keyboard is attached before
+            // it requests the soft keyboard. The query is JNI, which
+            // `blitz-shell` cannot make (no `jni` dependency), so it is pushed
+            // in from here for the same reason as the visibility listener
+            // above. Queried per focus change rather than cached: with
+            // `keyboard` in `android:configChanges` the activity is no longer
+            // recreated when a keyboard attaches, so a cached answer taken at
+            // startup would never notice one arriving.
+            ::blitz_shell::set_hardware_keyboard_probe(::std::boxed::Box::new(|| {
+                ::loki_file_access::has_hardware_keyboard()
+            }));
             // Returns `false` on a null pointer / JNI failure / API < 30, where
             // the inset query already falls back; it is a plain bool, not a
             // `Result` and not `#[must_use]`, and there is no recovery to

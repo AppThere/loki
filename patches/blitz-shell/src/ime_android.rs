@@ -67,3 +67,35 @@ pub(crate) fn take_pending() -> Option<bool> {
         _ => None,
     }
 }
+
+// ── PATCH(loki): physical-keyboard probe ──────────────────────────────────────
+
+/// Answers "is a physical keyboard usable right now?".
+///
+/// Installed by the app shell (`loki_app_shell::android_main!`) because the
+/// query is a JNI call and this crate carries no `jni` dependency — the same
+/// reason [`notify_ime_visibility_changed`] is pushed in from outside rather
+/// than polled from here.
+type HardwareKeyboardProbe = Box<dyn Fn() -> bool + Send + 'static>;
+
+static HARDWARE_KEYBOARD_PROBE: Mutex<Option<HardwareKeyboardProbe>> = Mutex::new(None);
+
+/// Install the probe used to decide whether to ask for the soft keyboard.
+///
+/// Until this is called — and on every platform that never calls it — the
+/// answer is "no physical keyboard", which is the pre-existing behaviour.
+pub fn set_hardware_keyboard_probe(probe: HardwareKeyboardProbe) {
+    if let Ok(mut guard) = HARDWARE_KEYBOARD_PROBE.lock() {
+        *guard = Some(probe);
+    }
+}
+
+/// Whether a physical keyboard is attached and usable. `false` when no probe is
+/// installed or the lock is poisoned.
+pub(crate) fn has_hardware_keyboard() -> bool {
+    HARDWARE_KEYBOARD_PROBE
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().map(|p| p()))
+        .unwrap_or(false)
+}

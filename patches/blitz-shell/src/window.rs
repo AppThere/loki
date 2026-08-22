@@ -548,6 +548,37 @@ impl<Rend: WindowRenderer> View<Rend> {
     /// the keyboard back. winit forwards each `set_ime_allowed(true)` to
     /// `AndroidApp::show_soft_input`, re-summoning it.
     fn update_ime_for_focus(&mut self, force_show: bool) {
+        // PATCH(loki): with a physical keyboard attached, do not ask for the
+        // soft keyboard at all.
+        //
+        // A `NativeActivity` offers the IME no `InputConnection` (see the module
+        // docs on the Android key path), so a shown IME has nowhere to commit
+        // text into. Every request here goes to
+        // `InputMethodManager.showSoftInput(view, SHOW_IMPLICIT)`; the implicit
+        // flag *permits* Android to suppress the keyboard when hardware keys are
+        // available, but the "show on-screen keyboard while physical keyboard is
+        // active" setting — on by default on several vendors — overrides that,
+        // and the panel then covers the document a hardware-keyboard user is
+        // typing into.
+        //
+        // A normal Android app never hits this: the framework raises the IME by
+        // itself when a view with an `InputConnection` takes focus, and applies
+        // the hardware-keyboard rule on the way. Loki has to ask explicitly, so
+        // it has to apply that rule itself.
+        //
+        // Suppression only — this never *forces* the keyboard up. If no probe is
+        // installed the answer is "no hardware keyboard" and the behaviour is
+        // exactly what it was.
+        #[cfg(target_os = "android")]
+        if crate::ime_android::has_hardware_keyboard() {
+            if self.ime_active {
+                self.ime_active = false;
+                self.window.set_ime_allowed(false);
+                self.arm_ime_settle();
+            }
+            return;
+        }
+
         let wants_ime = self.focused_node_wants_ime();
         let changed = wants_ime != self.ime_active;
         if changed {

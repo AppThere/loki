@@ -48,9 +48,24 @@ verifies existence, so a mistyped argument fails at construction with the
 OS error — and builds the `Desktop` token variant. Used by
 `loki-text::routes::startup_open`.
 
+**`has_hardware_keyboard` (PATCH(loki), 2026-08-22).** Reports whether a
+physical keyboard is attached *and* currently reachable, from the live
+`Resources.getConfiguration()`: `keyboard != KEYBOARD_NOKEYS &&
+hardKeyboardHidden != HARDKEYBOARDHIDDEN_YES` (`jni_keyboard.rs`). Both halves
+are needed — the type alone reports a folded-away case keyboard as present, and
+`hardKeyboardHidden` alone is `NO` on a device with no keyboard at all. The
+predicate mirrors the one Android's own `InputMethodManagerService` applies to
+an implicit `showSoftInput`. Consumed by `blitz-shell`'s
+`update_ime_for_focus` (below) to stop summoning the soft keyboard over a
+hardware-keyboard user's document; returns `false` on any JNI failure, which
+leaves the previous behaviour intact. **Depends on `keyboard` being listed in
+the activity's `android:configChanges`** — without it, attaching a keyboard
+recreates the activity rather than updating the Configuration, so the query
+would be answering for a process about to be torn down.
+
 **Removal condition:** upstream `loki-file-access` ships the equivalent fix
-**and** a public `from_path`; then drop the `[patch]` entry and
-`patches/loki-file-access/`.
+**and** a public `from_path` **and** a hardware-keyboard query; then drop the
+`[patch]` entry and `patches/loki-file-access/`.
 
 ### appthere-color — 0.1.1 (vendored, not patched)
 
@@ -235,6 +250,45 @@ events are available without panicking.
 
 **Source:** `patches/blitz-shell/` (local, vendored from crates.io version 0.2.3,
 checksum `61ecda230035f39b13383f08e0cfc7159c92d194650ac8d57871a207ea0e52b7`).
+
+**No soft keyboard when a physical keyboard is attached (PATCH(loki),
+2026-08-22).** `update_ime_for_focus` asked for the soft keyboard on every
+editable focus, with no check for a hardware keyboard — there was none anywhere
+in the workspace (`docs/spikes/S0.6` lists the probe as planned, unimplemented).
+On Android that request reaches
+`InputMethodManager.showSoftInput(view, SHOW_IMPLICIT)`; the implicit flag
+*permits* Android to suppress the panel when hardware keys are available, but
+the vendor "show on-screen keyboard while physical keyboard is active" setting
+— on by default on several devices — overrides it, and the keyboard then covers
+the document of a user who is typing on a real keyboard.
+
+A normal Android app never has to think about this: the framework raises the IME
+itself when a view with an `InputConnection` takes focus, applying the
+hardware-keyboard rule on the way. A `NativeActivity` offers no
+`InputConnection`, so Loki must ask explicitly — and therefore must apply the
+rule itself.
+
+The check is **suppression only**: it never forces the keyboard up, and with no
+probe installed (every non-Android target, and Android before the app shell
+registers one) the answer is "no hardware keyboard" and the behaviour is
+unchanged. The probe is a hook (`set_hardware_keyboard_probe`) rather than a
+direct call because the query is JNI and this crate carries no `jni`
+dependency — the same arrangement as `notify_ime_visibility_changed`;
+`loki_app_shell::android_main!` installs
+`loki_file_access::has_hardware_keyboard`. It is queried per focus change
+rather than cached, so a keyboard attaching mid-session is noticed.
+
+**Reported symptom this addresses:** a Bluetooth keyboard on an Android phone
+was ignored while the on-screen keyboard came up, where a pogo-pin keyboard case
+on a Galaxy S10 Lite worked. **Not established:** whether a shown IME is what
+swallows the hardware keys (the leading hypothesis — with no `InputConnection`
+the IME has nowhere to commit into), or whether suppressing the panel is enough
+on its own. That needs a device: the discriminating check is toggling the vendor
+setting above and seeing whether typing starts working.
+
+**Removal condition:** upstream `blitz-shell` gaining a hardware-keyboard-aware
+IME policy, or Loki moving off `NativeActivity` to a host that can supply a real
+`InputConnection` (at which point the framework applies the rule itself).
 
 **Key events with no scancode are no longer dropped (PATCH(loki), 2026-08-16).**
 The `KeyboardInput` arm opened with `let PhysicalKey::Code(key_code) =

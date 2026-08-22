@@ -18,12 +18,23 @@
           NativeActivity is the main app entry point.
           android:exported="true" is required on API 31+ for activities with intent filters.
           android:configChanges prevents activity restart on rotation/keyboard events.
+          android:configChanges — the app handles these itself instead of being
+          destroyed and recreated. `keyboard` is the load-bearing one for
+          external keyboards: Android documents it as "the keyboard type has
+          changed - for example, the user has plugged in an external keyboard",
+          so without it a Bluetooth keyboard pairing, dropping, or reconnecting
+          mid-session tears the activity down and restarts it. `keyboardHidden`
+          is a *different* flag (keyboard reachability, e.g. a slider closing)
+          and does not cover that case. It is also what keeps
+          `loki_file_access::has_hardware_keyboard` meaningful: that reads the
+          live Configuration to decide whether to ask for the soft keyboard, and
+          a recreate would mean it is answering for a process about to die.
         -->
         <activity
             android:name="android.app.NativeActivity"
             android:label="Loki Calc"
             android:exported="true"
-            android:configChanges="orientation|keyboardHidden|screenSize">
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize">
             <meta-data
                 android:name="android.app.lib_name"
                 android:value="loki_spreadsheet" />
