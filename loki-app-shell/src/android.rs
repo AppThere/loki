@@ -48,21 +48,30 @@
 #[macro_export]
 macro_rules! android_main {
     (tag = $tag:literal, root = $root:path, file_access = activity_ptr) => {
-        $crate::android_main!(@impl $tag, $root, {
+        // `android_app` is passed through to `@impl` as an *identifier*, not left
+        // for `@impl` to invent: `macro_rules!` hygiene gives an identifier
+        // written in one arm a different syntax context from a same-spelled one
+        // written in another, so a block referring to `android_app` here could
+        // not see a binding `@impl` created for itself. That is not theoretical
+        // — it is why this arm failed to compile at all ("cannot find value
+        // `android_app` in this scope"), taking Calc and Slides' Android builds
+        // with it while `loki-text`, which uses the arm below and never names
+        // the binding, kept working.
+        $crate::android_main!(@impl $tag, $root, android_app, {
             // SAFETY: activity_as_ptr() is a GlobalRef owned by android_app, which
             // blitz_shell::set_android_app keeps alive for the process lifetime.
             unsafe { ::loki_file_access::init_android(android_app.activity_as_ptr()) }
         });
     };
     (tag = $tag:literal, root = $root:path, file_access = null_context) => {
-        $crate::android_main!(@impl $tag, $root, {
+        $crate::android_main!(@impl $tag, $root, android_app, {
             // init_android is a no-op kept for API compatibility; the Application
             // context used by all JNI calls comes from ndk_context, which
             // android-activity initialises before android_main is called.
             unsafe { ::loki_file_access::init_android(::core::ptr::null_mut()) }
         });
     };
-    (@impl $tag:literal, $root:path, $init_file_access:block) => {
+    (@impl $tag:literal, $root:path, $app:ident, $init_file_access:block) => {
         #[cfg(target_os = "android")]
         // COMPAT(android-16): On Android 16 (API 36) ANativeActivity_onCreate fires
         // twice in rapid succession, spawning two concurrent android_main threads.
@@ -79,7 +88,7 @@ macro_rules! android_main {
         // crate root is `#![deny(unsafe_code)]`; this scopes the exception to the
         // entry point alone (Spec 01 audit A-7).
         #[allow(unsafe_code)]
-        fn android_main(android_app: ::android_activity::AndroidApp) {
+        fn android_main($app: ::android_activity::AndroidApp) {
             {
                 let mut running = ANDROID_MAIN_RUNNING
                     .lock()
@@ -112,10 +121,10 @@ macro_rules! android_main {
             });
             // Store the internal data path before android_app is moved, so that
             // recent_documents can persist to a writable location on Android.
-            if let Some(data_path) = android_app.internal_data_path() {
+            if let Some(data_path) = $app.internal_data_path() {
                 $crate::recent_documents::set_android_data_dir(data_path);
             }
-            ::blitz_shell::set_android_app(android_app);
+            ::blitz_shell::set_android_app($app);
             // Bridge Android soft-keyboard visibility back to the app. A
             // NativeActivity is never told when the *user* dismisses the keyboard
             // (back button, swipe-down gesture, hide key), so the bottom safe area
