@@ -984,6 +984,42 @@ release with the Android `num_init_threads` default. Re-test with
 
 **Added:** 2026-06-10
 
+**Re-tested 2026-08-22 on Pixel 9 / Mali-G715, driver `r54p3` (was `r54p2`),
+Android 17, release build with `--cfg android_gpu`.** Each setting flipped on
+its own, everything else left shipping, `loki-text` rebuilt and launched per
+run:
+
+| variant | result |
+|---|---|
+| `use_cpu: false` (GPU compute stages) | **device lost**, ~1 s after launch |
+| `AaSupport::all()` + `AaConfig::Msaa16` (with `use_cpu: true`) | **device lost** |
+| `num_init_threads: None` (multi-threaded init, otherwise shipping) | survived 10/10 launches |
+
+The first two fail exactly as originally recorded —
+`Error in Device::poll: Validation Error / Parent device is lost` from
+`wgpu-26.0.1/src/backend/wgpu_core.rs:1663`, panicking out of the render thread
+and dropping the activity back to the launcher. **So the `use_cpu` fallback and
+area-only AA both stay.** `r54p3` is a point release within the same r54 family,
+not the driver update this condition is waiting for.
+
+The third *appears* clean, but it is **not being removed**, for two reasons.
+It buys nothing measurable: `am start -W` over six launches each gives a mean
+**139 ms** with `num_init_threads: 1` against **140 ms** without, samples
+overlapping entirely (119–158 vs 128–161) — parallel shader compilation is not
+on the critical path here. And the 10/10 result only covers the *shipping*
+configuration: with `use_cpu: true` Vello compiles a smaller and different set
+of pipelines than it did when the concurrency race was first diagnosed (which
+was with GPU compute enabled), so this is not evidence that the race is fixed —
+only that it does not reproduce in the configuration that cannot use those
+pipelines anyway. Removing it would trade nothing for a re-exposure.
+
+**A note on measuring this:** the first `use_cpu: false` run looked clean — zero
+device-lost lines — because a previous `am start` had left Loki Slides on top,
+so logcat was faithfully reporting a process that was not the one under test
+(and Slides still carried the old build). The screenshot is what caught it.
+Every result above was taken after force-stopping all three apps and asserting
+`topResumedActivity` is the app being measured.
+
 **Additional fix (texture release on teardown):** `CustomPaintSource` gained a
 `fn release(&mut self, ctx: CustomPaintCtx)` method (default no-op), and
 `VelloWindowRenderer::unregister_custom_paint_source` now calls it (while the
