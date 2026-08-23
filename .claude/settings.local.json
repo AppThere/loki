@@ -196,7 +196,21 @@
       "Bash(git mv *)",
       "Bash(git checkout *)",
       "Bash(grep -E \"^test .*\\(FAILED|ok\\)$|test result|error\\\\[\")",
-      "Bash(grep -A 4 \"^failures:$\")"
+      "Bash(grep -A 4 \"^failures:$\")",
+      "Read(//home/kdesltd/Android/Sdk/ndk/**)",
+      "Read(//home/kdesltd/Android/Sdk/build-tools/**)",
+      "Read(//home/kdesltd/Android/Sdk/platforms/**)",
+      "Bash(javac -version)",
+      "Read(//home/kdesltd/android-studio/jbr/bin/**)",
+      "Bash(adb kill-server *)",
+      "Bash(adb start-server *)",
+      "Bash(adb reconnect *)",
+      "Bash(./scripts/build-android.sh *)",
+      "Bash(git fetch *)",
+      "Bash(git -C /home/kdesltd/project/loki pull --ff-only origin claude/apply-verify-patch-2ls26x)",
+      "Bash(timeout 20 adb connect 100.115.92.2:5555)",
+      "Bash(export ANDROID_SERIAL=100.115.92.2:5555)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   },
   "enableAllProjectMcpServers": true,
