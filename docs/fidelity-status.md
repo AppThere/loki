@@ -292,6 +292,8 @@ variants isolate Loki's own geometry.
 | `acid-docx-free` | *(same — see below)* | **10/19** | **69** |
 | `acid2-docx` | `{Calibri Light: Carlito}` | 6/7 | 292 |
 | `acid2-docx-free` | **`{}`** | **5/7** | **256** |
+| `iris-blueprint` | `{}` | 9/14 | 507 |
+| `iris-blueprint-free` | `{}` | 9/14 | **571** |
 
 So roughly two thirds of ACID 1's failing area and an eighth of ACID 2's was
 font substitution, not layout. ACID 2 page 1 goes 10 failing regions to **0** —
@@ -309,19 +311,49 @@ metric-compatible Light and `loki-fonts` substitutes exactly that. The headings
 therefore render regular-weight rather than light — a deliberate change of
 appearance, faithful to what Loki will draw.
 
-### `iris-blueprint-free` has no obtainable Word golden here
+### `iris-blueprint-free` goes the other way, and that is the point
 
-The fixture is generated (Arial → Arimo, Courier New → Cousine) and is correct,
-but **Word 16 on the reference machine does not resolve Arimo**: it is installed
-only as a variable font (`Arimo[wght].ttf`, per-user), and Word silently fell
-back to Calibri — the exported PDF embeds `Calibri`, not `Arimo`, so a golden
-made from it would measure the wrong thing entirely. Cousine (a static install)
-resolved fine in the same document. Installing static Arimo faces would unblock
-it; until then `iris-blueprint` is measured only in its original form.
+Unlike the ACID pair, the iris variant scores **worse** (507 → 571). It is not a
+regression in the fixture. The per-page split shows every page improving or
+holding except **page 10, which alone accounts for +96**, while page 9 improves
+26 → 4. That pairing is a page-boundary shift, and the crop says what it is:
+Word's page 10 opens *mid-row*, with the tail of a table row continuing from page
+9, while Loki moved the whole row down.
+
+So Loki **never splits a table row across a page break** — `flow_table_main`
+moves a row whole whenever `row_max_h > remaining_h`. Word's default is the
+opposite: `w:cantSplit` is absent unless the author sets it, and rows may split.
+Neither row splitting nor `cantSplit` is modelled anywhere in the workspace.
+`TODO(table-row-split)`.
+
+The Arial pairing happened to agree with Loki at that boundary and the Arimo
+pairing does not, so the variant did not create this defect — it **removed the
+coincidence that was hiding it**. That is the fixture doing its job, and it is
+why the free variants are kept alongside the originals rather than replacing
+them: a lower score is not the goal, an honest one is.
+
+### Getting Word to render the free faces
+
+Word must actually resolve the family, and it fails **quietly** when it cannot.
+On the reference machine:
+
+- **Static faces only — not a variable font, and not both.** With
+  `Arimo[wght].ttf` installed, Word listed `Arimo` in `Application.FontNames`
+  and GDI+ bound it correctly, yet Word's PDF export substituted **Calibri** for
+  the whole family (`Arimo SemiBold` included). Installing the static faces
+  *alongside* the variable one did not help — the family then had both
+  registered and Word still fell back. Removing the variable files and leaving
+  only statics fixed it.
+- **Nothing else was wrong**, which is worth recording so the next person does
+  not re-check it: `fsType` is 0 and the name tables are correct on every face;
+  the fonts are per-user, but so are Cousine and Tinos, which always worked; no
+  Word or Windows substitution was recorded in the registry; and no stale
+  `WINWORD` process was involved, since every export starts a fresh one.
 
 **Verify before trusting a new golden:** read the font names back out of the
 exported PDF (`page.get_fonts(full=True)`) and check the free face is actually
-embedded. That check is what caught this.
+embedded. The first `iris-blueprint-free` golden looked entirely plausible while
+measuring Calibri; that check is the only thing that caught it.
 
 ## 10. ACID Fidelity Test Harness (`loki-acid`)
 

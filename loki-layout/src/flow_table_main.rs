@@ -74,6 +74,19 @@ pub(super) fn flow_table(
             if row_max_h > remaining_h && row_max_h <= state.page_content_height {
                 // A whole row that fits in a band but not the remaining space
                 // moves to the next column (or page).
+                //
+                // TODO(table-row-split): Word splits the row instead, unless the
+                // author set `w:trPr/w:cantSplit` — absent by default, so
+                // splitting is the *common* case and moving the row whole is the
+                // exception. Neither the split nor `cantSplit` is modelled
+                // anywhere in the workspace.
+                //
+                // Surfaced by `iris-blueprint-free.docx` page 10, where Word
+                // opens the page mid-row with the tail of a row carried from
+                // page 9 and Loki moves the whole row down: page 9 improves
+                // 26 → 4 failing regions and page 10 costs +96, which is the
+                // entire difference between that fixture and its original. See
+                // docs/fidelity-status.md §10a.
                 columns_impl::break_column(state);
             }
         }
