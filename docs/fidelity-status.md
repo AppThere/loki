@@ -257,6 +257,72 @@ OCF (ZIP) container.
 
 ---
 
+## 10a. Free-font fixture variants (`*-free.docx`)
+
+Most residual differences this campaign surfaces end in the same sentence: Loki
+drew Carlito where Word drew Calibri, and the two disagree on a vertical metric.
+Advance widths match — that is what "metric-compatible" buys, and line 1 of ACID
+2 page 5 matches Word word-for-word to ±1 px — but **ascent, descent and line
+gap do not**, so line counts, drop-cap bands and wrap bands land a fraction of a
+point apart and occasionally cross a boundary. The drop-cap band (§3) is the
+clearest case: the rule matches Word exactly, and the last line still differs
+because Carlito reports a 0.9521 em ascent against Calibri Light's 0.9146.
+
+That is a real shipping concern — users without Microsoft's fonts get Loki's
+substitutes — but it is **not a layout defect**, and while it is in the picture
+every measurement carries it.
+
+`scripts/make-free-font-fixture.py` produces a sibling fixture that names the
+free face directly, so Word and Loki rasterise the *same font file* and any
+remaining difference is Loki's. It rewrites `w:ascii`/`w:hAnsi`/`w:cs`/
+`w:eastAsia`, the theme's `<a:latin>`/`<a:ea>`/`<a:cs>`, and `fontTable.xml`,
+using **`loki_fonts`' own substitution table** as the authority — the variant
+must ask for exactly what Loki would otherwise have substituted, or it measures
+a different question.
+
+**The originals stay and keep being measured.** They are the real-world case: a
+document written in Word, opened somewhere without Microsoft's fonts. The
+variants isolate Loki's own geometry.
+
+### Measured effect (2026-08-23)
+
+| fixture | substitutions | failing pages | failing regions |
+| :--- | :--- | :---: | :---: |
+| `acid-docx` | `{Garamond Premier Pro Caption: None}` | 16/19 | 200 |
+| `acid-docx-free` | *(same — see below)* | **10/19** | **69** |
+| `acid2-docx` | `{Calibri Light: Carlito}` | 6/7 | 292 |
+| `acid2-docx-free` | **`{}`** | **5/7** | **256** |
+
+So roughly two thirds of ACID 1's failing area and an eighth of ACID 2's was
+font substitution, not layout. ACID 2 page 1 goes 10 failing regions to **0** —
+a clean pass. Page 3 moves the other way (59 → 68): the golden itself changed,
+so per-page counts are not comparable across the two columns; only the totals
+and the substitution column are.
+
+`Garamond Premier Pro Caption` stays unmapped in ACID 1 on purpose — it is
+absent on both sides, and the unresolvable-font path is a case under test, not a
+variable to remove. Symbol/Wingdings (bullet glyphs) and `MS Mincho` (CJK) are
+left alone for the same reason: none is part of the metric-compatible set.
+
+`Calibri Light` maps to plain **Carlito**, because there is no free
+metric-compatible Light and `loki-fonts` substitutes exactly that. The headings
+therefore render regular-weight rather than light — a deliberate change of
+appearance, faithful to what Loki will draw.
+
+### `iris-blueprint-free` has no obtainable Word golden here
+
+The fixture is generated (Arial → Arimo, Courier New → Cousine) and is correct,
+but **Word 16 on the reference machine does not resolve Arimo**: it is installed
+only as a variable font (`Arimo[wght].ttf`, per-user), and Word silently fell
+back to Calibri — the exported PDF embeds `Calibri`, not `Arimo`, so a golden
+made from it would measure the wrong thing entirely. Cousine (a static install)
+resolved fine in the same document. Installing static Arimo faces would unblock
+it; until then `iris-blueprint` is measured only in its original form.
+
+**Verify before trusting a new golden:** read the font names back out of the
+exported PDF (`page.get_fonts(full=True)`) and check the free face is actually
+embedded. That check is what caught this.
+
 ## 10. ACID Fidelity Test Harness (`loki-acid`)
 
 The `loki-acid` crate operationalises the ACID rendering test plan
