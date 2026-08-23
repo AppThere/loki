@@ -26,16 +26,18 @@ use crate::para::StyleSpan;
 
 /// The result of planning a dropped initial for one paragraph.
 pub(crate) struct DropCapPlan {
-    /// Number of body lines the cap spans (`>= 1`).
-    pub n_lines: usize,
-    /// Horizontal inset (cap advance + distance), in points, that the first
-    /// `n_lines` body lines must leave clear on the left. `0.0` in margin mode
+    /// Horizontal inset (cap advance + distance), in points, that the body
+    /// lines beside the cap must leave clear on the left. `0.0` in margin mode
     /// (the cap hangs in the margin and the body is not inset).
     pub body_inset: f32,
     /// Cap glyph draw items in paragraph-local space (the body's `indent_start`
     /// is added by the caller, as for body glyph runs).
     pub items: Vec<PositionedItem>,
-    /// Lowest `y` reached by the cap ink, for paragraph-height growth.
+    /// Lowest `y` reached by the cap ink — paragraph-height growth, and the
+    /// height of the wrap band (a body line clears the cap iff its top is above
+    /// this). Measured on Word 16.0: with a 20 / 58 / 12 pt cap over an 11.04 pt
+    /// body, the lines whose top sits above `baseline + descent` are exactly the
+    /// 2 / 4 / 1 lines Word indents. See [`plan_drop_cap`].
     pub bottom: f32,
 }
 
@@ -99,13 +101,32 @@ pub(crate) fn trim_leading(text: &str, spans: &[StyleSpan], k: usize) -> (String
     (body, spans)
 }
 
-/// Plans the dropped initial: sizes the cap to span `dc.lines` rows, positions
-/// it against the first body line, and returns its glyph items plus the body
-/// inset. Returns `None` if the cap cannot be shaped (empty or zero advance).
+/// Plans the dropped initial: draws the cap at **the initial run's own font
+/// size**, positions it against the first body line, and returns its glyph
+/// items plus the body inset. Returns `None` if the cap cannot be shaped (empty
+/// or zero advance).
+///
+/// # `w:lines` does not size the cap
+///
+/// This used to scale the cap so its ascent spanned `dc.lines` rows, on the
+/// belief that "Word sizes the initial to the line band it occupies". Measured
+/// against Word 16.0 — three drop caps in one document, all declaring
+/// `w:lines="3"`, whose runs declare 20 / 58 / 90 pt — Word rendered them at
+/// **20.04 / 57.96 / 90.02 pt**: the run's size, unchanged, with `w:lines`
+/// making no difference. A fourth case with `w:lines="3"` and *no* `w:sz` came
+/// out at the inherited 12 pt spanning a single line, so `w:lines` is not even
+/// a fallback. It is what Word's UI used to choose the size at insert time, not
+/// a layout input — and `DropCap::lines` stays imported and re-exported as
+/// document data rather than being consulted here.
+///
+/// On `acid2-docx.docx` page 5 the old rule drew a 59 px cap where Word draws
+/// 74 px (the declared 58 pt) and wrapped 3 body lines where Word wraps 5,
+/// shifting every following line in the column.
 ///
 /// `body_line_height` is the body's line pitch; `first_baseline`/`first_ascent`
 /// come from the body layout's first line. `cap_text` is the already-extracted
-/// initial. `base` supplies the cap's font family / weight / style / colour.
+/// initial. `base` supplies the cap's font family / weight / style / colour —
+/// and now its size.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn plan_drop_cap(
     resources: &mut FontResources,
@@ -117,24 +138,12 @@ pub(crate) fn plan_drop_cap(
     first_ascent: f32,
     display_scale: f32,
 ) -> Option<DropCapPlan> {
-    let n_lines = (dc.lines as usize).max(1);
     let cap_text = cap_text.trim();
-    if cap_text.is_empty() || body_line_height <= 0.0 {
+    if cap_text.is_empty() || body_line_height <= 0.0 || base.font_size <= 0.0 {
         return None;
     }
 
-    // Probe at a one-line size to measure the font's ascent ratio, then scale so
-    // the cap's ascent spans `n_lines` rows (Word sizes the initial to the line
-    // band it occupies).
-    let probe_size = body_line_height.max(1.0);
-    let probe = shape_cap(resources, cap_text, base, probe_size, display_scale)?;
-    if probe.ascent <= 0.0 {
-        return None;
-    }
-    let target_ascent = n_lines as f32 * body_line_height;
-    let cap_size = (probe_size * target_ascent / probe.ascent).max(1.0);
-
-    let shaped = shape_cap(resources, cap_text, base, cap_size, display_scale)?;
+    let shaped = shape_cap(resources, cap_text, base, base.font_size, display_scale)?;
     if shaped.advance <= 0.0 {
         return None;
     }
@@ -146,7 +155,7 @@ pub(crate) fn plan_drop_cap(
     let cap_baseline = line0_top + shaped.ascent;
 
     // Margin mode: the cap hangs in the left margin and the body is not inset.
-    // Drop (in-text) mode: the body's first `n_lines` lines clear the cap.
+    // Drop (in-text) mode: the body lines beside the cap clear it.
     let (cap_x, body_inset) = if dc.margin {
         (-(shaped.advance + distance), 0.0)
     } else {
@@ -160,7 +169,6 @@ pub(crate) fn plan_drop_cap(
     let bottom = cap_baseline + shaped.descent;
 
     Some(DropCapPlan {
-        n_lines,
         body_inset,
         items,
         bottom,

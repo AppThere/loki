@@ -396,7 +396,7 @@ fn layout_paragraph_uncached(
 
     let mut layout = builder.build(&clean_text);
     // Plan the drop cap (its enlarged glyph + band geometry) from the body's
-    // first-line metrics. `drop_plan` keeps the line height for `cover_height`.
+    // first-line metrics.
     let drop_plan = if let Some((dc, cap_text, base)) = &drop_state {
         layout.set_text_indent(
             para_props.indent_hanging,
@@ -424,7 +424,6 @@ fn layout_paragraph_uncached(
             asc,
             display_scale,
         )
-        .map(|p| (p, lh))
     } else {
         None
     };
@@ -432,10 +431,13 @@ fn layout_paragraph_uncached(
     // Unified leading band: a drop cap (object on the left) or a float band set
     // by the flow engine. The band's first lines are narrowed; lines below it
     // reclaim full width (`para_band` lays the body out in two passes).
-    let band: Option<crate::para_band::Band> = if let Some((p, lh)) = &drop_plan {
+    let band: Option<crate::para_band::Band> = if let Some(p) = &drop_plan {
         Some(crate::para_band::Band {
             inset: p.body_inset,
-            cover_height: p.n_lines as f32 * lh,
+            // The cap's own ink extent, not a line count: Word wraps the body
+            // lines whose top is above the cap's bottom, however many that is
+            // (see `DropCapPlan::bottom`).
+            cover_height: p.bottom,
             // In-text drop shifts the text right; margin drop has inset 0.
             shift_text: p.body_inset > 0.0,
         })
@@ -463,7 +465,7 @@ fn layout_paragraph_uncached(
         );
         let mut items = body.items;
         let mut content_bottom = body.height;
-        if let Some((p, _)) = &drop_plan {
+        if let Some(p) = &drop_plan {
             // Emit the enlarged initial at the paragraph's left edge.
             for it in &p.items {
                 let mut it = it.clone();
@@ -667,7 +669,7 @@ fn layout_paragraph_uncached(
     // A drop cap reaches this fallback only in the editor (`preserve_for_editing`),
     // where the body is one hit-testable layout; emit its enlarged initial at the
     // paragraph's left edge, above the shifted body lines.
-    if let Some((p, _)) = &drop_plan {
+    if let Some(p) = &drop_plan {
         for it in &p.items {
             let mut it = it.clone();
             it.translate(para_props.indent_start, 0.0);

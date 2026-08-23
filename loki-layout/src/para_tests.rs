@@ -1853,7 +1853,19 @@ fn drop_cap_enlarges_initial_and_shifts_first_lines() {
     let text = "Hello world this is a longer paragraph that wraps across several lines so \
                 we can exercise the dropped-initial rendering path with enough body text \
                 to produce a number of distinct wrapped lines below the cap band.";
-    let spans = [single_span(text, 12.0)];
+    // The initial run declares its own 36 pt; the body stays 12 pt. Word sizes a
+    // dropped initial from the run, not from `lines` — see `plan_drop_cap`.
+    let spans = [
+        StyleSpan {
+            range: 0..1,
+            font_size: 36.0,
+            ..single_span(text, 36.0)
+        },
+        StyleSpan {
+            range: 1..text.len(),
+            ..single_span(text, 12.0)
+        },
+    ];
     let props = ResolvedParaProps {
         drop_cap: Some(DropCap {
             lines: 3,
@@ -1876,11 +1888,12 @@ fn drop_cap_enlarges_initial_and_shifts_first_lines() {
         .collect();
     assert!(!runs.is_empty(), "expected glyph runs");
 
-    // The cap is sized to span ~3 lines → far larger than the 12 pt body.
+    // The cap is drawn at the initial run's declared 36 pt — not scaled to
+    // `lines`, and not left at the body's 12 pt.
     let max_size = runs.iter().map(|g| g.font_size).fold(0.0_f32, f32::max);
     assert!(
-        max_size > 24.0,
-        "cap glyph should be enlarged to span 3 lines; max font_size = {max_size}"
+        (max_size - 36.0).abs() < 0.5,
+        "cap must render at the run's own 36pt; max font_size = {max_size}"
     );
     // Body text is retained at the original 12 pt.
     assert!(
@@ -1929,7 +1942,17 @@ fn drop_cap_enlarged_and_hit_testable_in_editor() {
 
     let mut r = test_resources();
     let text = "Hello world this is body text that wraps beside the cap in the editor.";
-    let spans = [single_span(text, 12.0)];
+    let spans = [
+        StyleSpan {
+            range: 0..1,
+            font_size: 36.0,
+            ..single_span(text, 36.0)
+        },
+        StyleSpan {
+            range: 1..text.len(),
+            ..single_span(text, 12.0)
+        },
+    ];
     let props = ResolvedParaProps {
         drop_cap: Some(DropCap {
             lines: 3,
@@ -1943,7 +1966,7 @@ fn drop_cap_enlarged_and_hit_testable_in_editor() {
     // Parley layout is retained for the body.
     let result = layout_paragraph(&mut r, text, &spans, &props, 300.0, 1.0, true);
 
-    // The dropped initial is rendered enlarged (≈ 3 line-heights tall).
+    // The dropped initial renders at the run's own 36 pt, as in print.
     let max_size = result
         .items
         .iter()
@@ -1953,8 +1976,8 @@ fn drop_cap_enlarged_and_hit_testable_in_editor() {
         })
         .fold(0.0_f32, f32::max);
     assert!(
-        max_size > 24.0,
-        "editor must render the enlarged initial; max glyph size = {max_size}"
+        (max_size - 36.0).abs() < 0.5,
+        "editor must render the initial at its declared 36pt; max glyph size = {max_size}"
     );
 
     // Hit-testing is available (body layout retained).
@@ -2032,5 +2055,122 @@ fn decimal_tab_clamps_to_line_when_content_would_overflow() {
         (wide[0].width - (126.0 - 34.4)).abs() < 0.2,
         "wide line is unclamped (true decimal align): {}",
         wide[0].width
+    );
+}
+
+/// `DropCap::lines` is **not** a layout input: the initial is drawn at its own
+/// run's font size, and the wrap band follows from the resulting glyph.
+///
+/// Measured on Word 16.0 — three drop caps in one document, every one declaring
+/// `w:lines="3"`, whose runs declare 20 / 58 / 90 pt. Word rendered them at
+/// 20.04 / 57.96 / 90.02 pt and indented 2 / 4 / 4+ body lines respectively, so
+/// neither the size nor the line count follows `w:lines`. A fourth case with
+/// `w:lines="3"` and no `w:sz` came out at the inherited 12 pt over one line —
+/// `w:lines` is not even a fallback.
+///
+/// Loki used to scale the cap so its ascent spanned `lines` rows. On
+/// `acid2-docx.docx` page 5 that drew a 59 px cap where Word draws 74 px and
+/// wrapped 3 lines where Word wraps 5.
+///
+/// The field stays on `DropCap` because it is real document data that
+/// round-trips through both formats; it simply does not reach layout.
+#[test]
+fn drop_cap_lines_does_not_change_the_cap_or_the_band() {
+    use loki_doc_model::style::props::drop_cap::{DropCap, DropCapLength};
+
+    let text = "Hello world this is a longer paragraph that wraps across several lines so \
+                we can exercise the dropped-initial rendering path with enough body text \
+                to produce a number of distinct wrapped lines below the cap band.";
+
+    /// Returns `(cap font size, number of body lines shifted clear of the cap)`.
+    fn laid_out(lines: u8) -> (f32, usize) {
+        let mut r = test_resources();
+        let text = "Hello world this is a longer paragraph that wraps across several lines so \
+                    we can exercise the dropped-initial rendering path with enough body text \
+                    to produce a number of distinct wrapped lines below the cap band.";
+        let spans = [
+            StyleSpan {
+                range: 0..1,
+                font_size: 36.0,
+                ..single_span(text, 36.0)
+            },
+            StyleSpan {
+                range: 1..text.len(),
+                ..single_span(text, 12.0)
+            },
+        ];
+        let props = ResolvedParaProps {
+            drop_cap: Some(DropCap {
+                lines,
+                length: DropCapLength::Chars(1),
+                distance: DocPoints::new(2.0),
+                margin: false,
+            }),
+            ..ResolvedParaProps::default()
+        };
+        let result = layout_paragraph(&mut r, text, &spans, &props, 300.0, 1.0, false);
+        let runs: Vec<&PositionedGlyphRun> = result
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                PositionedItem::GlyphRun(g) => Some(g),
+                _ => None,
+            })
+            .collect();
+        let cap_size = runs.iter().map(|g| g.font_size).fold(0.0_f32, f32::max);
+        // Body lines whose leftmost glyph is inset past the cap.
+        let mut by_line: std::collections::BTreeMap<i32, f32> = std::collections::BTreeMap::new();
+        for g in runs.iter().filter(|g| (g.font_size - 12.0).abs() < 0.5) {
+            let k = (g.origin.y * 4.0).round() as i32;
+            let e = by_line.entry(k).or_insert(f32::INFINITY);
+            *e = e.min(g.origin.x);
+        }
+        let shifted = by_line.values().filter(|x| **x > 10.0).count();
+        (cap_size, shifted)
+    }
+
+    let (size_3, band_3) = laid_out(3);
+    let (size_6, band_6) = laid_out(6);
+    let (size_1, band_1) = laid_out(1);
+
+    assert!(
+        (size_3 - 36.0).abs() < 0.5,
+        "the cap takes its run's 36pt, got {size_3}"
+    );
+    assert!(
+        (size_3 - size_6).abs() < 0.01 && (size_3 - size_1).abs() < 0.01,
+        "`lines` must not change the cap size: 1 -> {size_1}, 3 -> {size_3}, 6 -> {size_6}"
+    );
+    assert_eq!(
+        (band_3, band_6),
+        (band_1, band_1),
+        "`lines` must not change how many body lines clear the cap: \
+         1 -> {band_1}, 3 -> {band_3}, 6 -> {band_6}"
+    );
+    // The inversion: the band must be a real, non-degenerate band — some lines
+    // clear the cap and some do not — or the assertions above would hold
+    // trivially on a layout that never indents anything.
+    assert!(
+        band_3 > 0,
+        "a 36pt cap over 12pt text must inset at least one line"
+    );
+    let total = {
+        let mut r = test_resources();
+        let spans = [single_span(text, 12.0)];
+        layout_paragraph(
+            &mut r,
+            text,
+            &spans,
+            &ResolvedParaProps::default(),
+            300.0,
+            1.0,
+            false,
+        )
+        .line_boundaries
+        .len()
+    };
+    assert!(
+        band_3 < total.max(2),
+        "some line below the cap must reclaim the full width (band {band_3} of {total})"
     );
 }
