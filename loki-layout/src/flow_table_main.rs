@@ -81,6 +81,17 @@ pub(super) fn flow_table(
                 // exception. Neither the split nor `cantSplit` is modelled
                 // anywhere in the workspace.
                 //
+                // **Do not just relax this guard.** A row taller than a whole
+                // page already falls through to the split path (the second
+                // condition), and that path is broken: measured on
+                // `table-row-taller-than-page.docx`, Word renders 3 pages and
+                // Loki 2, with the row's borders missing entirely and the cell
+                // text clipped mid-line. Relaxing the guard so ordinary rows
+                // split as well makes `iris-blueprint-free` go 571 → 1012
+                // failing regions, because the overflowing cell's content
+                // vanishes rather than continuing. Repair the over-tall path
+                // first, then model `cantSplit`, then relax this.
+                //
                 // Surfaced by `iris-blueprint-free.docx` page 10, where Word
                 // opens the page mid-row with the tail of a row carried from
                 // page 9 and Loki moves the whole row down: page 9 improves

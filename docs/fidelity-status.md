@@ -326,6 +326,35 @@ opposite: `w:cantSplit` is absent unless the author sets it, and rows may split.
 Neither row splitting nor `cantSplit` is modelled anywhere in the workspace.
 `TODO(table-row-split)`.
 
+#### The split path underneath is broken, so this is not a one-line guard change
+
+The guard only moves a row whole when it *would* fit on a fresh page
+(`row_max_h <= page_content_height`). A row taller than a whole page already
+falls through to the splitting path today — so that path can be exercised with
+**no code change**, and it does not work.
+
+`appthere-conformance/fixtures/docx/table-row-taller-than-page.docx`
+(regenerate with `scripts/make-tallrow-fixture.py`) is a two-column table whose
+first row runs well past one page. Word renders it over **3 pages**; Loki
+renders **2**, and on the pages it does produce:
+
+- **the row's borders are not drawn at all** — Word rules the split row on both
+  pages, Loki draws none;
+- **the cell text is clipped mid-line** at roughly 80 % of the cell width, so
+  every line loses its tail;
+- **a page of content is lost** — the third page never appears.
+
+Disabling the guard so ordinary rows also split makes `iris-blueprint-free`
+markedly worse (571 → 1012 failing regions, 9 → 11 failing pages), and the crop
+shows why: the overflowing cell's content vanishes entirely rather than
+continuing. On iris page 9 the Rationale cell comes out **empty** where Word
+shows its first two lines, and page 10's continuation band is empty too.
+
+So the sequence is: **repair the existing over-tall-row path first** (borders,
+clip width, and the lost page), then model `w:cantSplit`, and only then relax
+the guard so ordinary rows split. Relaxing the guard first converts a
+one-row-late table into lost content, which is strictly worse.
+
 The Arial pairing happened to agree with Loki at that boundary and the Arimo
 pairing does not, so the variant did not create this defect — it **removed the
 coincidence that was hiding it**. That is the fixture doing its job, and it is
