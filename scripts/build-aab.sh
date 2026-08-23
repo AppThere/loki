@@ -18,13 +18,17 @@
 #   4. ./gradlew bundleRelease -> a signed .aab
 #
 # Usage:
-#   ./scripts/build-aab.sh [--abi all|arm64|x64] [--gpu] [--skip-cargo]
+#   ./scripts/build-aab.sh [--abi all|arm64|x64] [--cpu] [--skip-cargo]
 #
 #   --abi all    (default) Universal bundle: arm64-v8a + x86_64.
 #   --abi arm64  arm64-v8a only.
 #   --abi x64    x86_64 only.
-#   --gpu        Build the Rust libs with the Vello GPU renderer
-#                (RUSTFLAGS='--cfg android_gpu').
+#   --cpu        Build the Rust libs with the CPU-renderer fallback (without
+#                RUSTFLAGS='--cfg android_gpu').  The Vello GPU renderer is the
+#                DEFAULT.  The CPU path has no paginated view at any window
+#                size, so it is an emulator/debugging special case and must not
+#                be shipped to Play.
+#   --gpu        Accepted for backwards compatibility; now a no-op (the default).
 #   --skip-cargo Reuse already-built target/<triple>/release/libloki_text.so.
 #
 # Signing: defaults to ~/.android/debug.keystore (installable for bundletool
@@ -38,14 +42,17 @@ set -euo pipefail
 # ── Argument parsing ──────────────────────────────────────────────────────────
 
 ABI="all"
-GPU=0
+# GPU renderer is the default; --cpu opts out.  A Play bundle built without the
+# android_gpu cfg ships a reflow-only app, which is not a shippable product.
+GPU=1
 SKIP_CARGO=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --abi)        ABI="${2:-}"; shift ;;
         --abi=*)      ABI="${1#*=}" ;;
-        --gpu)        GPU=1 ;;
+        --cpu)        GPU=0 ;;
+        --gpu)        GPU=1 ;;   # no-op: already the default
         --skip-cargo) SKIP_CARGO=1 ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
@@ -113,9 +120,20 @@ fi
 
 # ── GPU flag ──────────────────────────────────────────────────────────────────
 
-if [[ "$GPU" -eq 1 && " ${RUSTFLAGS:-} " != *" --cfg android_gpu "* ]]; then
-    export RUSTFLAGS="${RUSTFLAGS:-} --cfg android_gpu"
+if [[ "$GPU" -eq 1 ]]; then
+    if [[ " ${RUSTFLAGS:-} " != *" --cfg android_gpu "* ]]; then
+        export RUSTFLAGS="${RUSTFLAGS:-} --cfg android_gpu"
+    fi
     echo "==> GPU renderer enabled (RUSTFLAGS:${RUSTFLAGS})"
+else
+    # --cpu must strip an inherited cfg too, or it would not mean what it says.
+    # Seed via ${RUSTFLAGS:-} first: `set -u` makes a bare ${RUSTFLAGS//...}
+    # expansion of an *unset* RUSTFLAGS a fatal "unbound variable".
+    RUSTFLAGS="${RUSTFLAGS:-}"
+    RUSTFLAGS="${RUSTFLAGS//--cfg android_gpu/}"
+    export RUSTFLAGS
+    echo "==> CPU renderer (--cpu): reflow only, no paginated view (RUSTFLAGS:${RUSTFLAGS})"
+    echo "    This bundle is for emulator/debug use — do NOT upload it to Play."
 fi
 
 # ── Stage native libraries ────────────────────────────────────────────────────

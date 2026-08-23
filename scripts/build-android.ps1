@@ -25,16 +25,24 @@
 .PARAMETER SkipCargoApk
     Skip cargo apk build (useful when only the manifest/DEX changed).
 
+.PARAMETER Cpu
+    Build the CPU-renderer fallback, i.e. WITHOUT '--cfg android_gpu'.  The
+    Vello GPU renderer is the DEFAULT; -Cpu is the special case for the Android
+    emulator, which uses SwiftShader and lacks the compute shader support Vello
+    needs.  On the CPU path DocumentView returns the HTML reflow fallback
+    unconditionally: no paginated view at any window size, and the status-bar
+    view-mode toggle changes its label without changing the rendering.
+
 .PARAMETER Gpu
-    Enable the real Vello GPU renderer (VelloWindowRenderer / use_wgpu).
-    Requires a Vulkan-capable physical device; omit for the Android emulator
-    (which uses SwiftShader and lacks the compute shader support Vello needs).
+    Accepted for backwards compatibility; now a no-op, because the GPU renderer
+    is the default.  Passing -Gpu and -Cpu together is an error.
 
 .EXAMPLE
     .\scripts\build-android.ps1 -Install
-    .\scripts\build-android.ps1 -Release -Install -Gpu
-    .\scripts\build-android.ps1 -App spreadsheet -Release -Install -Gpu
-    .\scripts\build-android.ps1 -App presentation -Release -Install -Gpu
+    .\scripts\build-android.ps1 -Release -Install
+    .\scripts\build-android.ps1 -App spreadsheet -Release -Install
+    .\scripts\build-android.ps1 -App presentation -Release -Install
+    .\scripts\build-android.ps1 -Install -Cpu   # emulator only
 #>
 
 param(
@@ -43,9 +51,11 @@ param(
     [switch]$Release,
     [switch]$Install,
     [switch]$SkipCargoApk,
-    # Pass -Gpu to enable the real Vello GPU renderer (VelloWindowRenderer / use_wgpu).
-    # Requires a Vulkan-capable physical device; omit for the Android emulator
-    # (which uses SwiftShader and lacks the compute shader support Vello needs).
+    # The Vello GPU renderer (VelloWindowRenderer / use_wgpu) is the DEFAULT.
+    # Pass -Cpu for the Android emulator, which uses SwiftShader and lacks the
+    # compute shader support Vello needs.  -Gpu is kept as an accepted no-op so
+    # existing invocations and docs keep working.
+    [switch]$Cpu,
     [switch]$Gpu,
     # Which ABI(s) to build:
     #   auto  (default) On -Install, detect the connected device's ABI and build
@@ -209,13 +219,20 @@ if (-not $SkipCargoApk) {
     $buildArgs = @("apk", "build", "--package", $cargoPackage)
     if ($Release) { $buildArgs += "--release" }
     if ($cargoTarget) { $buildArgs += @("--target", $cargoTarget) }
-    # On a physical Vulkan device, -Gpu enables the full Vello GPU renderer.
+    # The full Vello GPU renderer is the default; -Cpu opts out for SwiftShader.
     # The android_gpu cfg flag is checked throughout dioxus-native and loki-renderer.
-    if ($Gpu -and ($env:RUSTFLAGS -notlike "*--cfg android_gpu*")) {
-        $env:RUSTFLAGS = ($env:RUSTFLAGS + " --cfg android_gpu").Trim()
+    if ($Gpu -and $Cpu) {
+        throw "-Gpu and -Cpu are mutually exclusive (-Gpu is now the default and a no-op)."
     }
-    if ($Gpu) {
+    if (-not $Cpu) {
+        if ($env:RUSTFLAGS -notlike "*--cfg android_gpu*") {
+            $env:RUSTFLAGS = ($env:RUSTFLAGS + " --cfg android_gpu").Trim()
+        }
         Write-Host "    GPU renderer enabled (RUSTFLAGS: $env:RUSTFLAGS)"
+    } else {
+        # -Cpu must strip an inherited cfg too, or it would not mean what it says.
+        $env:RUSTFLAGS = ($env:RUSTFLAGS -replace '\s*--cfg android_gpu', '').Trim()
+        Write-Host "    CPU renderer (-Cpu): reflow only - no paginated view."
     }
     # Stamp the moment the build starts, so "did this run produce an APK?" can
     # be answered by the artifact's own mtime rather than by its existence.

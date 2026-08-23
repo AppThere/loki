@@ -14,7 +14,7 @@
 #
 # Usage:
 #   ./scripts/build-android.sh [--release] [--install] [--skip-cargo-apk]
-#                              [--abi auto|arm64|x64|all]
+#                              [--abi auto|arm64|x64|all] [--cpu]
 #
 #   --abi auto   (default) On --install, detect the connected device's ABI and
 #                build only that target (fast).  Otherwise build all ABIs.
@@ -23,9 +23,19 @@
 #   --abi all    Build a universal multi-ABI APK (both targets from Cargo.toml's
 #                build_targets) — useful for distributing one sideloadable APK.
 #
-#   --gpu        Enable the real Vello GPU renderer (RUSTFLAGS='--cfg android_gpu').
-#                Requires a Vulkan-capable device; omit for the SwiftShader
-#                emulator, which lacks the compute-shader support Vello needs.
+#   --cpu        Build the CPU-renderer fallback, i.e. WITHOUT
+#                RUSTFLAGS='--cfg android_gpu'.  The Vello GPU renderer is the
+#                default for every ABI and profile; --cpu is the special case
+#                for the SwiftShader emulator, which lacks the compute-shader
+#                support Vello needs.
+#
+#                Know what --cpu gives up: on that path `DocumentView`
+#                (loki-renderer/src/document_view.rs) returns the HTML reflow
+#                fallback unconditionally.  There is no paginated view at any
+#                window size, and the status-bar view-mode toggle updates its
+#                own label while the rendering ignores it.
+#   --gpu        Accepted for backwards compatibility; now a no-op, because the
+#                GPU renderer is the default.  Last flag wins if both are given.
 #
 # Environment variables (auto-detected if not set):
 #   ANDROID_HOME / ANDROID_SDK_ROOT   Android SDK root
@@ -39,7 +49,11 @@ set -euo pipefail
 RELEASE=0
 INSTALL=0
 SKIP_CARGO_APK=0
-GPU=0
+# The Vello GPU renderer is the default on every target; --cpu opts out.  This
+# defaulted to 0, which quietly produced reflow-only APKs on real hardware —
+# indistinguishable from a layout bug, because the view-mode state resolves
+# correctly and only the renderer discards it.
+GPU=1
 ABI="auto"   # auto | arm64 | x64 | all
 
 while [[ $# -gt 0 ]]; do
@@ -47,7 +61,8 @@ while [[ $# -gt 0 ]]; do
         --release)        RELEASE=1 ;;
         --install)        INSTALL=1 ;;
         --skip-cargo-apk) SKIP_CARGO_APK=1 ;;
-        --gpu)            GPU=1 ;;
+        --cpu)            GPU=0 ;;
+        --gpu)            GPU=1 ;;   # no-op: already the default
         --abi)            ABI="${2:-}"; shift ;;
         --abi=*)          ABI="${1#*=}" ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
@@ -251,13 +266,24 @@ echo "    DEX: $DEX_PATH"
 
 if [[ "$SKIP_CARGO_APK" -eq 0 ]]; then
     echo ""
-    GPU_LABEL=""; [[ "$GPU" -eq 1 ]] && GPU_LABEL=", gpu"
-    echo "==> cargo apk build ($PROFILE${CARGO_TARGET:+, $CARGO_TARGET}${GPU_LABEL})..."
+    RENDER_LABEL=", gpu"
+    [[ "$GPU" -eq 1 ]] || RENDER_LABEL=", cpu"
+    echo "==> cargo apk build ($PROFILE${CARGO_TARGET:+, $CARGO_TARGET}${RENDER_LABEL})..."
     # Enable the Vello GPU renderer by adding the android_gpu cfg, preserving any
-    # RUSTFLAGS the caller already set.
-    if [[ "$GPU" -eq 1 && " ${RUSTFLAGS:-} " != *" --cfg android_gpu "* ]]; then
-        export RUSTFLAGS="${RUSTFLAGS:-} --cfg android_gpu"
+    # RUSTFLAGS the caller already set.  --cpu must *remove* an inherited cfg as
+    # well as decline to add one, or the flag would not mean what its name says.
+    if [[ "$GPU" -eq 1 ]]; then
+        if [[ " ${RUSTFLAGS:-} " != *" --cfg android_gpu "* ]]; then
+            export RUSTFLAGS="${RUSTFLAGS:-} --cfg android_gpu"
+        fi
         echo "    GPU renderer enabled (RUSTFLAGS:${RUSTFLAGS})"
+    else
+        if [[ " ${RUSTFLAGS:-} " == *" --cfg android_gpu "* ]]; then
+            RUSTFLAGS="${RUSTFLAGS//--cfg android_gpu/}"
+            export RUSTFLAGS
+            echo "    --cpu: stripped inherited --cfg android_gpu from RUSTFLAGS"
+        fi
+        echo "    CPU renderer (--cpu): reflow only — no paginated view."
     fi
     BUILD_ARGS=(apk build --package loki-text)
     [[ "$RELEASE" -eq 1 ]] && BUILD_ARGS+=(--release)
