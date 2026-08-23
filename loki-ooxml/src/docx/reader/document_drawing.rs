@@ -7,7 +7,7 @@
 
 use quick_xml::{Reader, events::Event};
 
-use loki_doc_model::content::float::{FloatAlign, FloatWrap, TextWrap, WrapSide};
+use loki_doc_model::content::float::{FloatAlign, FloatWrap, TextWrap, WrapDistance, WrapSide};
 
 use crate::docx::model::paragraph::DocxDrawing;
 use crate::docx::reader::util::{attr_val, local_name, parse_emu};
@@ -24,6 +24,7 @@ pub(crate) fn parse_drawing(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxDrawi
     // `wp:positionH` holds the object's own horizontal placement as the *text*
     // of a nested `wp:align`, so the value arrives on the following Text event.
     let mut align: Option<FloatAlign> = None;
+    let mut dist: Option<WrapDistance> = None;
     let mut in_position_h = false;
     // `true` while inside an `a:ln` (border) element, so its `a:srgbClr` is read
     // as the border colour rather than the shape fill.
@@ -36,6 +37,20 @@ pub(crate) fn parse_drawing(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxDrawi
                     b"anchor" => {
                         drawing.is_anchor = true;
                         behind_doc = attr_val(e, b"behindDoc").as_deref() == Some("1");
+                        // Wrap clearance (EMU). Present iff the producer stated
+                        // any of the four; absence is not zero — see
+                        // `FloatWrap::dist`.
+                        let emu =
+                            |name: &[u8]| attr_val(e, name).and_then(|v| v.parse::<i64>().ok());
+                        let sides = [emu(b"distT"), emu(b"distB"), emu(b"distL"), emu(b"distR")];
+                        if sides.iter().any(Option::is_some) {
+                            dist = Some(WrapDistance {
+                                top: sides[0].unwrap_or(0),
+                                bottom: sides[1].unwrap_or(0),
+                                left: sides[2].unwrap_or(0),
+                                right: sides[3].unwrap_or(0),
+                            });
+                        }
                     }
                     b"extent" => {
                         drawing.cx = attr_val(e, b"cx").as_deref().and_then(parse_emu);
@@ -120,6 +135,7 @@ pub(crate) fn parse_drawing(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxDrawi
             side: wrap_side,
             align,
             behind_text: behind_doc,
+            dist,
         });
     }
     Ok(drawing)

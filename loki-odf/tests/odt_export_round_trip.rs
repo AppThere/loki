@@ -412,6 +412,7 @@ fn floating_text_box_round_trips_through_odt() {
         side: WrapSide::Right,
         align: None,
         behind_text: false,
+        dist: None,
     }
     .store(&mut attr);
     let text_box = Inline::TextBox(

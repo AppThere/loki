@@ -38,6 +38,11 @@ pub(super) fn map_graphic_wrap(gw: &OdfGraphicWrap) -> Option<FloatWrap> {
         // inferred from `style:wrap` (see `FloatWrap::align`).
         align: None,
         behind_text,
+        // ODF's wrap margins (`fo:margin-*` on the graphic style) are not read
+        // yet, so the clearance is unstated and the layout uses its default gap.
+        // TODO(odf-wrap-margins): map them the way the DOCX reader maps `distT`
+        // and friends.
+        dist: None,
     })
 }
 

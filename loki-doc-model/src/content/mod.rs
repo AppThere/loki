@@ -13,6 +13,7 @@ pub mod attr;
 pub mod block;
 pub mod field;
 pub mod float;
+mod float_kv;
 pub mod heading;
 pub mod inline;
 mod para_mark_merge;

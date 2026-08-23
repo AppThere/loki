@@ -94,14 +94,26 @@ pub(super) fn write_anchor_drawing<W: std::io::Write>(
     let _ = write_start(w, "w:r", &[]);
     let _ = write_start(w, "w:drawing", &[]);
     let behind = if wrap.behind_text { "1" } else { "0" };
+    // Wrap clearance round-trips: it drives the reader's `FloatWrap::dist` and
+    // hence the layout's wrap band, so writing a flat "0" silently narrowed
+    // every re-exported float's band by the distance the original stated.
+    // An unstated clearance stays "0" — the OOXML default — rather than
+    // inventing Word's 9pt/3.6pt.
+    let d = wrap.dist.unwrap_or_default();
+    let (dt, db, dl, dr) = (
+        d.top.max(0).to_string(),
+        d.bottom.max(0).to_string(),
+        d.left.max(0).to_string(),
+        d.right.max(0).to_string(),
+    );
     let _ = write_start(
         w,
         "wp:anchor",
         &[
-            ("distT", "0"),
-            ("distB", "0"),
-            ("distL", "0"),
-            ("distR", "0"),
+            ("distT", dt.as_str()),
+            ("distB", db.as_str()),
+            ("distL", dl.as_str()),
+            ("distR", dr.as_str()),
             ("simplePos", "0"),
             ("relativeHeight", "0"),
             ("behindDoc", behind),

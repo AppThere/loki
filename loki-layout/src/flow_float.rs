@@ -152,7 +152,26 @@ pub(crate) fn plan_float(
     if w <= 0.0 || h <= 0.0 {
         return None;
     }
-    let band = w + FLOAT_WRAP_GAP;
+    // Clearance between the object and the text it displaces. `distL`/`distR`
+    // and `distT`/`distB` are ordinary anchor attributes, so a stated value is
+    // document data; only an *unstated* one falls back to `FLOAT_WRAP_GAP`.
+    // `acid2-docx.docx` states Word's defaults (9 pt sides, 3.6 pt top/bottom),
+    // which is why the horizontal band already matched a hard-coded 9 pt while
+    // the vertical one — which had no gap at all — came up a line short.
+    let (gap_side, gap_below) = match fw.dist {
+        Some(d) => {
+            // The gap that matters horizontally is on the side the text is,
+            // which is the side opposite the float. `float_left` is decided
+            // below, so take the larger of the two here: they are equal in
+            // every document Word writes, and a lopsided pair would otherwise
+            // depend on an ordering this function has not established yet.
+            // Negative clearance is not meaningful; clamp before converting.
+            let emu = |v: i64| emu_to_pt(v.max(0) as u64);
+            (emu(d.left.max(d.right)), emu(d.bottom))
+        }
+        None => (FLOAT_WRAP_GAP, 0.0),
+    };
+    let band = w + gap_side;
     // Leave at least a quarter of the column for text; otherwise skip wrapping.
     if band >= content_width * 0.75 {
         return None;
@@ -200,7 +219,12 @@ pub(crate) fn plan_float(
             indent_start_delta,
             indent_end_delta,
             item,
-            height: h,
+            // The wrap band runs from the object's top to `distB` past its
+            // bottom. `distT` is inert while the object is always placed at the
+            // paragraph top (`TODO(float-pos-offset)`): the clearance above it
+            // falls outside the paragraph, so adding it here would push the
+            // text down by space Word leaves in the *previous* block.
+            height: h + gap_below,
         },
     ))
 }

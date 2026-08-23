@@ -24,6 +24,7 @@ fn square(side: WrapSide) -> FloatWrap {
         side,
         align: None,
         behind_text: false,
+        dist: None,
     }
 }
 
@@ -49,6 +50,7 @@ fn an_explicit_position_beats_the_inferred_wrap_side() {
         side,
         align,
         behind_text: false,
+        dist: None,
     };
 
     // The regressing case: `bothSides` + an explicit right position.
@@ -97,6 +99,7 @@ fn top_and_bottom_float_is_not_side_wrapped() {
             side: WrapSide::Both,
             align: None,
             behind_text: false,
+            dist: None,
         }),
     )];
     assert!(plan_float(&images, 468.0).is_none());
@@ -116,6 +119,7 @@ fn wrap_none_is_not_side_wrapped() {
                 side: WrapSide::Both,
                 align: None,
                 behind_text,
+                dist: None,
             }),
         )];
         assert!(
@@ -135,6 +139,7 @@ fn behind_text_float_is_not_side_wrapped() {
             side: WrapSide::Both,
             align: None,
             behind_text: true,
+            dist: None,
         }),
     )];
     assert!(plan_float(&images, 468.0).is_none());
@@ -184,4 +189,71 @@ fn oversized_float_is_skipped() {
     // A float wider than 75% of the column leaves too little text width.
     let images = vec![img(6.0, 1.0, Some(square(WrapSide::Both)))];
     assert!(plan_float(&images, 468.0).is_none());
+}
+
+/// A stated `distL`/`distR`/`distB` sets the wrap band; only an **unstated**
+/// clearance falls back to [`FLOAT_WRAP_GAP`].
+///
+/// `acid2-docx.docx`'s sidebar anchor declares Word's defaults —
+/// `distT`/`distB` = 45720 EMU (3.6 pt), `distL`/`distR` = 114300 (9 pt). The
+/// horizontal band already matched, because `FLOAT_WRAP_GAP` happens to equal
+/// 9 pt; the vertical one had no gap at all, so Word wrapped 6 lines beside the
+/// chart and Loki 5, and every line below it shifted.
+#[test]
+fn a_stated_wrap_distance_sets_the_band_and_absence_is_not_zero() {
+    use loki_doc_model::content::float::WrapDistance;
+
+    const PT: i64 = 12_700; // EMU per point
+
+    let with_dist = |dist: Option<WrapDistance>| {
+        let fw = FloatWrap {
+            wrap: TextWrap::Square,
+            side: WrapSide::Right, // text right → float left
+            align: None,
+            behind_text: false,
+            dist,
+        };
+        let images = vec![img(1.0, 1.0, Some(fw))];
+        let (_, p) = plan_float(&images, 468.0).expect("planned");
+        (p.indent_start_delta, p.height)
+    };
+
+    // Word's defaults: 9pt sides, 3.6pt top/bottom over a 72pt square.
+    let (band, height) = with_dist(Some(WrapDistance {
+        top: 36 * PT / 10,
+        bottom: 36 * PT / 10,
+        left: 9 * PT,
+        right: 9 * PT,
+    }));
+    assert!(
+        (band - 81.0).abs() < 0.1,
+        "band = image 72pt + stated 9pt, got {band}"
+    );
+    assert!(
+        (height - 75.6).abs() < 0.1,
+        "band height = image 72pt + stated distB 3.6pt, got {height}"
+    );
+
+    // Unstated → the layout's own default gap, and no vertical addition.
+    let (band_none, height_none) = with_dist(None);
+    assert!(
+        (band_none - (72.0 + FLOAT_WRAP_GAP)).abs() < 0.1,
+        "an unstated clearance keeps the default gap, got {band_none}"
+    );
+    assert!(
+        (height_none - 72.0).abs() < 0.1,
+        "an unstated clearance adds nothing vertically, got {height_none}"
+    );
+
+    // The inversion, and the reason `dist` is an `Option`: a producer that
+    // states **zero** means zero, and must not silently get the default gap.
+    let (band_zero, height_zero) = with_dist(Some(WrapDistance::default()));
+    assert!(
+        (band_zero - 72.0).abs() < 0.1,
+        "a stated zero clearance means zero, not the default gap, got {band_zero}"
+    );
+    assert!(
+        (height_zero - 72.0).abs() < 0.1,
+        "a stated zero adds nothing vertically, got {height_zero}"
+    );
 }

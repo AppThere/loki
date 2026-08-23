@@ -25,6 +25,10 @@ const KV_WRAP: &str = "float-wrap";
 const KV_SIDE: &str = "float-wrap-side";
 const KV_BEHIND: &str = "float-behind";
 const KV_ALIGN: &str = "float-align";
+const KV_DIST_T: &str = "float-dist-t";
+const KV_DIST_B: &str = "float-dist-b";
+const KV_DIST_L: &str = "float-dist-l";
+const KV_DIST_R: &str = "float-dist-r";
 
 /// How body text wraps around a floating object.
 ///
@@ -110,80 +114,34 @@ pub struct FloatWrap {
     /// `true` when the object sits behind the text (OOXML `wp:wrapNone` with
     /// `behindDoc="1"`; ODF `style:run-through="background"`).
     pub behind_text: bool,
-}
-
-impl TextWrap {
-    fn as_kv(self) -> &'static str {
-        match self {
-            TextWrap::Square => "square",
-            TextWrap::Tight => "tight",
-            TextWrap::Through => "through",
-            TextWrap::TopAndBottom => "top-bottom",
-            TextWrap::None => "none",
-        }
-    }
-
-    fn from_kv(s: &str) -> Option<Self> {
-        Some(match s {
-            "square" => TextWrap::Square,
-            "tight" => TextWrap::Tight,
-            "through" => TextWrap::Through,
-            "top-bottom" => TextWrap::TopAndBottom,
-            "none" => TextWrap::None,
-            _ => return None,
-        })
-    }
-}
-
-impl WrapSide {
-    fn as_kv(self) -> &'static str {
-        match self {
-            WrapSide::Both => "both",
-            WrapSide::Left => "left",
-            WrapSide::Right => "right",
-            WrapSide::Largest => "largest",
-        }
-    }
-
-    fn from_kv(s: &str) -> Self {
-        match s {
-            "left" => WrapSide::Left,
-            "right" => WrapSide::Right,
-            "largest" => WrapSide::Largest,
-            _ => WrapSide::Both,
-        }
-    }
-}
-
-impl FloatAlign {
-    fn as_kv(self) -> &'static str {
-        match self {
-            FloatAlign::Left => "left",
-            FloatAlign::Right => "right",
-            FloatAlign::Center => "center",
-        }
-    }
-
-    fn from_kv(s: &str) -> Option<Self> {
-        Self::from_str_kw(s)
-    }
-
-    /// Parses an OOXML `wp:positionH/wp:align` keyword.
+    /// Clearance the wrapped text must leave around the object, per side, when
+    /// the producer stated it.
     ///
-    /// `inside`/`outside` are book-fold aliases that depend on page parity;
-    /// they map to the recto reading (`inside` = left, `outside` = right) since
-    /// mirrored margins are handled elsewhere. Anything unrecognised — notably a
-    /// `wp:posOffset` number — is `None`, i.e. *unstated*, so the caller falls
-    /// back to inferring from the wrap side rather than guessing a placement.
-    #[must_use]
-    pub fn from_str_kw(s: &str) -> Option<Self> {
-        Some(match s {
-            "left" | "inside" => FloatAlign::Left,
-            "right" | "outside" => FloatAlign::Right,
-            "center" | "centre" => FloatAlign::Center,
-            _ => return None,
-        })
-    }
+    /// `None` means unstated — ODF carries no equivalent today, and legacy
+    /// content may omit it — and the layout then falls back to its own default
+    /// gap. This mirrors [`align`](Self::align): an explicit value is document
+    /// data and wins; absence is not the same as zero.
+    pub dist: Option<WrapDistance>,
+}
+
+/// Clearance around a floating object, in **EMU** (914400 per inch).
+///
+/// OOXML `wp:anchor/@distT|@distB|@distL|@distR`, kept in the file's own unit so
+/// the value is exact and the type stays `Eq` (as `FloatWrap` requires). Word
+/// writes `114300` (9 pt) left/right and `45720` (3.6 pt) top/bottom by default,
+/// but they are ordinary attributes and a producer may state anything, including
+/// zero — which is why the layout must read them rather than assume a constant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct WrapDistance {
+    /// Clearance above the object.
+    pub top: i64,
+    /// Clearance below the object.
+    pub bottom: i64,
+    /// Clearance to the object's left.
+    pub left: i64,
+    /// Clearance to the object's right.
+    pub right: i64,
 }
 
 impl FloatWrap {
@@ -194,8 +152,16 @@ impl FloatWrap {
         if !attr.classes.iter().any(|c| c == FLOATING_CLASS) {
             attr.classes.push(FLOATING_CLASS.to_string());
         }
-        attr.kv
-            .retain(|(k, _)| k != KV_WRAP && k != KV_SIDE && k != KV_BEHIND && k != KV_ALIGN);
+        attr.kv.retain(|(k, _)| {
+            k != KV_WRAP
+                && k != KV_SIDE
+                && k != KV_BEHIND
+                && k != KV_ALIGN
+                && k != KV_DIST_T
+                && k != KV_DIST_B
+                && k != KV_DIST_L
+                && k != KV_DIST_R
+        });
         attr.kv
             .push((KV_WRAP.to_string(), self.wrap.as_kv().to_string()));
         attr.kv
@@ -208,6 +174,18 @@ impl FloatWrap {
         if let Some(align) = self.align {
             attr.kv
                 .push((KV_ALIGN.to_string(), align.as_kv().to_string()));
+        }
+        // Same rule: only a stated clearance is written, so an unstated one
+        // cannot come back as an explicit zero.
+        if let Some(d) = self.dist {
+            for (key, v) in [
+                (KV_DIST_T, d.top),
+                (KV_DIST_B, d.bottom),
+                (KV_DIST_L, d.left),
+                (KV_DIST_R, d.right),
+            ] {
+                attr.kv.push((key.to_string(), format!("{v}")));
+            }
         }
     }
 
@@ -239,6 +217,7 @@ impl FloatWrap {
             side: WrapSide::Both,
             align: None,
             behind_text: false,
+            dist: None,
         }
     }
 
@@ -263,11 +242,29 @@ impl FloatWrap {
             .iter()
             .find(|(k, _)| k == KV_ALIGN)
             .and_then(|(_, v)| FloatAlign::from_kv(v));
+        let read_dist = |key: &str| {
+            attr.kv
+                .iter()
+                .find(|(k, _)| k == key)
+                .and_then(|(_, v)| v.parse::<i64>().ok())
+        };
+        // Present iff at least one side was stored — `store` writes all four
+        // together, so any one of them implies a stated clearance.
+        let dist = [KV_DIST_T, KV_DIST_B, KV_DIST_L, KV_DIST_R]
+            .iter()
+            .any(|k| attr.kv.iter().any(|(kk, _)| kk == k))
+            .then(|| WrapDistance {
+                top: read_dist(KV_DIST_T).unwrap_or(0),
+                bottom: read_dist(KV_DIST_B).unwrap_or(0),
+                left: read_dist(KV_DIST_L).unwrap_or(0),
+                right: read_dist(KV_DIST_R).unwrap_or(0),
+            });
         Some(FloatWrap {
             wrap,
             side,
             align,
             behind_text,
+            dist,
         })
     }
 }

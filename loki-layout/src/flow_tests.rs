@@ -2284,6 +2284,7 @@ mod page_fields {
                 side: WrapSide::Right,
                 align: None,
                 behind_text: false,
+                dist: None,
             }
             .store(&mut attr);
             Inline::Image(attr, vec![], LinkTarget::new("data:image/png;base64,AAAA"))
@@ -2372,6 +2373,7 @@ mod page_fields {
                 side: WrapSide::Both,
                 align: None,
                 behind_text: false,
+                dist: None,
             }
             .store(&mut attr);
             Inline::Image(attr, vec![], LinkTarget::new("data:image/png;base64,AAAA"))

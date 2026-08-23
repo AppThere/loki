@@ -34,7 +34,12 @@ pub enum DocxRunChild {
     /// `w:endnoteReference @w:id`.
     EndnoteRef { id: i32 },
     /// `w:drawing` — embedded drawing/image.
-    Drawing(DocxDrawing),
+    ///
+    /// Boxed: `DocxDrawing` carries the whole anchor (geometry, wrap clearance,
+    /// text-box body) and dwarfs every other variant, so leaving it inline would
+    /// make each `DocxRunChild` — including the common `Text` — as large as the
+    /// biggest one.
+    Drawing(Box<DocxDrawing>),
     /// `w:tab` — explicit tab character.
     Tab,
 }

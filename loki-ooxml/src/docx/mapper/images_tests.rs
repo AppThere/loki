@@ -198,6 +198,7 @@ fn anchor_drawing_carries_wrap_mode() {
             side: WrapSide::Left,
             align: None,
             behind_text: false,
+            dist: None,
         }),
         txbx: Vec::new(),
         fill_color: None,
@@ -214,6 +215,7 @@ fn anchor_drawing_carries_wrap_mode() {
                 side: WrapSide::Left,
                 align: None,
                 behind_text: false,
+                dist: None,
             })
         );
     } else {

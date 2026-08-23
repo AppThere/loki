@@ -169,7 +169,7 @@ pub(crate) fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
                 }
                 b"drawing" => {
                     let drawing = parse_drawing(reader)?;
-                    run.children.push(DocxRunChild::Drawing(drawing));
+                    run.children.push(DocxRunChild::Drawing(Box::new(drawing)));
                 }
                 tag @ (b"t" | b"delText") => {
                     let preserve = attr_val(e, b"space").is_some_and(|v| v == "preserve");

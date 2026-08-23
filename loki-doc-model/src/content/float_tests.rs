@@ -14,6 +14,7 @@ fn store_then_read_round_trips() {
         side: WrapSide::Left,
         align: None,
         behind_text: false,
+        dist: None,
     };
     fw.store(&mut attr);
     assert!(attr.classes.iter().any(|c| c == FLOATING_CLASS));
@@ -49,6 +50,7 @@ fn explicit_wrap_wins_over_class_default() {
         side: WrapSide::Left,
         align: None,
         behind_text: false,
+        dist: None,
     };
     fw.store(&mut attr);
     assert_eq!(FloatWrap::read_or_class_default(&attr), Some(fw));
@@ -62,6 +64,7 @@ fn behind_text_round_trips() {
         side: WrapSide::Both,
         align: None,
         behind_text: true,
+        dist: None,
     };
     fw.store(&mut attr);
     assert_eq!(FloatWrap::read(&attr), Some(fw));
@@ -75,6 +78,7 @@ fn store_is_idempotent() {
         side: WrapSide::Both,
         align: None,
         behind_text: false,
+        dist: None,
     }
     .store(&mut attr);
     FloatWrap {
@@ -82,6 +86,7 @@ fn store_is_idempotent() {
         side: WrapSide::Right,
         align: None,
         behind_text: false,
+        dist: None,
     }
     .store(&mut attr);
     // Only one floating class, one set of wrap keys.
@@ -97,6 +102,7 @@ fn store_is_idempotent() {
             side: WrapSide::Right,
             align: None,
             behind_text: false,
+            dist: None,
         })
     );
 }

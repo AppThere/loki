@@ -187,6 +187,7 @@ fn floating_image_emits_css_float() {
         side: WrapSide::Right,
         align: None,
         behind_text: false,
+        dist: None,
     }
     .store(&mut attr);
     let target = loki_doc_model::content::inline::LinkTarget::new("data:image/png;base64,SGk=");
@@ -217,6 +218,7 @@ fn behind_text_float_is_not_floated() {
         side: WrapSide::Both,
         align: None,
         behind_text: true,
+        dist: None,
     }
     .store(&mut attr);
     let target = loki_doc_model::content::inline::LinkTarget::new("data:image/png;base64,SGk=");
