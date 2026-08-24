@@ -381,13 +381,41 @@ will confidently measure something other than the thing under test.
 
 #### Still not done: splitting an *ordinary* row
 
-Rows that fit on a fresh page are still moved whole. Disabling the guard so they
-split as well makes `iris-blueprint-free` markedly worse (571 → 1012 failing
-regions, 9 → 11 failing pages): the overflowing cell's content vanishes rather
-than continuing, because `flow_row_cells` flows cells *sequentially* and the
-first cell to overflow carries the rest of the row onto the next page instead of
-every cell contributing a fragment to each. On iris page 9 the Rationale cell
-comes out **empty** where Word shows its first two lines.
+Rows that fit on a fresh page are still moved whole.
+`appthere-conformance/fixtures/docx/table-row-split-at-page-break.docx`
+(`scripts/make-splitrow-fixture.py`) isolates it: filler pushes a three-column
+table to near the page bottom, and the row is about half a page tall **with
+content in every cell**. Word splits it — all three cells show their first five
+sentences on page 1, closed with a bottom rule, and resume on page 2. Loki's
+page 1 has no table at all; the whole row moves down.
+
+This is a different case from `table-row-taller-than-page.docx`, and the
+difference is why that one now works: there the overflowing cell is the row's
+**last**, so flowing cells one after another happens to land on the right
+answer. Here every cell must contribute a fragment to both pages.
+
+**Why the guard cannot simply come off.** `flow_row_cells` flows a row's cells
+*sequentially* against the live `FlowState`, so the first cell to overflow
+advances `state.page_number`, and every later cell in that row then starts on
+the new page — the row is torn, not split. The page pointer cannot be rewound
+once `finish_page` has run, so ordering alone cannot fix it. Disabling the guard
+makes `iris-blueprint-free` go 571 → 1012 failing regions and 9 → 11 failing
+pages, with the overflowing cell's content vanishing rather than continuing: on
+iris page 9 the Rationale cell comes out **empty** where Word shows its first
+two lines.
+
+**The shape of the fix.** Stop letting cell content drive pagination. Lay each
+cell out standalone — `table_geom::flow_cell_blocks` already does exactly this
+for rotated cells, into a throwaway `Pageless` `FlowState`, returning items and
+editing paragraphs in cell-local coordinates — then slice every cell's items
+into per-page bands and emit each band as its own clipped fragment, advancing
+the page between bands. The decoration pass already understands a multi-page row
+(`emit_row_cell_decorations` takes `original_row_page`/`row_page_end` and inserts
+into finished pages), so it needs no change. Missing pieces: a y-extent accessor
+on `PositionedItem` in `loki-layout` (one exists only in the renderer's
+`band.rs`), the band-slicing itself, and routing editing-paragraph origins per
+fragment so hit-testing follows. Keep the existing sequential path for rows that
+fit, so the common case is untouched.
 
 So the remaining sequence is: teach `flow_row_cells` to split a row into
 per-page fragments across *all* its cells, model `w:cantSplit` to opt out, and
