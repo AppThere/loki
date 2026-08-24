@@ -1079,3 +1079,162 @@ fn table_style_cell_padding_insets_cell_content() {
         "inherited 12pt left margin must inset content: bare={bare}, padded={padded}"
     );
 }
+
+/// A table row taller than one page splits across pages, and each fragment is a
+/// **closed box** whose content is clipped to the cell's own x-range.
+///
+/// Two defects met here, both measured against Word 16.0 on
+/// `appthere-conformance/fixtures/docx/table-row-taller-than-page.docx`:
+///
+/// 1. The paragraph fragment clip was built at `x = 0` with the *cell's* width
+///    (`flow_split`), while the fragment's glyphs are translated by the cell's
+///    indent. Every line in a split cell therefore lost its right-hand tail —
+///    invisible for a full-width paragraph, where the indent is 0.
+/// 2. The row's border edges were gated on "is this the row's real first/last
+///    page", so a fragment left behind at a page break got no bottom edge and
+///    the one resuming got no top edge: the side borders ran off the page. Word
+///    rules the cut on both sides.
+#[test]
+fn a_row_taller_than_a_page_splits_into_closed_clipped_boxes() {
+    use loki_doc_model::style::props::border::{Border, BorderStyle};
+    use loki_primitives::units::Points;
+
+    let edge = || {
+        Some(Border {
+            style: BorderStyle::Solid,
+            width: Points::new(1.0),
+            color: Some(DocumentColor::Rgb(appthere_color::RgbColor::new(
+                0.0, 0.0, 0.0,
+            ))),
+            spacing: None,
+        })
+    };
+    let bordered_cell = |paras: Vec<&str>| {
+        let mut c = make_cell_tall(paras, None, 1);
+        c.props.border_top = edge();
+        c.props.border_bottom = edge();
+        c.props.border_left = edge();
+        c.props.border_right = edge();
+        c
+    };
+
+    // One *single* paragraph long enough to run past the page bottom, so the
+    // break falls inside it and `flow_split` emits fragment clips. A cell built
+    // from many short paragraphs would break *between* them and never exercise
+    // the clip at all — which is what this test's first cut did.
+    let long: String = (1..90)
+        .map(|i| format!("Sentence {i} of a cell that must run past the page bottom. "))
+        .collect();
+
+    let row = Row::new(vec![
+        bordered_cell(vec!["LABEL"]),
+        bordered_cell(vec![long.as_str()]),
+    ]);
+    let table = Block::Table(Box::new(Table {
+        attr: loki_doc_model::content::attr::NodeAttr::default(),
+        caption: Default::default(),
+        width: None,
+        col_specs: vec![
+            ColSpec {
+                alignment: ColAlignment::Default,
+                width: ColWidth::Default,
+            },
+            ColSpec {
+                alignment: ColAlignment::Default,
+                width: ColWidth::Default,
+            },
+        ],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![row])],
+        foot: TableFoot::empty(),
+    }));
+
+    let section = Section {
+        page_style: None,
+        layout: PageLayout::default(),
+        start: Default::default(),
+        blocks: vec![table],
+        ..Section::new()
+    };
+
+    let mut r = test_resources();
+    let catalog = StyleCatalog::new();
+    let FlowOutput::Pages { pages, .. } = flow_section(
+        &mut r,
+        &section,
+        &catalog,
+        &LayoutMode::Paginated,
+        1.0,
+        &LayoutOptions::default(),
+        &[],
+    ) else {
+        panic!("paginated flow returns Pages")
+    };
+    assert!(
+        pages.len() >= 2,
+        "the row must span pages, got {}",
+        pages.len()
+    );
+
+    for (pi, page) in pages.iter().enumerate() {
+        // (2) Every border box this row emits closes top and bottom.
+        let borders: Vec<_> = page
+            .content_items
+            .iter()
+            .filter_map(|i| match i {
+                PositionedItem::BorderRect(b) => Some(b),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            !borders.is_empty(),
+            "page {pi} must draw the split row's borders"
+        );
+        for b in &borders {
+            assert!(
+                b.top.is_some() && b.bottom.is_some(),
+                "page {pi}: a split-row fragment must close its box \
+                 (top={:?} bottom={:?})",
+                b.top.is_some(),
+                b.bottom.is_some()
+            );
+        }
+
+        // (1) Fragment clips start at their cell's x, not at 0. The second
+        // cell's content is well right of the origin, so a clip anchored at 0
+        // would cut it.
+        let clips: Vec<f32> = page
+            .content_items
+            .iter()
+            .filter_map(|i| match i {
+                PositionedItem::ClippedGroup { clip_rect, items } if !items.is_empty() => {
+                    Some(clip_rect.origin.x)
+                }
+                _ => None,
+            })
+            .collect();
+        // Glyph runs must sit inside the clip that carries them.
+        for item in &page.content_items {
+            if let PositionedItem::ClippedGroup { clip_rect, items } = item {
+                let mut flat = Vec::new();
+                flatten(items, &mut flat);
+                for g in flat {
+                    if let PositionedItem::GlyphRun(run) = g {
+                        assert!(
+                            run.origin.x >= clip_rect.origin.x - 0.5,
+                            "page {pi}: glyph at x={} is left of its clip x={} \
+                             — the clip would cut the line",
+                            run.origin.x,
+                            clip_rect.origin.x
+                        );
+                    }
+                }
+            }
+        }
+        assert!(
+            clips.iter().any(|x| *x > 1.0),
+            "page {pi}: the second cell's fragment clip must start at its own x, \
+             not 0 (clip origins {clips:?})"
+        );
+    }
+}

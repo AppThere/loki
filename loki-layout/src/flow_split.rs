@@ -80,8 +80,15 @@ pub(super) fn split_and_place_loop(
                 if let Some(ref al) = arc_layout {
                     push_editing_para(state, block_index, al.clone(), (0.0, ty));
                 }
+                // `dx`, not 0: the fragment's glyphs are translated by
+                // `dx` (= `state.current_indent`) just below, so a clip
+                // anchored at 0 masks the right-hand `dx` of every line. It
+                // is invisible for a full-width paragraph, where the indent
+                // is 0, and cuts text wherever the indent is not — inside a
+                // table cell most visibly, since `content_width` is then the
+                // *cell's* width while the glyphs start at the cell's x.
                 let clip_rect =
-                    LayoutRect::new(0.0, state.cursor_y, state.content_width, frag_height);
+                    LayoutRect::new(dx, state.cursor_y, state.content_width, frag_height);
                 let mut items = para_layout.items_in_y_range(frag_start, para_layout.height);
                 for item in &mut items {
                     item.translate(dx, ty);
@@ -253,7 +260,8 @@ fn emit_fragment(
     // `split_y - frag_start` is then fractional, and flooring it in points cost
     // decoration placement its entire reserve.
     let clip_height = split_y - frag_start;
-    let clip_rect = LayoutRect::new(0.0, state.cursor_y, state.content_width, clip_height);
+    // `dx`, not 0 — see the continuation-fragment clip in `split_and_place_loop`.
+    let clip_rect = LayoutRect::new(dx, state.cursor_y, state.content_width, clip_height);
     let ty = state.cursor_y - frag_start;
     if let Some(al) = arc_layout {
         push_editing_para(state, block_index, al, (0.0, ty));

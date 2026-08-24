@@ -153,19 +153,18 @@ pub(super) fn emit_row_cell_decorations(
                 )
             });
 
-            let is_first = p == cell_page_start;
-            let is_last = p == row_page_end;
-
-            let border_top = if is_first {
-                eff_top.and_then(convert_border)
-            } else {
-                None
-            };
-            let border_bottom = if is_last {
-                eff_bottom.and_then(convert_border)
-            } else {
-                None
-            };
+            // Every fragment of a split row closes its own box. Word rules the
+            // cut edge on both sides of a page break — the fragment left behind
+            // gets a bottom edge and the one that resumes gets a top edge — so
+            // gating these on "is this the row's real first/last page" left both
+            // fragments open, with the side borders running off the page edge.
+            // Measured on `table-row-taller-than-page.docx`.
+            //
+            // The edge is still only drawn if the cell declares one, so a
+            // borderless table stays borderless: a cut edge borrows the cell's
+            // own bottom/top border rather than inventing a rule.
+            let border_top = eff_top.and_then(convert_border);
+            let border_bottom = eff_bottom.and_then(convert_border);
             let border_left = eff_left.and_then(convert_border);
             let border_right = eff_right.and_then(convert_border);
 

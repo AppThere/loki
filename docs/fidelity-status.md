@@ -335,25 +335,63 @@ falls through to the splitting path today — so that path can be exercised with
 
 `appthere-conformance/fixtures/docx/table-row-taller-than-page.docx`
 (regenerate with `scripts/make-tallrow-fixture.py`) is a two-column table whose
-first row runs well past one page. Word renders it over **3 pages**; Loki
-renders **2**, and on the pages it does produce:
+first row runs well past one page. Two real defects came out of it, **both now
+fixed (2026-08-23)**:
 
-- **the row's borders are not drawn at all** — Word rules the split row on both
-  pages, Loki draws none;
-- **the cell text is clipped mid-line** at roughly 80 % of the cell width, so
-  every line loses its tail;
-- **a page of content is lost** — the third page never appears.
+- **The fragment clip ignored the horizontal indent.** `flow_split` built its
+  `ClippedGroup` at `x = 0` with `state.content_width`, while the fragment's
+  glyphs are translated by `dx` (`= state.current_indent`) a few lines later.
+  For a full-width paragraph the indent is 0 and the bug is invisible; inside a
+  table cell `content_width` is the *cell's* width and the glyphs start at the
+  cell's x, so every line in a split cell lost its right-hand tail — measured at
+  roughly 80 % of the cell width. It also affected any split paragraph in an
+  indented context, e.g. a list item, where the indent is likewise non-zero.
+- **A split row's fragments were left open.** The border edges were gated on
+  "is this the row's real first/last page", so the fragment left behind at a
+  break got no bottom edge and the one resuming got no top edge: the side
+  borders ran off the page. Word rules the cut on both sides. Each fragment now
+  closes its own box, still drawing only the edges the cell declares, so a
+  borderless table stays borderless.
 
-Disabling the guard so ordinary rows also split makes `iris-blueprint-free`
-markedly worse (571 → 1012 failing regions, 9 → 11 failing pages), and the crop
-shows why: the overflowing cell's content vanishes entirely rather than
-continuing. On iris page 9 the Rationale cell comes out **empty** where Word
-shows its first two lines, and page 10's continuation band is empty too.
+**Measured:** `iris-blueprint` went **507 → 481** failing regions and 9 → 8
+failing pages. ACID 1/2 and both free-font variants are unchanged. Locked by
+`a_row_taller_than_a_page_splits_into_closed_clipped_boxes`, whose two arms are
+mutation-checked.
 
-So the sequence is: **repair the existing over-tall-row path first** (borders,
-clip width, and the lost page), then model `w:cantSplit`, and only then relax
-the guard so ordinary rows split. Relaxing the guard first converts a
-one-row-late table into lost content, which is strictly worse.
+#### Two earlier claims here were wrong, and the fixture was the reason
+
+The first cut of this fixture shipped **no `styles.xml`**, so Word applied its
+built-in Normal (1.08 line spacing) and Loki its own default (single). The
+resulting 31 px vs 27 px line pitch changed the pagination by itself: Word took
+3 pages, Loki 2, and that was recorded here as "a page of content is lost". It
+was not — Loki was fitting *more* lines per page, and with the defaults pinned
+both sides produce 2 pages and the same line breaks.
+
+The same fixture declared its borders as table-level `w:tblBorders`, which is
+parsed only from a *style* (`reader/styles.rs`, gated on `in_style`); a table's
+own `w:tblPr/w:tblBorders` is read nowhere. So "the row's borders are not drawn
+at all" was measuring that gap, not the split path. It is a **real** separate
+defect — `TODO(direct-tbl-borders)` — and the fixture now uses per-cell
+`w:tcBorders` so it stops standing in for it.
+
+**The lesson for the next fixture:** a hand-built DOCX that omits `styles.xml`
+is not a controlled comparison, it is a comparison of two products' defaults.
+Pin `docDefaults` and use properties the importer actually reads, or the fixture
+will confidently measure something other than the thing under test.
+
+#### Still not done: splitting an *ordinary* row
+
+Rows that fit on a fresh page are still moved whole. Disabling the guard so they
+split as well makes `iris-blueprint-free` markedly worse (571 → 1012 failing
+regions, 9 → 11 failing pages): the overflowing cell's content vanishes rather
+than continuing, because `flow_row_cells` flows cells *sequentially* and the
+first cell to overflow carries the rest of the row onto the next page instead of
+every cell contributing a fragment to each. On iris page 9 the Rationale cell
+comes out **empty** where Word shows its first two lines.
+
+So the remaining sequence is: teach `flow_row_cells` to split a row into
+per-page fragments across *all* its cells, model `w:cantSplit` to opt out, and
+only then relax the guard.
 
 The Arial pairing happened to agree with Loki at that boundary and the Arimo
 pairing does not, so the variant did not create this defect — it **removed the
