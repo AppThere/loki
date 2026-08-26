@@ -1,51 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! `meta.xml` writer (Dublin Core core + extended properties). Split out of
-//! `styles.rs` (file-ceiling pass).
+//! `meta.xml` writer for ODT (Dublin Core core + extended properties).
+//!
+//! The element shape lives in [`crate::meta_write`], shared with ODS; this
+//! module only projects a [`Document`]'s metadata onto it.
 
 use loki_doc_model::document::Document;
 
-use super::xml::escape;
+use crate::meta_write::{MetaFields, meta_xml_from};
 
 /// Renders `meta.xml` for `doc` (Dublin Core core properties).
 #[must_use]
 pub(crate) fn meta_xml(doc: &Document) -> String {
-    let mut out = String::from(concat!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
-        "<office:document-meta",
-        " xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"",
-        " xmlns:dc=\"http://purl.org/dc/elements/1.1/\"",
-        " xmlns:meta=\"urn:oasis:names:tc:opendocument:xmlns:meta:1.0\"",
-    ));
-    out.push_str(&format!(
-        " office:version=\"{}\"><office:meta>",
-        super::xml::office_version(doc)
-    ));
     let m = &doc.meta;
-    {
-        let mut el = |tag: &str, val: &Option<String>| {
-            if let Some(v) = val {
-                out.push_str(&format!("<{tag}>{}</{tag}>", escape(v)));
-            }
-        };
-        el("dc:title", &m.title);
-        el("dc:creator", &m.creator);
-        el("meta:initial-creator", &m.creator);
-        el("dc:subject", &m.subject);
-        el("dc:description", &m.description);
-        el("meta:keyword", &m.keywords);
-    }
-    // Extended Dublin Core has no native office:meta element; carry each field
-    // as a meta:user-defined entry under its reserved dcmi: name so it
-    // round-trips.
-    for (name, value) in m.dublin_core.to_named_pairs() {
-        out.push_str(&format!(
-            "<meta:user-defined meta:name=\"{}\">{}</meta:user-defined>",
-            escape(&name),
-            escape(&value),
-        ));
-    }
-    out.push_str("</office:meta></office:document-meta>");
-    out
+    let fields = MetaFields {
+        title: m.title.as_deref(),
+        creator: m.creator.as_deref(),
+        subject: m.subject.as_deref(),
+        description: m.description.as_deref(),
+        keywords: m.keywords.as_deref(),
+        user_defined: m.dublin_core.to_named_pairs(),
+    };
+    meta_xml_from(&fields, super::xml::office_version(doc))
 }

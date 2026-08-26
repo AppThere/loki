@@ -8,11 +8,17 @@
 //! `self-hosted:<label>`, and the deployment default tier can never be
 //! Tier 2 (zero-knowledge is per-document opt-in, ratified decision §6.1).
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
 
 use loki_crypto::Kek;
 use loki_model::{EncryptionTier, Residency, ResidencyError};
+
+/// The environment as a plain map, so validation is a pure function of its
+/// input rather than of process-global state (and is therefore testable
+/// without a serialising mutex).
+pub type Vars = HashMap<String, String>;
 
 /// Fully validated server configuration.
 pub struct ServerConfig {
@@ -88,8 +94,12 @@ pub enum ConfigError {
     Residency(#[from] ResidencyError),
 }
 
-fn required(name: &'static str) -> Result<String, ConfigError> {
-    std::env::var(name).map_err(|_| ConfigError::Missing(name))
+fn required(vars: &Vars, name: &'static str) -> Result<String, ConfigError> {
+    vars.get(name).cloned().ok_or(ConfigError::Missing(name))
+}
+
+fn optional<'a>(vars: &'a Vars, name: &str) -> Option<&'a str> {
+    vars.get(name).map(String::as_str)
 }
 
 fn invalid(name: &'static str, reason: impl ToString) -> ConfigError {
@@ -100,14 +110,32 @@ fn invalid(name: &'static str, reason: impl ToString) -> ConfigError {
 }
 
 impl ServerConfig {
-    /// Reads and validates the configuration from the environment.
+    /// Reads and validates the configuration from the process environment.
     pub fn from_env() -> Result<Self, ConfigError> {
-        let bind = std::env::var("LOKI_BIND")
-            .unwrap_or_else(|_| String::from("0.0.0.0:8080"))
+        // `vars_os`, not `vars`: the latter panics if *any* variable in the
+        // environment is non-UTF-8, including ones this server never reads.
+        // A non-UTF-8 value can never be a valid setting here, so such
+        // entries are dropped and the variable reads as unset — exactly what
+        // the previous per-variable `std::env::var` calls did with their
+        // `NotUnicode` error.
+        let vars = std::env::vars_os()
+            .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
+            .collect();
+        Self::from_vars(&vars)
+    }
+
+    /// Validates a configuration from an explicit variable map.
+    ///
+    /// All the ADR-C019 gates live here rather than in [`Self::from_env`] so
+    /// that every rejection arm is reachable from a test without mutating
+    /// process-global state.
+    pub fn from_vars(vars: &Vars) -> Result<Self, ConfigError> {
+        let bind = optional(vars, "LOKI_BIND")
+            .unwrap_or("0.0.0.0:8080")
             .parse()
             .map_err(|e| invalid("LOKI_BIND", e))?;
 
-        let object_store = match required("LOKI_OBJECT_STORE")?.as_str() {
+        let object_store = match required(vars, "LOKI_OBJECT_STORE")?.as_str() {
             "memory" => ObjectStoreConfig::Memory,
             url => match url.strip_prefix("s3://") {
                 Some(bucket) if !bucket.is_empty() => ObjectStoreConfig::S3 {
@@ -122,18 +150,18 @@ impl ServerConfig {
             },
         };
 
-        let residency = Residency::parse(&required("LOKI_RESIDENCY")?)?;
+        let residency = Residency::parse(&required(vars, "LOKI_RESIDENCY")?)?;
 
-        let default_tier = match std::env::var("LOKI_DEFAULT_TIER").as_deref() {
-            Err(_) | Ok("0") => EncryptionTier::TransportAtRest,
-            Ok("1") => EncryptionTier::CustomerManagedKeys,
-            Ok("2") => {
+        let default_tier = match optional(vars, "LOKI_DEFAULT_TIER") {
+            None | Some("0") => EncryptionTier::TransportAtRest,
+            Some("1") => EncryptionTier::CustomerManagedKeys,
+            Some("2") => {
                 return Err(invalid(
                     "LOKI_DEFAULT_TIER",
                     "Tier 2 is per-document opt-in and cannot be the deployment default",
                 ));
             }
-            Ok(other) => {
+            Some(other) => {
                 return Err(invalid(
                     "LOKI_DEFAULT_TIER",
                     format!("unknown tier {other}"),
@@ -142,12 +170,12 @@ impl ServerConfig {
         };
 
         let oidc_keys = match (
-            std::env::var("LOKI_OIDC_JWKS_URL").ok(),
-            std::env::var("LOKI_OIDC_RSA_PEM_FILE").ok(),
+            optional(vars, "LOKI_OIDC_JWKS_URL"),
+            optional(vars, "LOKI_OIDC_RSA_PEM_FILE"),
         ) {
-            (Some(url), None) => OidcKeyConfig::JwksUrl(url),
+            (Some(url), None) => OidcKeyConfig::JwksUrl(url.to_owned()),
             (None, Some(pem_path)) => OidcKeyConfig::StaticRsaPem(
-                std::fs::read(&pem_path).map_err(|e| invalid("LOKI_OIDC_RSA_PEM_FILE", e))?,
+                std::fs::read(pem_path).map_err(|e| invalid("LOKI_OIDC_RSA_PEM_FILE", e))?,
             ),
             (Some(_), Some(_)) => {
                 return Err(invalid(
@@ -158,17 +186,17 @@ impl ServerConfig {
             (None, None) => return Err(ConfigError::Missing("LOKI_OIDC_JWKS_URL")),
         };
 
-        let compact_interval = match std::env::var("LOKI_COMPACT_INTERVAL_SECS").as_deref() {
-            Err(_) => Some(Duration::from_secs(300)),
-            Ok(raw) => match raw.parse::<u64>() {
+        let compact_interval = match optional(vars, "LOKI_COMPACT_INTERVAL_SECS") {
+            None => Some(Duration::from_secs(300)),
+            Some(raw) => match raw.parse::<u64>() {
                 Ok(0) => None,
                 Ok(secs) => Some(Duration::from_secs(secs)),
                 Err(e) => return Err(invalid("LOKI_COMPACT_INTERVAL_SECS", e)),
             },
         };
-        let compact_min_entries = match std::env::var("LOKI_COMPACT_MIN_ENTRIES").as_deref() {
-            Err(_) => 256,
-            Ok(raw) => raw
+        let compact_min_entries = match optional(vars, "LOKI_COMPACT_MIN_ENTRIES") {
+            None => 256,
+            Some(raw) => raw
                 .parse::<i64>()
                 .map_err(|e| invalid("LOKI_COMPACT_MIN_ENTRIES", e))
                 .and_then(|n| {
@@ -180,19 +208,19 @@ impl ServerConfig {
                 })?,
         };
 
-        let kek_b64 = required("LOKI_KEK_BASE64")?;
+        let kek_b64 = required(vars, "LOKI_KEK_BASE64")?;
         let kek_bytes = base64_decode(&kek_b64)
             .ok_or_else(|| invalid("LOKI_KEK_BASE64", "not valid base64"))?;
         let kek = Kek::from_bytes(&kek_bytes).map_err(|e| invalid("LOKI_KEK_BASE64", e))?;
 
         Ok(Self {
             bind,
-            database_url: required("DATABASE_URL")?,
+            database_url: required(vars, "DATABASE_URL")?,
             object_store,
             residency,
             default_tier,
-            oidc_issuer: required("LOKI_OIDC_ISSUER")?,
-            oidc_audience: required("LOKI_OIDC_AUDIENCE")?,
+            oidc_issuer: required(vars, "LOKI_OIDC_ISSUER")?,
+            oidc_audience: required(vars, "LOKI_OIDC_AUDIENCE")?,
             oidc_keys,
             kek,
             compact_interval,
@@ -207,3 +235,7 @@ fn base64_decode(value: &str) -> Option<Vec<u8>> {
         .decode(value.trim())
         .ok()
 }
+
+#[cfg(test)]
+#[path = "config_tests.rs"]
+mod tests;

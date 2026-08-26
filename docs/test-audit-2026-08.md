@@ -51,9 +51,13 @@ audited") — but the defects that do exist cluster at the **highest-stakes poin
    budget mapping, window-geometry validation, an oversized-element guard, a platform
    probe) — the "one fact, one derivation" violation in test form.
 
-The audit also surfaced **10 production defects** (§ Production defects below), including
-a parser stack-overflow DoS in `loki-basic` that the fuzz suite deliberately avoids, and
-an ODS export/import path that silently drops all document metadata.
+The audit also surfaced **production defects** (§ Production defects below) — 10 as first
+written, of which one (D-3) was retracted on inspection and one (D-10) downgraded, plus two
+more found while remediating, leaving 11 standing. The sharpest are a parser stack-overflow
+DoS in `loki-basic` that the fuzz suite deliberately avoids, an ODS export/import path that
+silently drops all document metadata, and an error-28 recursion guard set so far above the
+stack limit that it could never fire (D-12) — a guard that was not merely untested but had
+never once executed.
 
 ### Totals by crate group
 
@@ -147,16 +151,64 @@ Found while verifying tests; each needs a root-cause fix, not just a test.
 |---|---|---|
 | D-1 | `loki-basic/src/parser/` | No recursion-depth guard; deep `(`-nesting aborts the process. The panic-freedom fuzz test caps nesting at 200 explicitly to avoid it. |
 | D-2 | `loki-odf/src/ods/{import,export*}.rs` | ODS drops `DocumentMeta` entirely (import hardcodes `default()`, export writes no `meta.xml`) — unmarked data loss, masked by the round-trip test. |
-| D-3 | `loki-text/src/routes/editor/print_dialog_support.rs:26` | `copies.trim().parse().unwrap_or(1)` has no floor — `"0"` forwards `copies: 0` to the IPP job. |
+| ~~D-3~~ | ~~`loki-text/src/routes/editor/print_dialog_support.rs:26`~~ | **RETRACTED (2026-08-26) — not a defect.** The claim was that `"0"` forwards `copies: 0` to the IPP job. It does not: `PrintOptions::copies` is `u32`, documented "`0`/`1` are both one copy", and `ipp_attributes()` emits the attribute only when `copies > 1`, so zero never reaches the wire (IPP `copies` is integer(1:MAX)). The audit read the dialog's parse in isolation and never checked the encoder — instrument failure of the fourth kind: correctly placed, but reporting on a quantity adjacent to the one asked. The *test* gap was real and is now closed on both sides (`zero_and_one_copies_emit_no_copies_attribute` in loki-print, `a_zero_copies_field_never_becomes_a_zero_copy_job` in loki-text). |
 | D-4 | `loki-opc/src/part/name.rs:97` | `extension()` rsplits the whole path, so `/v1.0/data` → `Some("0/data")`; feeds `ContentTypeMap::resolve`. |
 | D-5 | `loki-primitives/src/color/document.rs:77` | `from_hex` accepts garbage alpha digits (`"#123456ZZ"` parses; last two bytes never validated). |
 | D-6 | `loki-server-api/src/routes/documents.rs:22` | `create` checks only workspace existence — any authenticated user can create docs in any workspace (known `TODO(ws-membership)`, but unpinned by any test either way). |
 | D-7 | `loki-server-store` | Memory double diverges from Postgres on `upsert_user_by_oidc` display-name refresh (memory discards, Pg updates); also `pg/user.rs:48` `unwrap_or(false)` silently drops the once-per-account AuthLogin audit on decode failure. |
 | D-8 | `loki-server-audit` | `verify_chain` has no production caller — tamper evidence is never checked by the running system (placement, rule 7). |
 | D-9 | `loki-text/src/editing/touch.rs` | `TouchPhase::Tap` is matched but constructed nowhere — dead state with a test named for it (parked-vs-forgotten, rule 6). |
-| D-10 | `loki-server-auth/src/verifier.rs:52` | `StaticKeys` serves the default key for **any** unknown kid — a forged-kid token verifies against the default key; intended or not, unpinned. |
+| D-10 | `loki-server-auth/src/verifier.rs:52` | **DOWNGRADED (2026-08-26) — intended, not a vulnerability; now pinned.** `StaticKeys` does serve the default key for any unknown kid, but the only production caller is `StaticKeys::single(...)`, which builds an *empty* kid map plus a default key: rejecting unrecognised kids would break static-PEM mode against every IdP that stamps a `kid`. Nor is it a bypass — the signature is still verified against the operator-installed key, so a forged kid cannot launder a foreign signature (now asserted). The genuine defect alongside it was a doc one: `KeySource::key_for`'s trait doc claimed a `None`-kid-only fallback the impl does not honour (rule 4), since corrected. |
+
+### Found during P0 remediation (2026-08-26)
+
+| # | Location | Defect |
+|---|---|---|
+| D-12 | `loki-basic/src/interp/mod.rs:45` (`MAX_CALL_DEPTH`, enforced at `interp/call.rs:188`) | **The error-28 guard was set above the hazard it guards, so it was unreachable.** Writing LB-3's missing test showed the guard is worse than untested: one interpreted call costs ~19 KiB of native stack, so at `MAX_CALL_DEPTH = 256` the process aborted on stack overflow at roughly depth 110 — about 2.5× before "Out of stack space" could ever fire. Unbounded macro recursion therefore killed the host rather than raising a trappable VBA error, which is precisely what the guard exists to prevent. Fixed by lowering the limit to a measured 32. This is the sharpest illustration in the audit of why an untested guard is not merely unverified: it had never once executed. *Behaviour change:* legitimate recursion deeper than 32 now raises error 28 (trappable) earlier than before; running macros on a dedicated large-stack thread would let the limit rise, and is the recommended follow-up. |
+| D-11 | `loki-doc-model/src/loro_bridge/inlines.rs` (`map_inlines`) | **Character marks bleed across the rest of the paragraph on initial serialization.** `Block::Para([Strong(["bold"]), Str(" normal")])` serialises to a single span `Insert { insert: "bold normal", attributes: {"bold": true} }`, and reads back as one bold run. Cause: `map_inlines` inserts each inline's text and applies its marks immediately, then inserts the next inline at the trailing edge — and every char mark is registered `ExpandType::After` (`loro_bridge/compact.rs:42-49`), so the mark swallows what follows. It cascades: bold, then bold+colour, then bold+colour+revision leak forward through the whole paragraph. `loro_mutation::text::replace_text` documents and defends against exactly this hazard; the writer has no equivalent defence. **Effect:** any imported document with a formatted word followed by plain text in the same paragraph loses its run boundary the moment it enters the CRDT. **Not established:** whether this is known or deliberate (no TODO/ADR/docs entry found), the correct fix, and whether any export path masks it. **What would settle it:** a test asserting `Block::Para([Strong(["bold"]), Str(" normal")])` yields two runs; the likely fix is a two-pass `map_inlines` (insert all paragraph text, then apply marks over computed ranges) or clearing the expanded keys per span as `replace_text` does. Not fixed — out of scope for P0 and a wide blast radius. |
+
+Two of this report's own claims were also disproved while acting on them, beyond the D-3
+retraction and D-10 downgrade above:
+
+- **loki-doc-model F7** stated the `\u{1f}` separator was "indirectly pinned by
+  `an_unknown_tag_is_rejected`". It is not — that test survives a separator change. The
+  separator was entirely unpinned until the golden added in this pass.
+- **scripting-formats MH-3** stated capability ids "key persisted trust-store grants".
+  They do not: `PersistedGrant` serialises the *variant* name (`"ClipboardWrite"`), not the
+  id (`"clipboard-write"`); ids are used for i18n key suffixes and author-visible error
+  text. Both the id list and the serde variant names are now pinned, and `id()`'s
+  doc comment — which claimed it was "used as the serialized key" — was corrected.
 
 ---
+
+## Remediation status
+
+**P0 was worked 2026-08-25/26.** Every item below was verified per-crate (`cargo test`,
+the CI clippy flags, `cargo fmt`, the ceiling and licence gates), and — the part that
+matters for an audit about tests that cannot fail — **each new guard was mutation-checked
+against the specific mutation this report claimed would survive**. The mutations that now
+die include: moving `Action::Delete` into the Editor arm; disabling JWT signature
+validation; removing the audit hash's length prefixes; swapping the HKDF salt halves;
+a constant `seal` nonce; renaming `MARK_BOLD`; changing the revision-mark separator;
+skipping the compaction loser's blob delete; and truncating the oplog before the
+forward-only guard. Where a mutation did *not* die, that is recorded above as a
+retraction (D-3) or downgrade (D-10) rather than quietly dropped.
+
+| P0 item | Status |
+|---|---|
+| 1 · Wrong-key + algorithm-confusion JWT tests | Done — `loki-server-auth` 11 → 17 tests; disabling signature validation now fails 4 tests and 0 pre-existing ones. D-10 pinned, not changed (see above). |
+| 2 · Exhaustive RBAC matrix | Done — all 32 `Role`×`Action` cells against a hand-written ADR-C017 table, with a compile-time gate for new variants; plus a role×route denial matrix (`loki-server-api`, 8 → 19 tests). The cross-workspace create probe returns **201 CREATED**, now pinned with a `TODO(ws-membership)` comment so the deferral fails loudly when fixed. |
+| 3 · Known-answer vectors for persisted formats | Done — `loki-crypto` (blob layouts, HKDF derivation, JSON encoding, nonce freshness), `loki-server-audit` (hash KAT, µs precision, length-prefix forgery), `loki-doc-model` (revision-mark golden + a committed 4,657-byte Loro snapshot fixture pinning the mark vocabulary), `loki-macro-host` (capability ids, serde variant names, hex codec). All vectors are captured from today's implementation and commented as such — they freeze the format, they do not independently validate the primitives. |
+| 4 · `loki-server` config tests | Done — 0 → 27 tests over every ADR-C019 rejection arm, via a pure `from_vars` seam. (The refactor also fixed a latent panic: `std::env::vars()` aborts on any non-UTF-8 variable.) |
+| 5 · Compaction `LostRace` branch | Done — the branch is now actually reached via an interposing store wrapper; all three properties (outcome, loser-blob deleted, oplog untruncated) hold and each is independently load-bearing. Plus 11 `PgNotifyBus` envelope tests. No ADR-C013 bug found. |
+| 6 · Bomb/recursion guards | Done — D-1 confirmed live (the reproducer aborted with `fatal runtime error: stack overflow`, taking the whole test binary with it, before any fix) and closed with a stack **budget** rather than a level count, because measurement showed per-level cost varies ~4× by construct and this report's suggested limit of ~256 was unsafe by 3×. Two parser recursion cycles the audit did not name were also found and charged. Uncovered D-12 (above). `loki-vba` went from 5 tests to 16, with each bomb guard tested on both sides of its boundary and every guard mutation-killed by exactly its intended test. |
+| 7 · Production fixes D-2…D-5 | Done — D-2 (ODS metadata) and D-4 (`PartName::extension`) and D-5 (`from_hex` alpha) fixed test-first, each reproducer failing before the fix. D-3 retracted as a false finding. |
+
+Two environmental notes from the pass: `xmllint` was absent on the audit machine, so five
+`loki-odf` schema-validation tests were failing for reasons unrelated to any change
+(installing `libxml2-utils` turned them green — and `odt_meta_xml_is_schema_valid` then
+validated the shared `meta.xml` writer against the real ODF 1.3 RELAX-NG schema); and the
+D-2 fix initially pushed `ods/import.rs` to 301 lines, caught by the file-ceiling gate.
 
 ## Priority-ranked remediation
 

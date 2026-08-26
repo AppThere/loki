@@ -95,6 +95,11 @@ impl DocumentColor {
         let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| err())?;
         let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| err())?;
         let b = u8::from_str_radix(&hex[4..6], 16).map_err(|_| err())?;
+        // The alpha pair is discarded, but it is still validated: dropping a
+        // value is not a licence to accept malformed input in its place.
+        if hex.len() == 8 {
+            u8::from_str_radix(&hex[6..8], 16).map_err(|_| err())?;
+        }
 
         Ok(Self::Rgb(RgbColor::new(
             r as f32 / 255.0,
@@ -139,6 +144,26 @@ mod tests {
             DocumentColor::from_hex("not-a-color"),
             Err(ColorParseError::InvalidFormat { .. })
         ));
+    }
+
+    #[test]
+    fn a_garbage_alpha_pair_is_rejected_not_silently_discarded() {
+        // The alpha channel of `#RRGGBBAA` is discarded, but discarding it is
+        // not the same as not reading it: an 8-char payload whose last two
+        // digits are not hex is malformed input, and accepting it would report
+        // a colour the source never expressed. The RGB half being valid is
+        // what makes this discriminating — only the alpha pair is bad.
+        assert!(matches!(
+            DocumentColor::from_hex("#123456ZZ"),
+            Err(ColorParseError::InvalidFormat { .. })
+        ));
+        // The polarity: a well-formed alpha pair still parses (and is still
+        // discarded), so the check above rejects garbage rather than 8-char
+        // input as such.
+        assert_eq!(
+            DocumentColor::from_hex("#123456CC").unwrap(),
+            DocumentColor::from_hex("#123456").unwrap()
+        );
     }
 
     #[test]

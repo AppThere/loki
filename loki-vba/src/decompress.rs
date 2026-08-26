@@ -126,37 +126,5 @@ fn bit_count(decompressed_current: usize) -> u32 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn literals_only() {
-        // chunk data = [flag 0x00, 'A','B','C']; header 0xB003.
-        let input = [0x01, 0x03, 0xB0, 0x00, 0x41, 0x42, 0x43];
-        assert_eq!(decompress(&input).unwrap(), b"ABC");
-    }
-
-    #[test]
-    fn copy_token_repeats() {
-        // [flag 0x08, 'A','B','C', copy(len=3,off=3)=0x2000] → "ABCABC".
-        let input = [0x01, 0x05, 0xB0, 0x08, 0x41, 0x42, 0x43, 0x00, 0x20];
-        assert_eq!(decompress(&input).unwrap(), b"ABCABC");
-    }
-
-    #[test]
-    fn overlapping_copy_is_run_length() {
-        // [flag 0x02, 'A', copy(len=3,off=1)=0x0000] → "AAAA".
-        let input = [0x01, 0x03, 0xB0, 0x02, 0x41, 0x00, 0x00];
-        assert_eq!(decompress(&input).unwrap(), b"AAAA");
-    }
-
-    #[test]
-    fn missing_signature_is_error() {
-        assert!(decompress(&[0x00, 0x01, 0x02]).is_err());
-    }
-
-    #[test]
-    fn truncated_header_is_error() {
-        assert!(decompress(&[0x01, 0x03]).is_err());
-    }
-}
+#[path = "decompress_tests.rs"]
+mod tests;

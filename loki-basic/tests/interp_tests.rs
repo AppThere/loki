@@ -230,6 +230,34 @@ fn fuel_exhaustion_stops_infinite_loop() {
 }
 
 #[test]
+fn unbounded_recursion_stops_with_out_of_stack_space() {
+    // The `MAX_CALL_DEPTH` guard (`interp::call::run_proc`) turns runaway macro
+    // recursion into VBA error 28 "Out of stack space". The fuel budget is
+    // deliberately generous so that fuel exhaustion (1005) cannot be what stops
+    // the run — without the depth guard this blows the *native* stack, which is
+    // an abort, not a trappable error.
+    let src = "Sub S()\n S\nEnd Sub";
+    let module = Parser::parse_module(src, Dialect::Vba).expect("parse");
+    let mut interp = Interp::new(&module, FuelBudget::new(100_000_000)).expect("new");
+    let e = interp
+        .call("S", Vec::new())
+        .expect_err("unbounded recursion must stop");
+    assert!(
+        matches!(&e, loki_basic::BasicError::Runtime(re) if re.number == 28),
+        "expected error 28 (Out of stack space), got {e:?}"
+    );
+}
+
+#[test]
+fn recursion_under_the_call_depth_cap_still_returns() {
+    // Inversion for the guard above: `MAX_CALL_DEPTH` is 32, so a chain of 20
+    // nested calls must complete normally. Without this, tightening the cap to
+    // zero (refusing every call) would still pass the error-28 test.
+    let src = "Function Down(n)\n If n <= 0 Then\n Down = 0\n Else\n Down = 1 + Down(n - 1)\n End If\nEnd Function";
+    assert_eq!(run(src, "Down", vec![Value::Int(20)]), Value::Int(20));
+}
+
+#[test]
 fn feature_refused_for_declared_ffi() {
     // Calling a Declare'd FFI function is refused (untrappable). Wired in Phase
     // 13's builtin/refusal pass; here we only assert parsing accepts it.

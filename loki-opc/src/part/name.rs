@@ -94,8 +94,16 @@ impl PartName {
     }
 
     /// Returns the file extension, if any.
+    ///
+    /// Only the final segment is considered: a dotted directory segment
+    /// (`/v1.0/data`) is a legal part name, and splitting the whole path
+    /// would report the directory's suffix as the part's extension.
     pub fn extension(&self) -> Option<&str> {
-        self.0.rsplit_once('.').map(|(_, ext)| ext)
+        let final_segment = match self.0.rsplit_once('/') {
+            Some((_, f)) => f,
+            None => self.0.as_str(),
+        };
+        final_segment.rsplit_once('.').map(|(_, ext)| ext)
     }
 
     /// Returns the relationships part name for this part (§6.5.2).
@@ -208,6 +216,26 @@ mod tests {
     fn test_extension() {
         let a = PartName::new("/word/document.xml").unwrap();
         assert_eq!(a.extension(), Some("xml"));
+    }
+
+    #[test]
+    fn extension_reads_the_final_segment_not_the_whole_path() {
+        // A dotted directory segment is a legal part name (`v1.0` neither is
+        // nor ends with a dot), so splitting the whole path on its last '.'
+        // reports the directory's suffix as the extension. `extension()` feeds
+        // `ContentTypeMap::resolve` for every part, so a wrong answer here
+        // mis-types the part.
+        let dotted_dir = PartName::new("/v1.0/data").unwrap();
+        assert_eq!(dotted_dir.extension(), None);
+
+        // The same trap with a real extension present: the dot that counts is
+        // the one in the final segment.
+        let both = PartName::new("/a.b/c.xml").unwrap();
+        assert_eq!(both.extension(), Some("xml"));
+
+        // A leading-dot final segment keeps its extension (`/_rels/.rels`).
+        let rels = PartName::new("/_rels/.rels").unwrap();
+        assert_eq!(rels.extension(), Some("rels"));
     }
 
     #[test]

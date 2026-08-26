@@ -56,8 +56,14 @@ impl Capability {
         Capability::Network,
     ];
 
-    /// A stable machine identifier used as the serialized key and the i18n
-    /// lookup suffix (`macros-cap-<id>`). Never shown raw to the user.
+    /// A stable machine identifier used as the i18n lookup suffix
+    /// (`macros-cap-<id>-name` / `-title` / `-consequence`) and in the
+    /// author-visible refusal/denial error text. Never shown raw to the user.
+    ///
+    /// It is **not** the serialized key: the trust store persists
+    /// `PersistedGrant { capability, .. }` through serde, so the on-disk
+    /// spelling is this enum's *variant* name. Both are pinned by goldens in
+    /// `capability_tests`.
     #[must_use]
     pub fn id(self) -> &'static str {
         match self {

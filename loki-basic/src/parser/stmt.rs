@@ -6,6 +6,7 @@
 //! While/Select/With) live in [`super::stmt_block`].
 
 use super::Parser;
+use super::depth::STMT_STACK_KIB;
 use crate::ast::{Argument, ExitKind, Expr, OnError, ResumeKind, Stmt};
 use crate::error::BasicError;
 use crate::lexer::TokenKind;
@@ -13,7 +14,18 @@ use crate::lexer::TokenKind;
 impl Parser {
     /// Parses a `{ … }`-style body: statements until `is_end` is true (the
     /// terminating keyword line is left for the caller to consume) or EOF.
+    ///
+    /// Compound statements recurse back into here (`parse_block` →
+    /// `parse_statement` → `parse_if` → `parse_block`), so this is the
+    /// statement-side home of the nesting guard — see [`super::depth`].
     pub(super) fn parse_block(
+        &mut self,
+        is_end: &dyn Fn(&Parser) -> bool,
+    ) -> Result<Vec<Stmt>, BasicError> {
+        self.nested(STMT_STACK_KIB, |p| p.parse_block_inner(is_end))
+    }
+
+    fn parse_block_inner(
         &mut self,
         is_end: &dyn Fn(&Parser) -> bool,
     ) -> Result<Vec<Stmt>, BasicError> {

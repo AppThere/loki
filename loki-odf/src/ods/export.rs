@@ -8,8 +8,11 @@ use loki_sheet_model::Workbook;
 use std::io::{Seek, Write};
 use zip::{CompressionMethod, ZipWriter, write::FileOptions};
 
-use crate::constants::{ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_MIMETYPE, ENTRY_STYLES, MIME_ODS};
+use crate::constants::{
+    ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_META, ENTRY_MIMETYPE, ENTRY_STYLES, MIME_ODS,
+};
 use crate::error::OdfError;
+use crate::meta_write::{MetaFields, meta_xml_from};
 
 #[path = "export_content.rs"]
 mod content;
@@ -58,7 +61,12 @@ impl OdsExport {
         zip.start_file(ENTRY_CONTENT, deflated)?;
         zip.write_all(generate_content(workbook).as_bytes())?;
 
-        // 5. preserved macro/script libraries (Basic/, Scripts/), verbatim.
+        // 5. meta.xml — the workbook's title/creator. Omitting this part is
+        // how the document's metadata used to be lost on every save.
+        zip.start_file(ENTRY_META, deflated)?;
+        zip.write_all(generate_meta(workbook).as_bytes())?;
+
+        // 6. preserved macro/script libraries (Basic/, Scripts/), verbatim.
         if let Some(payload) = scripts {
             crate::script_write::write_script_parts(&mut zip, payload)?;
         }
@@ -69,6 +77,20 @@ impl OdsExport {
     }
 }
 
+/// Renders `meta.xml` for `workbook`.
+///
+/// The spreadsheet model carries only a title and a creator; the shared
+/// renderer emits the rest of `office:meta` when a caller has more.
+fn generate_meta(workbook: &Workbook) -> String {
+    let fields = MetaFields {
+        title: workbook.meta.title.as_deref(),
+        creator: workbook.meta.creator.as_deref(),
+        ..MetaFields::default()
+    };
+    // ODS export always writes an ODF 1.3 package (see the manifest below).
+    meta_xml_from(&fields, "1.3")
+}
+
 fn generate_manifest(scripts: Option<&MacroPayload>) -> String {
     let mut m = String::from(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -76,6 +98,7 @@ fn generate_manifest(scripts: Option<&MacroPayload>) -> String {
   <manifest:file-entry manifest:full-path="/" manifest:version="1.3" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>
   <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
   <manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/>
+  <manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/>
 "#,
     );
     if let Some(payload) = scripts {

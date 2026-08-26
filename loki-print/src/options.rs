@@ -175,6 +175,35 @@ mod tests {
     }
 
     #[test]
+    fn zero_and_one_copies_emit_no_copies_attribute() {
+        // IPP `copies` is integer(1:MAX), so 0 must never go on the wire. The
+        // encoder's `> 1` guard is what keeps a 0 from a caller (a print
+        // dialog's "0" field) from becoming a zero-copy job; without a test
+        // on the guard's *false* side, widening it to `>= 1` — or to `> 0`,
+        // which would send `copies=0` — fails nothing.
+        let names = |copies: u32| -> Vec<String> {
+            PrintOptions {
+                copies,
+                ..PrintOptions::default()
+            }
+            .ipp_attributes()
+            .unwrap()
+            .iter()
+            .map(|a| a.name().to_string())
+            .collect()
+        };
+        for copies in [0, 1] {
+            assert!(
+                !names(copies).iter().any(|n| n == IppAttribute::COPIES),
+                "copies={copies} must not emit a copies attribute"
+            );
+        }
+        // The polarity: 2 does emit it, so the assertion above is about the
+        // boundary rather than about copies never being sent.
+        assert!(names(2).iter().any(|n| n == IppAttribute::COPIES));
+    }
+
+    #[test]
     fn options_map_to_ipp_attributes() {
         let options = PrintOptions {
             copies: 3,

@@ -30,8 +30,19 @@ use class::Instance;
 use env::Frame;
 
 /// Maximum BASIC call-stack depth, a hard guard against unbounded recursion
-/// (complements fuel metering; spec §8).
-const MAX_CALL_DEPTH: usize = 256;
+/// (complements fuel metering; spec §8). Exceeding it raises VBA error 28,
+/// "Out of stack space" — the same error real VBA reports.
+///
+/// Sized from the **native** stack, not chosen for roundness: one interpreted
+/// call costs ~19 KiB of native stack (measured 2026-08, debug build — 100
+/// nested calls returned, ~110 aborted the process on the 2 MiB stack Rust
+/// gives a spawned thread). The previous value of 256 therefore sat *above* the
+/// hazard it guards: the stack overflowed — an abort, not a trappable error —
+/// roughly 2.5× before the check could fire, so error 28 was unreachable. 32
+/// keeps the worst case near 600 KiB, ~3× inside that smallest stack, with room
+/// for procedure bodies whose own frames are fatter than the measured one. This
+/// mirrors the parser's budget in [`crate::parser`] (`parser::depth`).
+const MAX_CALL_DEPTH: usize = 32;
 
 /// Non-local control-flow outcomes of executing a statement.
 #[derive(Debug, Clone, PartialEq)]

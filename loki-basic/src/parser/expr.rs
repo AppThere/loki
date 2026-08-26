@@ -8,6 +8,7 @@
 //! tighter than unary minus, so `-2^2 == -(2^2)`.
 
 use super::Parser;
+use super::depth::EXPR_STACK_KIB;
 use crate::ast::{Argument, BinOp, Expr, UnOp};
 use crate::error::BasicError;
 use crate::lexer::TokenKind;
@@ -24,6 +25,11 @@ impl Parser {
         self.parse_bin(0)
     }
 
+    /// Precedence climbing. The `rhs` recursion is self-limiting — `min_prec`
+    /// strictly increases, so it can nest at most once per precedence level —
+    /// which is why it carries no depth charge; the *unbounded* expression
+    /// cycles (parens, unary chains, call arguments) are charged at their own
+    /// sites, so the counter tracks real source nesting. See [`super::depth`].
     fn parse_bin(&mut self, min_prec: u8) -> Result<Expr, BasicError> {
         let mut lhs = self.parse_unary()?;
         while let Some((op, prec)) = self.binop_here() {
@@ -50,7 +56,8 @@ impl Parser {
         };
         if let Some((op, operand_prec)) = op {
             self.bump();
-            let operand = self.parse_bin(operand_prec)?;
+            // `- - - -x` / `Not Not Not x` recurse through here without a paren.
+            let operand = self.nested(EXPR_STACK_KIB, |p| p.parse_bin(operand_prec))?;
             return Ok(Expr::Unary {
                 op,
                 operand: Box::new(operand),
@@ -106,7 +113,7 @@ impl Parser {
             }
             TokenKind::LParen => {
                 self.bump();
-                let inner = self.parse_expr()?;
+                let inner = self.nested(EXPR_STACK_KIB, Parser::parse_expr)?;
                 self.expect(&TokenKind::RParen, "`)`")?;
                 Ok(inner)
             }
@@ -171,7 +178,12 @@ impl Parser {
         Ok(args)
     }
 
+    /// One argument. Charged: `f(g(h(…)))` recurses through here.
     pub(super) fn parse_argument(&mut self) -> Result<Argument, BasicError> {
+        self.nested(EXPR_STACK_KIB, Parser::parse_argument_inner)
+    }
+
+    fn parse_argument_inner(&mut self) -> Result<Argument, BasicError> {
         // Omitted slot: a comma or the closing paren with nothing before it.
         if matches!(self.peek_kind(), TokenKind::Comma | TokenKind::RParen) {
             return Ok(Argument {

@@ -57,6 +57,7 @@ pub mod basic_write;
 pub mod constants;
 pub mod error;
 pub(crate) mod limits;
+pub(crate) mod meta_write;
 pub mod ods;
 pub mod odt;
 pub mod package;

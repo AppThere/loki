@@ -12,9 +12,10 @@ use std::collections::HashMap;
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
+use crate::error::OdfError;
 use crate::limits::MAX_MATERIALIZED_CELLS_TOTAL;
 use crate::xml_util::local_attr_val;
-use loki_sheet_model::{Cell, CellAlign, CellStyle, NumberFormat, Worksheet};
+use loki_sheet_model::{Cell, CellAlign, CellStyle, DocumentMeta, NumberFormat, Worksheet};
 
 // ── XML Parsing Helpers ──────────────────────────────────────────────────────
 
@@ -220,4 +221,26 @@ pub(super) fn parse_ods_styles(
     parse_cell_styles(content_xml);
 
     styles_map
+}
+
+// ── Document metadata ────────────────────────────────────────────────────────
+
+/// Maps a package's `meta.xml` bytes onto the spreadsheet model's metadata.
+///
+/// A package with no `meta.xml` is legal (ODF 1.3 §3.1 makes the part
+/// optional) and yields empty metadata rather than an error.
+///
+/// `meta:initial-creator` is preferred over `dc:creator` because ODF reads
+/// the former as "who wrote this" and the latter as "who last saved it"; the
+/// spreadsheet model has one author field, so it takes the stronger claim and
+/// falls back for foreign files that set only `dc:creator`.
+pub(super) fn read_workbook_meta(meta_xml: Option<&[u8]>) -> Result<DocumentMeta, OdfError> {
+    let Some(bytes) = meta_xml else {
+        return Ok(DocumentMeta::default());
+    };
+    let parsed = crate::odt::reader::meta::read_meta(bytes)?;
+    Ok(DocumentMeta {
+        title: parsed.title,
+        creator: parsed.initial_creator.or(parsed.creator),
+    })
 }

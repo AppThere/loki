@@ -155,3 +155,39 @@ fn deliberately_malformed_content_fails_the_gate() {
         "an invented office:bogus-element must be rejected by the ODF schema"
     );
 }
+
+// ── ODS ────────────────────────────────────────────────────────────────────────
+
+/// The ODS `meta.xml` added in the 2026-08 audit pass. A spreadsheet's
+/// metadata part is written by the same shared renderer as ODT's, but through
+/// a different caller, and no ODS part had schema coverage before this — so a
+/// malformed one would have reached every other ODF application unchecked.
+#[test]
+fn ods_meta_xml_is_schema_valid() {
+    use loki_odf::OdsExport;
+    use loki_sheet_model::{DocumentMeta, Workbook};
+
+    let mut workbook = Workbook::new();
+    workbook.meta = DocumentMeta {
+        title: Some("Schema & <Validity>".to_string()),
+        creator: Some("Ada Lovelace".to_string()),
+    };
+
+    let mut bytes = Vec::new();
+    OdsExport::export(&workbook, Cursor::new(&mut bytes)).expect("ODS export");
+    let xml = part(&bytes, "meta.xml");
+
+    let validator = XmllintValidator::new().expect("xmllint must be installed (libxml2-utils)");
+    let report = validator
+        .validate_bytes(
+            &xml,
+            &schema("OpenDocument-v1.3-schema.rng"),
+            SchemaKind::RelaxNg,
+        )
+        .expect("validation must run");
+    assert!(
+        report.valid,
+        "ODS meta.xml must be ODF-1.3-schema-valid; violations: {:#?}",
+        report.violations
+    );
+}

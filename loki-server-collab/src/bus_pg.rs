@@ -113,45 +113,63 @@ async fn fan_in_loop(
                 continue;
             }
         };
-        let parsed: Notification = match serde_json::from_str(notification.payload()) {
-            Ok(p) => p,
-            Err(error) => {
-                tracing::warn!(%error, "ignoring malformed collab notification");
-                continue;
-            }
-        };
-        if parsed.instance == instance {
-            continue; // Our own NOTIFY echo; already delivered locally.
+        if let Some(event) = event_from_payload(notification.payload(), &*oplog, instance).await {
+            hub.publish(event);
         }
-        let doc = DocumentId::from_uuid(parsed.doc);
-        let origin = Origin {
-            instance: parsed.instance,
-            conn: parsed.conn,
-        };
-        let frame = match parsed.body {
-            Body::Update { seq } => match oplog.fetch_one(doc, seq).await {
-                Ok(Some(entry)) => CollabFrame::Update(entry.payload),
-                Ok(None) => {
-                    // Compacted before we read it; subscribers resync from
-                    // the snapshot instead (ADR-C013 recovery path).
-                    tracing::debug!(%doc, seq, "notified update already compacted");
-                    continue;
-                }
-                Err(error) => {
-                    tracing::warn!(%error, %doc, seq, "oplog fetch for notified update failed");
-                    continue;
-                }
-            },
-            Body::Awareness { data } => match BASE64.decode(data.as_bytes()) {
-                Ok(bytes) => CollabFrame::Awareness(bytes),
-                Err(error) => {
-                    tracing::warn!(%error, "ignoring undecodable awareness payload");
-                    continue;
-                }
-            },
-        };
-        hub.publish(BusEvent { doc, origin, frame });
     }
+}
+
+/// Turns one raw `NOTIFY` payload into the local event it should produce.
+///
+/// `None` means "deliver nothing", which is the correct outcome for every
+/// tolerated condition: our own echo (already delivered locally), a malformed
+/// envelope, an update compacted before we could re-read it (subscribers
+/// resync from the snapshot — ADR-C013 recovery path), an oplog read failure,
+/// and an undecodable awareness blob. None of these may kill the fan-in task.
+///
+/// Split out of [`fan_in_loop`] so the envelope handling is testable without
+/// a Postgres listener.
+async fn event_from_payload(
+    payload: &str,
+    oplog: &dyn OplogStore,
+    instance: Uuid,
+) -> Option<BusEvent> {
+    let parsed: Notification = match serde_json::from_str(payload) {
+        Ok(p) => p,
+        Err(error) => {
+            tracing::warn!(%error, "ignoring malformed collab notification");
+            return None;
+        }
+    };
+    if parsed.instance == instance {
+        return None; // Our own NOTIFY echo; already delivered locally.
+    }
+    let doc = DocumentId::from_uuid(parsed.doc);
+    let origin = Origin {
+        instance: parsed.instance,
+        conn: parsed.conn,
+    };
+    let frame = match parsed.body {
+        Body::Update { seq } => match oplog.fetch_one(doc, seq).await {
+            Ok(Some(entry)) => CollabFrame::Update(entry.payload),
+            Ok(None) => {
+                tracing::debug!(%doc, seq, "notified update already compacted");
+                return None;
+            }
+            Err(error) => {
+                tracing::warn!(%error, %doc, seq, "oplog fetch for notified update failed");
+                return None;
+            }
+        },
+        Body::Awareness { data } => match BASE64.decode(data.as_bytes()) {
+            Ok(bytes) => CollabFrame::Awareness(bytes),
+            Err(error) => {
+                tracing::warn!(%error, "ignoring undecodable awareness payload");
+                return None;
+            }
+        },
+    };
+    Some(BusEvent { doc, origin, frame })
 }
 
 #[async_trait]
@@ -208,3 +226,7 @@ impl FanOutBus for PgNotifyBus {
         self.hub.subscribe(doc)
     }
 }
+
+#[cfg(test)]
+#[path = "bus_pg_tests.rs"]
+mod tests;

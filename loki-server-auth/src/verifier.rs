@@ -18,7 +18,11 @@ use crate::error::AuthError;
 /// returned owned because the backing cache can change between calls.
 #[async_trait]
 pub trait KeySource: Send + Sync {
-    /// Returns the key for `kid`, or the default key when `kid` is `None`.
+    /// Returns the key for `kid`, or `None` if this source has none.
+    ///
+    /// Implementations differ on the `kid`-miss policy and each documents
+    /// its own: [`StaticKeys`] falls back to its default key,
+    /// [`crate::JwksKeySource`] refetches once and then rejects.
     async fn key_for(&self, kid: Option<&str>) -> Option<DecodingKey>;
 }
 
@@ -47,6 +51,13 @@ impl StaticKeys {
 
 #[async_trait]
 impl KeySource for StaticKeys {
+    /// A `kid` present in the map resolves to its own key; **any other
+    /// `kid`, recognised or not, falls back to the default key** when one is
+    /// configured. That fallback is what makes [`StaticKeys::single`] usable
+    /// at all — it holds one operator-installed key and an empty map, while
+    /// real IdPs still stamp a `kid` on every token. It is not a bypass: the
+    /// signature is still verified against that key, so a forged `kid`
+    /// cannot launder a foreign signature (see `verifier_tests.rs`).
     async fn key_for(&self, kid: Option<&str>) -> Option<DecodingKey> {
         match kid {
             Some(kid) => self.keys.get(kid).or(self.default_key.as_ref()).cloned(),

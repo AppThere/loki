@@ -10,6 +10,7 @@
 
 mod decl;
 mod decl_shared;
+mod depth;
 mod expr;
 mod stmt;
 mod stmt_block;
@@ -37,6 +38,10 @@ pub struct Parser {
     pos: usize,
     dialect: Dialect,
     options: ModuleOptions,
+    /// Native stack charged to the current source nesting, in KiB, bounded by
+    /// [`depth::MAX_PARSE_STACK_KIB`] so hostile input cannot recurse the real
+    /// stack to an abort.
+    depth: usize,
 }
 
 impl Parser {
@@ -56,6 +61,7 @@ impl Parser {
                 explicit: false,
                 compare_text: false,
             },
+            depth: 0,
         };
         p.parse_module_body()
     }

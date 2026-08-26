@@ -5,7 +5,7 @@
 
 use loki_odf::{OdsExport, OdsImport, OdsImportOptions};
 use loki_sheet_model::{CellAlign, CellStyle, DocumentMeta, NumberFormat, Workbook, Worksheet};
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 
 #[test]
 fn test_ods_round_trip() {
@@ -145,4 +145,87 @@ fn test_ods_round_trip() {
     assert_eq!(sheet2_imp.name, "Summary");
     let s2_a1 = sheet2_imp.get_cell(0, 0).expect("Summary!A1 missing");
     assert_eq!(s2_a1.value, "Total Summary");
+}
+
+#[test]
+fn workbook_metadata_survives_an_ods_round_trip() {
+    // The metadata the round-trip test above sets in its fixture but never
+    // asserts after re-import. ODS carries it in `meta.xml` (ODF 1.3 §3.1)
+    // exactly as ODT does; without this assertion the writer could omit the
+    // part entirely — as it did until this test was written — and every
+    // spreadsheet would silently lose its title and author on save.
+    let mut workbook = Workbook::new();
+    workbook.meta = DocumentMeta {
+        title: Some("Quarterly Figures".to_string()),
+        creator: Some("Ada Lovelace".to_string()),
+    };
+
+    let mut buffer = Vec::new();
+    OdsExport::export(&workbook, Cursor::new(&mut buffer)).expect("ODS export failed");
+    let imported = OdsImport::import(Cursor::new(buffer), OdsImportOptions::default())
+        .expect("ODS import failed");
+
+    assert_eq!(imported.meta.title.as_deref(), Some("Quarterly Figures"));
+    assert_eq!(imported.meta.creator.as_deref(), Some("Ada Lovelace"));
+}
+
+#[test]
+fn a_workbook_without_metadata_round_trips_as_empty_not_as_a_stale_value() {
+    // The polarity of the test above: absent metadata must come back absent,
+    // so that test passes because the values travelled rather than because
+    // something invents them.
+    let workbook = Workbook::new();
+    assert_eq!(
+        workbook.meta,
+        DocumentMeta::default(),
+        "fixture precondition"
+    );
+
+    let mut buffer = Vec::new();
+    OdsExport::export(&workbook, Cursor::new(&mut buffer)).expect("ODS export failed");
+    let imported = OdsImport::import(Cursor::new(buffer), OdsImportOptions::default())
+        .expect("ODS import failed");
+
+    assert_eq!(imported.meta.title, None);
+    assert_eq!(imported.meta.creator, None);
+}
+
+#[test]
+fn the_exported_ods_declares_its_meta_part_in_the_manifest() {
+    // A round trip cannot see this: Loki's reader finds `meta.xml` by entry
+    // name, so the part would survive an export→import cycle even if the
+    // manifest never declared it — and every other ODF application, which
+    // reads the manifest, would see a package with no metadata. This is the
+    // interop half, and it is the half a symmetric test is blind to.
+    let mut workbook = Workbook::new();
+    workbook.meta = DocumentMeta {
+        title: Some("Declared".to_string()),
+        creator: None,
+    };
+
+    let mut buffer = Vec::new();
+    OdsExport::export(&workbook, Cursor::new(&mut buffer)).expect("ODS export failed");
+
+    let mut zip = zip::ZipArchive::new(Cursor::new(buffer)).expect("valid zip");
+
+    let mut manifest = String::new();
+    zip.by_name("META-INF/manifest.xml")
+        .expect("manifest present")
+        .read_to_string(&mut manifest)
+        .expect("readable manifest");
+    assert!(
+        manifest.contains(r#"manifest:full-path="meta.xml""#),
+        "meta.xml must be declared in the manifest; got:\n{manifest}"
+    );
+
+    let mut meta = String::new();
+    zip.by_name("meta.xml")
+        .expect("meta.xml present as a zip entry")
+        .read_to_string(&mut meta)
+        .expect("readable meta.xml");
+    assert!(meta.contains("<dc:title>Declared</dc:title>"));
+    // The namespace declarations a foreign reader needs to resolve those
+    // prefixes at all.
+    assert!(meta.contains("xmlns:dc=\"http://purl.org/dc/elements/1.1/\""));
+    assert!(meta.contains("office:version="));
 }

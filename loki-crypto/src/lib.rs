@@ -26,6 +26,9 @@ mod error;
 mod wrap;
 mod x25519_wrap;
 
+#[cfg(test)]
+mod vectors_tests;
+
 pub use aead_wrap::{AeadKeyWrap, Kek};
 pub use dek::{DEK_LEN, Dek};
 pub use error::CryptoError;

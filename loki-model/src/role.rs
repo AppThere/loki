@@ -90,37 +90,5 @@ impl std::str::FromStr for Role {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rights_matrix_matches_adr_c017() {
-        // Viewer: read only.
-        assert!(Role::Viewer.allows(Action::ReadContent));
-        assert!(!Role::Viewer.allows(Action::Comment));
-        assert!(!Role::Viewer.allows(Action::WriteContent));
-        // Commenter: read + comment, no edit.
-        assert!(Role::Commenter.allows(Action::Comment));
-        assert!(!Role::Commenter.allows(Action::WriteContent));
-        // Editor: content + metadata, no membership/tier/delete.
-        assert!(Role::Editor.allows(Action::WriteContent));
-        assert!(Role::Editor.allows(Action::WriteMetadata));
-        assert!(!Role::Editor.allows(Action::ManageMembers));
-        assert!(!Role::Editor.allows(Action::ChangeTier));
-        // Owner: everything.
-        assert!(Role::Owner.allows(Action::ManageMembers));
-        assert!(Role::Owner.allows(Action::ChangeTier));
-        assert!(Role::Owner.allows(Action::Delete));
-    }
-
-    #[test]
-    fn roles_order_by_privilege() {
-        // Note enum variant order: Viewer < Commenter < Editor < Owner.
-        // (Ord is intentionally not derived; parse round-trip is the contract.)
-        for role in [Role::Viewer, Role::Commenter, Role::Editor, Role::Owner] {
-            let parsed: Role = role.as_str().parse().unwrap();
-            assert_eq!(parsed, role);
-        }
-        assert!("admin".parse::<Role>().is_err());
-    }
-}
+#[path = "role_tests.rs"]
+mod tests;

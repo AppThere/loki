@@ -25,6 +25,25 @@ fn options_map_from_field_strings() {
 }
 
 #[test]
+fn a_zero_copies_field_never_becomes_a_zero_copy_job() {
+    // "0" parses, so it does not take the `unwrap_or(1)` path that blank and
+    // junk take — it reaches `PrintOptions` as 0. That is safe only because
+    // the encoder treats 0 and 1 alike and emits no `copies` attribute below
+    // 2 (IPP `copies` is integer(1:MAX)); `loki_print`'s
+    // `zero_and_one_copies_emit_no_copies_attribute` pins that end. This test
+    // pins the half this crate owns: "0" is forwarded as 0, not as some other
+    // number that would silently multiply the job.
+    let o = build_ipp_options("0", "", false, "T".into());
+    assert_eq!(o.copies, 0);
+
+    // The polarity — a real multi-copy request is still forwarded intact, so
+    // the assertion above is about the boundary and not about copies being
+    // ignored altogether.
+    let o = build_ipp_options("2", "", false, "T".into());
+    assert_eq!(o.copies, 2);
+}
+
+#[test]
 fn malformed_ranges_are_refused_downstream_not_silently_sent() {
     // The dialog passes the string through verbatim; the typed refusal
     // happens in loki-print's validator before any bytes reach a printer —

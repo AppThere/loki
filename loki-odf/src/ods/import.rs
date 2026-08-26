@@ -4,7 +4,7 @@
 //! ODS importer.
 
 use loki_doc_model::io::macros::MacroPayload;
-use loki_sheet_model::{Cell, DocumentMeta, Workbook, Worksheet};
+use loki_sheet_model::{Cell, Workbook, Worksheet};
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use std::io::{Read, Seek};
@@ -18,7 +18,9 @@ use crate::xml_util::{event_text, local_attr_val};
 #[path = "import_helpers.rs"]
 mod helpers;
 
-use helpers::{clean_ods_formula, fill_cells, local_name, local_name_end, parse_ods_styles};
+use helpers::{
+    clean_ods_formula, fill_cells, local_name, local_name_end, parse_ods_styles, read_workbook_meta,
+};
 
 /// Options controlling ODS import behaviour.
 #[derive(Debug, Clone, Default)]
@@ -272,7 +274,7 @@ impl OdsImport {
 
         Ok(OdsImportResult {
             workbook: Workbook {
-                meta: DocumentMeta::default(),
+                meta: read_workbook_meta(package.meta.as_deref())?,
                 sheets,
             },
             macros: package.macros,

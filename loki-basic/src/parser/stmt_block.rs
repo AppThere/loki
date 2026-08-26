@@ -5,6 +5,7 @@
 //! Split from [`super::stmt`] for the 300-line ceiling.
 
 use super::Parser;
+use super::depth::STMT_STACK_KIB;
 use crate::ast::{CaseClause, CaseCond, CompareOp, DoCond, Stmt};
 use crate::error::BasicError;
 use crate::lexer::TokenKind;
@@ -59,7 +60,14 @@ impl Parser {
     }
 
     /// A `:`-separated run of simple statements on one line (single-line If).
+    ///
+    /// `If a Then If b Then …` recurses through here without touching
+    /// `parse_block`, so it carries the nesting guard too (see [`super::depth`]).
     fn parse_inline_stmts(&mut self, stop_at_else: bool) -> Result<Vec<Stmt>, BasicError> {
+        self.nested(STMT_STACK_KIB, |p| p.parse_inline_stmts_inner(stop_at_else))
+    }
+
+    fn parse_inline_stmts_inner(&mut self, stop_at_else: bool) -> Result<Vec<Stmt>, BasicError> {
         let mut stmts = Vec::new();
         loop {
             if self.at_stmt_end() || (stop_at_else && self.peek_kw("Else")) {

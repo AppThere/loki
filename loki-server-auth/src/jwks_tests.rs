@@ -13,6 +13,7 @@ use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use serde_json::json;
 
 use super::*;
+use crate::error::AuthError;
 use crate::verifier::{IdentityVerifier, OidcVerifier};
 
 const ISSUER: &str = "https://idp.example.eu/realms/loki";
@@ -112,6 +113,29 @@ async fn rotation_refetches_on_unknown_kid() {
     // …then a token signed by the rotated key forces a refetch and succeeds.
     verifier.verify(&token("k2", b"secret-two")).await.unwrap();
     assert_eq!(fetcher.calls(), 2);
+}
+
+#[tokio::test]
+async fn rotation_revokes_the_old_kid() {
+    // The point of `Cache::rebuild` clearing the map first: a rotated-out
+    // key must stop verifying. A rebuild that *merged* the new set into the
+    // old one would keep a compromised key alive and still pass
+    // `rotation_refetches_on_unknown_kid`.
+    let fetcher = SeqFetcher::new(vec![
+        jwk_set(&[("k1", b"secret-one")]),
+        jwk_set(&[("k2", b"secret-two")]),
+    ]);
+    let verifier = verifier(&fetcher, Duration::ZERO);
+    // Establish that k1 verifies *before* the rotation, so the failure
+    // afterwards is attributable to the rotation and not to the fixture.
+    verifier.verify(&token("k1", b"secret-one")).await.unwrap();
+    verifier.verify(&token("k2", b"secret-two")).await.unwrap();
+    // k1 is gone from the IdP's published set, so it is gone from the cache —
+    // even though a refetch is permitted here (min_refresh is zero).
+    assert!(matches!(
+        verifier.verify(&token("k1", b"secret-one")).await,
+        Err(AuthError::UnknownKey { kid: Some(kid) }) if kid == "k1"
+    ));
 }
 
 #[tokio::test]

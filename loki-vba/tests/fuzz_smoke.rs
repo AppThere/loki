@@ -5,7 +5,7 @@
 //! return `Result` (never panic) on malformed, truncated, or adversarial input.
 //! In-tree complement to the `cargo-fuzz` targets (macro spec §12, T9).
 
-use loki_vba::{VbaProject, compress, decompress};
+use loki_vba::{VbaError, VbaProject, compress, decompress};
 
 #[test]
 fn decompress_never_panics_on_adversarial_input() {
@@ -29,13 +29,22 @@ fn decompress_never_panics_on_adversarial_input() {
 
 #[test]
 fn decompress_bomb_guard_bounds_output() {
-    // A single compressed chunk cannot expand past 4096 bytes; a crafted chunk
-    // that tries to must error rather than allocate unboundedly.
-    // flag byte 0xFF (8 copy tokens), each a max-length copy — but with no prior
-    // output the first copy is invalid, so this must error, not loop.
-    let mut input = vec![0x01u8, 0xFF, 0xB0]; // header claims a large chunk
-    input.extend(std::iter::repeat_n(0xFFu8, 4096));
-    let _ = decompress(&input); // must return (Ok or Err), never hang/panic
+    // A crafted chunk that tries to expand past the 4096-byte per-chunk cap must
+    // error rather than allocate unboundedly. The window is seeded with a real
+    // literal first, so the copy token that follows is *valid* and expansion
+    // actually happens — otherwise the container fails on the copy offset and
+    // the bomb guard is never reached (which is what this test used to do).
+    //
+    // [flag 0x02, 'A', copy(offset=1, length=4098)] → 4099 bytes in one chunk.
+    let mut input = vec![0x01u8, 0x03, 0xB0];
+    input.extend_from_slice(&[0x02, b'A', 0xFF, 0x0F]);
+    let err = decompress(&input).expect_err("a 4099-byte chunk must be refused");
+    assert!(
+        matches!(&err, VbaError::Compression(msg) if msg.contains("4096")),
+        "the per-chunk bomb guard must be the one that fires, got {err:?}"
+    );
+    // The exhaustive per-branch fixtures (including the global MAX_OUTPUT cap)
+    // live in `src/decompress_tests.rs`; this is the panic-freedom smoke.
 }
 
 #[test]
