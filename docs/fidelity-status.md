@@ -367,12 +367,55 @@ resulting 31 px vs 27 px line pitch changed the pagination by itself: Word took
 was not — Loki was fitting *more* lines per page, and with the defaults pinned
 both sides produce 2 pages and the same line breaks.
 
-The same fixture declared its borders as table-level `w:tblBorders`, which is
+The same fixture declared its borders as table-level `w:tblBorders`, which was
 parsed only from a *style* (`reader/styles.rs`, gated on `in_style`); a table's
-own `w:tblPr/w:tblBorders` is read nowhere. So "the row's borders are not drawn
-at all" was measuring that gap, not the split path. It is a **real** separate
-defect — `TODO(direct-tbl-borders)` — and the fixture now uses per-cell
-`w:tcBorders` so it stops standing in for it.
+own `w:tblPr/w:tblBorders` was read nowhere. So "the row's borders are not drawn
+at all" was measuring that gap, not the split path. It was a **real** separate
+defect, and the fixture now uses per-cell `w:tcBorders` so it stops standing in
+for it. That defect is **fixed** as of 2026-08-26 — see *Direct table borders*
+below.
+
+#### Direct table borders (`w:tblPr/w:tblBorders`) — 2026-08-26
+
+A table's own six-sided border set is now read, resolved, rendered and
+exported. `parse_tbl_pr` had matched only `Event::Empty`, and `w:tblBorders` is
+a *container* (six edge children), so it arrived as a `Start` and fell through
+the catch-all — a table not on a bordered style drew nothing at all.
+
+**How it resolves against the style was measured, not assumed.**
+`appthere-conformance/fixtures/docx/table-direct-borders.docx`
+(`scripts/make-tblborders-fixture.py`) puts three 2×2 tables on one full-grid
+style: **A** states no direct set (presence control), **B** states only the four
+outer edges with `insideH/V` *absent* (discriminating), **C** states the outer
+edges plus `insideH/V` explicitly `none` (absence control). Word 16.0 draws A's
+full thin grid; B's 3 pt outer frame **with the style's 0.5 pt gridlines still
+inside it**; and no gridlines for C. Both controls behaved, so B reads as
+evidence: the merge is **per edge**, not wholesale replacement.
+
+That forces "absent" and "explicitly `none`" to stay distinguishable —
+`map_tbl_borders` had dropped both, which makes C indistinguishable from B and
+silently reinstates the gridlines Word suppressed. An explicit `none` is now
+carried as `Some(Border { style: None, .. })`; both consumers already treat that
+as "draws nothing" (`convert_border` returns `None`, ODT writes
+`fo:border-*="none"`), so nothing downstream changed.
+
+`StyleCatalog::table_borders_in_force(&Table)` is the single derivation of what
+set is in force, used by both layout and ODT export; the style-only
+`table_borders_for` answers just one of two inputs, and reading it alone was the
+defect. `TableStyleCtx::resolve` now takes the `&Table` so a context that
+ignores the direct set cannot be constructed. Export writes the set back into
+`w:tblPr` (after `w:tblW`, before `w:tblLook` per `CT_TblPrBase`), reusing the
+`w:tcBorders` edge writer.
+
+Verified end-to-end: rendering the fixture through `loki-headless` and reading
+the stroked paths back reproduces Word's A/B/C pattern exactly, including the
+3 pt vs 0.5 pt thicknesses. **Not established:** the six conformance goldens are
+blind to this change — every cell in `iris-blueprint` (102/102) and `acid-docx`
+(14/14) already carries direct `w:tcBorders`, which win per edge, so their
+region scores are unchanged (189/289/500/184/272/591) and that is the *correct*
+result rather than evidence of no effect. Residual difference on the probe
+fixture is row height (Word's rows run ~1.5 pt taller), which is the separate
+line-pitch/cell-margin gap, not borders.
 
 **The lesson for the next fixture:** a hand-built DOCX that omits `styles.xml`
 is not a controlled comparison, it is a comparison of two products' defaults.
