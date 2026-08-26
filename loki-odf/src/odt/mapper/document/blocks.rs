@@ -247,6 +247,7 @@ pub(super) fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Bl
         .collect();
 
     let mut mapped = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,

@@ -51,6 +51,7 @@ fn cell_block_texts(doc: &Document, cell: usize) -> Vec<String> {
 /// row of two cells "a" | "b" (flat cell indices 0 and 1).
 fn doc_with_table() -> Document {
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,
@@ -269,6 +270,7 @@ fn edits_a_note_nested_inside_a_table_cell() {
         ),
     ])]);
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,
@@ -328,6 +330,7 @@ fn doc_with_two_block_cell() -> Document {
         Block::Para(vec![Inline::Str("b".into())]),
     ]);
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,

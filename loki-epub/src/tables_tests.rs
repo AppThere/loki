@@ -27,6 +27,7 @@ fn cell(text: &str) -> Cell {
 
 fn bare_table(rows: Vec<Row>) -> Table {
     Table {
+        borders: None,
         attr: Default::default(),
         caption: Default::default(),
         width: None,

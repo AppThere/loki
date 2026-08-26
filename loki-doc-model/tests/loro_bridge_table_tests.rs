@@ -44,6 +44,7 @@ fn text_cell(text: &str) -> Cell {
 /// A 2-column table: one header row + two body rows = 6 cells.
 fn sample_table() -> Table {
     Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: Some(TableWidth::Percent(100.0)),
@@ -138,6 +139,7 @@ fn table_rich_cell_content_round_trips() {
         ]),
     ]);
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,
@@ -185,6 +187,7 @@ fn table_spans_and_cell_props_round_trip() {
         },
     };
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption {
             short: None,
@@ -210,6 +213,7 @@ fn nested_table_in_cell_round_trips() {
     // recurses through the native table mapping.
     let inner = Block::Table(Box::new(sample_table()));
     let outer = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,
@@ -229,6 +233,7 @@ fn nested_table_in_cell_round_trips() {
 #[test]
 fn empty_table_round_trips_natively() {
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,

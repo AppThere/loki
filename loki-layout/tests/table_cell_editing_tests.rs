@@ -45,6 +45,7 @@ fn text_cell(s: &str) -> Cell {
 fn table_cell_paragraphs_carry_cell_editing_path() {
     // One table (block 0): a single body row with two cells "a" | "b".
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,
@@ -117,6 +118,7 @@ fn first_cell_origin_y(align: CellVerticalAlign) -> f32 {
             .collect(),
     );
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,

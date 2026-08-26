@@ -101,6 +101,12 @@ fn parse_tbl_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTblPr> {
                 }
                 _ => {}
             },
+            // `w:tblBorders` is a *container* (six edge children), so it arrives
+            // as a Start, not an Empty — which is why the arm above never saw
+            // it and a table's own borders were read nowhere.
+            Ok(Event::Start(ref e)) if local_name(e.local_name().as_ref()) == b"tblBorders" => {
+                pr.borders = Some(crate::docx::reader::styles::parse_tbl_borders(reader)?);
+            }
             Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"tblPr" => {
                 break;
             }

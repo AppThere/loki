@@ -210,7 +210,12 @@ fn table_props_mut(style: &mut Option<DocxStyle>) -> Option<&mut DocxTableStyleP
 
 /// Parses a `w:tblBorders` element (six edges incl. interior gridlines).
 /// Called after its Start event; consumes through the matching End.
-fn parse_tbl_borders(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTblBorders> {
+///
+/// Shared with the *document* reader: `w:tblBorders` is the same element in a
+/// style's `w:tblPr` and in a table instance's, and reading it in only one of
+/// the two is exactly the gap that left a directly-bordered table with no
+/// borders at all.
+pub(super) fn parse_tbl_borders(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTblBorders> {
     let mut borders = DocxTblBorders::default();
     let mut buf = Vec::new();
     loop {

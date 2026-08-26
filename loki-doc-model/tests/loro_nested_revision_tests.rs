@@ -58,6 +58,7 @@ fn block_text(block: &Block) -> String {
 /// A single-cell table whose only paragraph carries a tracked change.
 fn doc_with_table_change() -> Document {
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,

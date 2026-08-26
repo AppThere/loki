@@ -71,6 +71,7 @@ fn block_boundaries_separate_words() {
 #[test]
 fn table_cells_are_counted() {
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,

@@ -15,6 +15,7 @@ use loki_doc_model::loki_primitives::units::Points;
 /// A table whose one column carries `alignment`.
 fn table_with(alignment: ColAlignment) -> Table {
     Table {
+        borders: None,
         attr: Default::default(),
         caption: Default::default(),
         width: None,

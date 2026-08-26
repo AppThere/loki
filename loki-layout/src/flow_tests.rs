@@ -1800,6 +1800,7 @@ fn make_table_2x2(cell_props: Option<CellProps>) -> Block {
     let row1 = Row::new(vec![make("R1C1"), make("R1C2")]);
     let row2 = Row::new(vec![make("R2C1"), make("R2C2")]);
     Block::Table(Box::new(Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: Default::default(),
         width: None,

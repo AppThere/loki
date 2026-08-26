@@ -71,6 +71,7 @@ fn test_table_cell_rotation() {
 
     let row = Row::new(vec![c]);
     let table = Block::Table(Box::new(Table {
+        borders: None,
         attr: loki_doc_model::content::attr::NodeAttr::default(),
         caption: Default::default(),
         width: None,

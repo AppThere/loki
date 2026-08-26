@@ -107,19 +107,30 @@ pub struct TableStyleCtx<'a> {
     /// The named style itself — still needed for banding/conditional shading,
     /// which resolves per region rather than per property.
     pub style: Option<&'a TableStyle>,
-    /// The six-sided border set, resolved through the chain.
+    /// The six-sided border set in force for this table: the style's set
+    /// (resolved through the chain) with the table's **own** `w:tblBorders`
+    /// layered over it per edge.
     pub borders: Option<TableBorders>,
     /// The default cell padding, resolved through the chain.
     pub padding: CellPadding,
 }
 
 impl<'a> TableStyleCtx<'a> {
-    /// Resolves a table's style context from the catalog.
+    /// Resolves a table's style context — taking the [`Table`] itself, not just
+    /// its style name.
+    ///
+    /// The whole table is the parameter because borders do not come from the
+    /// style alone: a table's own `w:tblPr/w:tblBorders` outranks the style's
+    /// per edge. Reading only `tbl.style_name()` here is what left a directly
+    /// bordered table with no borders at all, so the signature makes that call
+    /// impossible to write — the same move `cell_style_borders` already makes
+    /// against flat style lookups.
     #[must_use]
-    pub fn resolve(catalog: &'a StyleCatalog, style_name: Option<&str>) -> Self {
+    pub fn resolve(catalog: &'a StyleCatalog, tbl: &Table) -> Self {
+        let style_name = tbl.style_name();
         Self {
             style: resolve_table_style(catalog, style_name),
-            borders: catalog.table_borders_for(style_name),
+            borders: catalog.table_borders_in_force(tbl),
             padding: catalog.table_cell_padding_for(style_name),
         }
     }

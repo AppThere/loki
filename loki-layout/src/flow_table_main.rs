@@ -33,7 +33,7 @@ pub(super) fn flow_table(
     // content plus its padding, and a style-supplied `w:tblCellMar` is part of
     // that padding. Resolving after would size every column too narrow by the
     // inherited inset.
-    let style_ctx = TableStyleCtx::resolve(state.catalog, tbl.style_name());
+    let style_ctx = TableStyleCtx::resolve(state.catalog, tbl);
 
     let col_widths = table_geom::resolve_column_widths(state, tbl, &rows, &cell_cols, &style_ctx);
 

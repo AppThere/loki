@@ -74,6 +74,7 @@ fn table(rows: Vec<Vec<&str>>) -> Block {
         })
         .collect();
     Block::Table(Box::new(Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,

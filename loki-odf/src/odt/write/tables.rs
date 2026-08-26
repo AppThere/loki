@@ -169,9 +169,11 @@ fn resolve_borders(
     cell_cols: &[Vec<usize>],
     col_count: usize,
 ) -> Vec<Vec<CellEdges>> {
-    // Chain-resolved: a style deriving its grid from a parent (Table Grid is
-    // `basedOn` Normal Table) contributes nothing under a flat lookup.
-    let borders = cx.styles.table_borders_for(t.style_name());
+    // Chain-resolved, and with the table's own `w:tblBorders` layered over the
+    // style's: a style deriving its grid from a parent (Table Grid is `basedOn`
+    // Normal Table) contributes nothing under a flat lookup, and a table's
+    // direct set is invisible to a style-only one.
+    let borders = cx.styles.table_borders_in_force(t);
     let n_rows = rows.len();
     rows.iter()
         .enumerate()

@@ -131,6 +131,9 @@ pub struct DocxTblPr {
     pub layout: Option<String>,
     /// `w:tblLook` region flags — which conditional style regions apply.
     pub tbl_look: Option<DocxTblLook>,
+    /// The table's own `w:tblBorders` (§17.4.39), when it states one. Distinct
+    /// from the identically-shaped set on a *style*: a direct set wins.
+    pub borders: Option<DocxTblBorders>,
 }
 
 /// `w:tblLook` region flags (ECMA-376 §17.4.56) selecting which conditional

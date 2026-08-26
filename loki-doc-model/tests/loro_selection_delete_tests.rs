@@ -149,6 +149,7 @@ fn rejects_a_stale_start_offset_without_underflow() {
 fn doc_with_two_block_cell() -> Document {
     let cell = Cell::simple(vec![para("alpha"), para("beta")]);
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,

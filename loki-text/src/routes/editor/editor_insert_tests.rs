@@ -169,6 +169,7 @@ fn doc_with_table_cell(text: &str) -> LoroDoc {
     use loki_doc_model::content::table::row::{Cell, Row};
     let cell = Cell::simple(vec![Block::Para(vec![Inline::Str(text.into())])]);
     let table = Table {
+        borders: None,
         attr: Default::default(),
         caption: TableCaption::default(),
         width: None,

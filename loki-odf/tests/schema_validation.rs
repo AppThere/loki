@@ -39,6 +39,7 @@ fn sample_document() -> Document {
         ..Default::default()
     };
     let table = Block::Table(Box::new(Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,

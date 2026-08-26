@@ -175,6 +175,7 @@ fn merged_paragraph_is_editable() {
 /// A one-cell table (global block 0) whose cell holds two plain paragraphs.
 fn doc_with_two_para_cell() -> Document {
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,

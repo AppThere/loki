@@ -101,6 +101,7 @@ fn test_table_row_height_uniformity() {
 
     let row = Row::new(vec![c1, c2]);
     let table = Block::Table(Box::new(Table {
+        borders: None,
         attr: loki_doc_model::content::attr::NodeAttr::default(),
         caption: Default::default(),
         width: None,
@@ -166,6 +167,7 @@ fn test_table_row_span_distribution() {
     let row1 = Row::new(vec![c11]);
 
     let table = Block::Table(Box::new(Table {
+        borders: None,
         attr: loki_doc_model::content::attr::NodeAttr::default(),
         caption: Default::default(),
         width: None,
@@ -266,6 +268,7 @@ fn test_table_min_row_height() {
 
     let row = Row::new(vec![c]);
     let table = Block::Table(Box::new(Table {
+        borders: None,
         attr: loki_doc_model::content::attr::NodeAttr::default(),
         caption: Default::default(),
         width: None,
@@ -312,6 +315,7 @@ fn test_table_non_uniform_columns() {
 
     let row = Row::new(vec![c0, c1, c2]);
     let table = Block::Table(Box::new(Table {
+        borders: None,
         attr: loki_doc_model::content::attr::NodeAttr::default(),
         caption: Default::default(),
         width: Some(loki_doc_model::content::table::col::TableWidth::Fixed(
@@ -395,6 +399,7 @@ fn fixed_width_table(widths: &[f64], table_width: f32) -> Block {
         })
         .collect();
     Block::Table(Box::new(Table {
+        borders: None,
         attr: loki_doc_model::content::attr::NodeAttr::default(),
         caption: Default::default(),
         width: Some(TableWidth::Fixed(table_width)),
@@ -492,6 +497,7 @@ fn cell_content_is_clipped_to_cell_box() {
     let mut r = test_resources();
     let cell = make_cell_tall(vec!["Hello"], None, 1);
     let table = Block::Table(Box::new(Table {
+        borders: None,
         attr: loki_doc_model::content::attr::NodeAttr::default(),
         caption: Default::default(),
         width: Some(TableWidth::Fixed(120.0)),
@@ -596,6 +602,7 @@ fn vmerge_gridspan_l_merge_places_cells_correctly() {
     bc.col_span = 2;
 
     let table = Block::Table(Box::new(Table {
+        borders: None,
         attr: Default::default(),
         caption: Default::default(),
         width: Some(TableWidth::Fixed(300.0)),
@@ -677,6 +684,7 @@ fn long_word_wraps_within_narrow_cell() {
         1,
     );
     let mut table = Block::Table(Box::new(Table {
+        borders: None,
         attr: loki_doc_model::content::attr::NodeAttr::default(),
         caption: Default::default(),
         width: Some(TableWidth::Fixed(60.0)),
@@ -760,6 +768,7 @@ fn long_word_grows_autofit_column() {
     let cell = make_cell_tall(vec![word], None, 1);
     // Autofit (no fixed-layout class), preferred column 60pt but page-wide table.
     let table = Block::Table(Box::new(Table {
+        borders: None,
         attr: loki_doc_model::content::attr::NodeAttr::default(),
         caption: Default::default(),
         width: Some(TableWidth::Percent(100.0)),
@@ -837,6 +846,7 @@ fn test_table_cell_vertical_alignment() {
 
     let row = Row::new(vec![c0, c1, c2]);
     let table = Block::Table(Box::new(Table {
+        borders: None,
         attr: loki_doc_model::content::attr::NodeAttr::default(),
         caption: Default::default(),
         width: Some(loki_doc_model::content::table::col::TableWidth::Fixed(
@@ -934,6 +944,7 @@ fn keep_next_caption_does_not_drop_the_following_table() {
 
     let cell = make_cell_tall(vec!["CellText"], bg, 1);
     let table = Block::Table(Box::new(Table {
+        borders: None,
         attr: loki_doc_model::content::attr::NodeAttr::default(),
         caption: Default::default(),
         width: Some(TableWidth::Fixed(200.0)),
@@ -995,6 +1006,7 @@ fn table_style_cell_padding_insets_cell_content() {
     fn layout_with(catalog: &StyleCatalog, style_name: Option<&str>) -> Vec<PositionedItem> {
         let mut r = test_resources();
         let mut table = Table {
+            borders: None,
             attr: loki_doc_model::content::attr::NodeAttr::default(),
             caption: Default::default(),
             width: None,
@@ -1131,6 +1143,7 @@ fn a_row_taller_than_a_page_splits_into_closed_clipped_boxes() {
         bordered_cell(vec![long.as_str()]),
     ]);
     let table = Block::Table(Box::new(Table {
+        borders: None,
         attr: loki_doc_model::content::attr::NodeAttr::default(),
         caption: Default::default(),
         width: None,

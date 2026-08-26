@@ -148,6 +148,7 @@ fn table(rows: Vec<Vec<&str>>) -> Block {
         })
         .collect();
     Block::Table(Box::new(Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,
@@ -175,6 +176,7 @@ fn merged_cell_span_change_is_caught() {
     let mut a_cell = Cell::simple(vec![Block::Para(vec![str_("x")])]);
     a_cell.col_span = 2;
     let a = doc(vec![Block::Table(Box::new(Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,

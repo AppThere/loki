@@ -62,7 +62,39 @@ impl TableBorders {
         (top, right, bottom, left)
     }
 
+    /// This set layered **over** `base`: `self`'s stated edges win, and each
+    /// edge `self` leaves unstated falls back to `base`'s.
+    ///
+    /// This is how a table's own `w:tblPr/w:tblBorders` resolves against the
+    /// set contributed by the style it references. The merge is **per edge**,
+    /// not wholesale: measured against Word (`table-direct-borders.docx`), a
+    /// table on a full-grid style whose direct set gives only the four outer
+    /// edges still draws the style's interior gridlines — thin, from the style
+    /// — inside its own thick outer frame.
+    ///
+    /// The distinction between an edge that is *absent* and one explicitly
+    /// `w:val="none"` is load-bearing here and must survive into `self`:
+    /// absent falls back, explicit-none suppresses. That is why an explicit
+    /// `none` is carried as `Some(Border { style: None, .. })` rather than
+    /// dropped — the same fixture's third table pins it.
+    #[must_use]
+    pub fn over(&self, base: &TableBorders) -> TableBorders {
+        let pick = |own: &Option<Border>, under: &Option<Border>| own.clone().or(under.clone());
+        TableBorders {
+            top: pick(&self.top, &base.top),
+            left: pick(&self.left, &base.left),
+            bottom: pick(&self.bottom, &base.bottom),
+            right: pick(&self.right, &base.right),
+            inside_h: pick(&self.inside_h, &base.inside_h),
+            inside_v: pick(&self.inside_v, &base.inside_v),
+        }
+    }
+
     /// `true` when every edge is absent.
+    ///
+    /// An edge explicitly set to `w:val="none"` is *stated* — it suppresses
+    /// whatever it is layered over — so a set consisting only of such edges is
+    /// **not** empty, even though it draws nothing.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.top.is_none()
@@ -127,105 +159,5 @@ pub fn effective_cell_edges(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::style::props::border::BorderStyle;
-    use loki_primitives::units::Points;
-
-    #[test]
-    fn tbl_borders_edges_pick_outer_vs_interior() {
-        // A "Table Grid"-like set: distinct markers per edge so we can tell which
-        // one each cell position resolves to.
-        let mk = |w: f64| {
-            Some(Border {
-                style: BorderStyle::Solid,
-                width: Points::new(w),
-                color: None,
-                spacing: None,
-            })
-        };
-        let b = TableBorders {
-            top: mk(1.0),
-            left: mk(2.0),
-            bottom: mk(3.0),
-            right: mk(4.0),
-            inside_h: mk(5.0),
-            inside_v: mk(6.0),
-        };
-        let w = |e: &Option<Border>| e.as_ref().map(|x| x.width.value());
-
-        // Top-left cell of a 3×3 grid: outer top+left, interior bottom+right.
-        let (t, r, bo, l) = b.edges_for(0, 0, 3, 3);
-        assert_eq!(
-            (w(&t), w(&r), w(&bo), w(&l)),
-            (Some(1.0), Some(6.0), Some(5.0), Some(2.0))
-        );
-
-        // Centre cell: interior on all four sides.
-        let (t, r, bo, l) = b.edges_for(1, 1, 3, 3);
-        assert_eq!(
-            (w(&t), w(&r), w(&bo), w(&l)),
-            (Some(5.0), Some(6.0), Some(5.0), Some(6.0))
-        );
-
-        // Bottom-right cell: interior top+left, outer bottom+right.
-        let (t, r, bo, l) = b.edges_for(2, 2, 3, 3);
-        assert_eq!(
-            (w(&t), w(&r), w(&bo), w(&l)),
-            (Some(5.0), Some(4.0), Some(3.0), Some(6.0))
-        );
-
-        assert!(!b.is_empty());
-        assert!(TableBorders::default().is_empty());
-    }
-
-    #[test]
-    fn resolve_cell_borders_contributes_nothing_without_a_border_set() {
-        // Guard inversion: an absent set and a present-but-empty set must both
-        // contribute nothing. The second case is the one that matters — a
-        // `Some(TableBorders::default())` reaching here means some style in the
-        // chain was found but specified no edges, and it must not read as
-        // "borders exist" merely because the `Option` is `Some`.
-        assert_eq!(resolve_cell_borders(None, 0, 0, 2, 2), CellEdges::default());
-        assert_eq!(
-            resolve_cell_borders(Some(&TableBorders::default()), 0, 0, 2, 2),
-            CellEdges::default()
-        );
-    }
-
-    #[test]
-    fn effective_cell_edges_resolves_per_edge_not_all_or_nothing() {
-        let mk = |w: f64| Border {
-            style: BorderStyle::Solid,
-            width: Points::new(w),
-            color: None,
-            spacing: None,
-        };
-        let from_style = (Some(mk(1.0)), Some(mk(2.0)), Some(mk(3.0)), Some(mk(4.0)));
-        let own_top = mk(9.0);
-        let w = |e: &Option<Border>| e.as_ref().map(|x| x.width.value());
-
-        // One direct edge must override *only* that edge. An all-or-nothing
-        // rule returns (9, None, None, None) here and fails.
-        let eff = effective_cell_edges((Some(&own_top), None, None, None), &from_style);
-        assert_eq!(
-            (w(&eff.0), w(&eff.1), w(&eff.2), w(&eff.3)),
-            (Some(9.0), Some(2.0), Some(3.0), Some(4.0))
-        );
-
-        // No direct edges: the style's set passes through unchanged.
-        let eff = effective_cell_edges((None, None, None, None), &from_style);
-        assert_eq!(
-            (w(&eff.0), w(&eff.1), w(&eff.2), w(&eff.3)),
-            (Some(1.0), Some(2.0), Some(3.0), Some(4.0))
-        );
-
-        // No style contribution: the direct edge stands alone, and the absent
-        // ones stay absent rather than inventing a border.
-        let eff = effective_cell_edges((Some(&own_top), None, None, None), &CellEdges::default());
-        assert_eq!(
-            (w(&eff.0), w(&eff.1), w(&eff.2), w(&eff.3)),
-            (Some(9.0), None, None, None)
-        );
-    }
-}
+#[path = "table_borders_tests.rs"]
+mod tests;

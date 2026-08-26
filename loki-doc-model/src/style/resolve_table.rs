@@ -127,6 +127,32 @@ impl StyleCatalog {
         self.table_prop_for(style_name, |s| s.table_props.borders.clone())
     }
 
+    /// The border set actually **in force** for `tbl`: the style's set (above)
+    /// with the table's own `w:tblPr/w:tblBorders` layered over it per edge.
+    ///
+    /// This, not [`table_borders_for`](Self::table_borders_for), is what a
+    /// consumer wants. The style-only form answers "what does the style
+    /// contribute", which is one of two inputs; a table that states its own
+    /// borders and names no style resolves to nothing under it, which is how a
+    /// directly bordered table came out with no borders at all.
+    ///
+    /// Layout and ODT export both call this, so a table cannot draw one grid on
+    /// screen and export another — the same guarantee
+    /// [`effective_cell_edges`](crate::style::table_borders::effective_cell_edges)
+    /// makes one level down.
+    #[must_use]
+    pub fn table_borders_in_force(
+        &self,
+        tbl: &crate::content::table::core::Table,
+    ) -> Option<TableBorders> {
+        let from_style = self.table_borders_for(tbl.style_name());
+        match (tbl.borders.as_ref(), from_style) {
+            (Some(direct), Some(style)) => Some(direct.over(&style)),
+            (Some(direct), None) => Some(direct.clone()),
+            (None, style) => style,
+        }
+    }
+
     /// The default cell padding a table named `style_name` contributes,
     /// resolved **through the `basedOn` chain**, or an empty set when the chain
     /// specifies none.

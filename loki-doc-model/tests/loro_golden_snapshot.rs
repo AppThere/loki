@@ -115,6 +115,7 @@ fn fixture_document() -> Document {
             Inline::Note(NoteKind::Footnote, vec![para("note body")]),
         ]),
         Block::Table(Box::new(Table {
+            borders: None,
             attr: NodeAttr::default(),
             caption: TableCaption::default(),
             width: None,

@@ -94,7 +94,17 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
         attr.kv.push(("tbllook".to_string(), map_tbl_look(l)));
     }
 
+    // The table's own `w:tblBorders`, which outranks anything the referenced
+    // style supplies. Kept as a typed field rather than an `attr.kv` entry
+    // because it is a six-edge structure, not a scalar.
+    let borders = t
+        .tbl_pr
+        .as_ref()
+        .and_then(|p| p.borders.as_ref())
+        .map(super::styles::map_tbl_borders);
+
     let table = Table {
+        borders,
         attr,
         caption: TableCaption::default(),
         width,

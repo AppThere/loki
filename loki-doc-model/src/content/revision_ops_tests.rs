@@ -77,6 +77,7 @@ fn has_revisions_detects_and_clears() {
 fn resolves_inside_a_table_cell() {
     let cell = Cell::simple(vec![mixed_para()]);
     let table = Block::Table(Box::new(Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: Default::default(),
         width: None,

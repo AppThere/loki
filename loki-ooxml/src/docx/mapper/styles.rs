@@ -269,16 +269,20 @@ fn map_table_style_props(
     (table_props, conditional)
 }
 
-/// Maps a parsed `w:tblBorders` set to the doc-model [`TableBorders`], dropping
-/// edges that are absent or explicitly `none`/`nil` (they draw nothing).
-fn map_tbl_borders(b: &crate::docx::model::styles::DocxTblBorders) -> TableBorders {
+/// Maps a parsed `w:tblBorders` set to the doc-model [`TableBorders`].
+///
+/// An edge that is **absent** stays `None`; an edge explicitly `none`/`nil` is
+/// kept as `Some(Border { style: None, .. })`. Both draw nothing, so collapsing
+/// them looks harmless — but they resolve differently once this set is layered
+/// over another by `TableBorders::over`: absent falls back to the underlying
+/// edge, explicit-`none` suppresses it. Dropping the edge here (as this did)
+/// makes a direct set that switches its style's gridlines *off* read exactly
+/// like one that never mentioned them. Safe to keep, because both consumers
+/// already treat `BorderStyle::None` as "draws nothing":
+/// `loki_layout::resolve::convert_border` and ODT's `fo:border-*="none"`.
+pub(super) fn map_tbl_borders(b: &crate::docx::model::styles::DocxTblBorders) -> TableBorders {
     use crate::docx::model::paragraph::DocxBorderEdge;
-    use loki_doc_model::style::props::border::BorderStyle;
-    let edge = |e: &Option<DocxBorderEdge>| {
-        e.as_ref()
-            .map(super::props::map_border_edge)
-            .filter(|bd| bd.style != BorderStyle::None)
-    };
+    let edge = |e: &Option<DocxBorderEdge>| e.as_ref().map(super::props::map_border_edge);
     TableBorders {
         top: edge(&b.top),
         left: edge(&b.left),

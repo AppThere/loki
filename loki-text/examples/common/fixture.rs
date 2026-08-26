@@ -517,6 +517,7 @@ pub fn oversized() -> Document {
     };
     let cols = 8;
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: Default::default(),
         width: None,

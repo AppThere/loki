@@ -89,6 +89,7 @@ fn selection_within_one_table_cell_covers_its_blocks() {
 
     let cell = Cell::simple(vec![para("alpha"), para("beta")]);
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,
@@ -143,6 +144,7 @@ fn a_table_between_selected_paragraphs_is_skipped() {
     use loki_doc_model::content::table::row::{Cell, Row};
 
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,

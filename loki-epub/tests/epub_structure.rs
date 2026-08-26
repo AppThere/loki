@@ -178,6 +178,7 @@ fn table_and_embedded_image_survive_the_full_export() {
 
     // A captioned, right-aligned-column table.
     let table = Table {
+        borders: None,
         attr: Default::default(),
         caption: TableCaption {
             short: None,

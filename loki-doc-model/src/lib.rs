@@ -103,6 +103,7 @@
 //!     attr: NodeAttr::default(),
 //!     caption: TableCaption::default(),
 //!     width: None,
+//!     borders: None, // no direct `w:tblBorders`; the style decides
 //!     col_specs: vec![
 //!         ColSpec::proportional(1.0),
 //!         ColSpec::proportional(1.0),

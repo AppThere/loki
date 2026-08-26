@@ -17,6 +17,10 @@ use crate::docx::write::xml::{
     color_to_hex, pts_to_twips, write_empty, write_end, write_start, wval,
 };
 
+#[path = "document_table_borders.rs"]
+mod borders;
+use borders::{write_tbl_borders, write_tc_border_edge};
+
 use super::write_blocks;
 
 pub(super) fn write_table<W: std::io::Write>(
@@ -42,6 +46,7 @@ pub(super) fn write_table<W: std::io::Write>(
         _ => ("0".to_string(), "auto"),
     };
     let _ = write_empty(w, "w:tblW", &[("w:w", &tbl_w), ("w:type", tbl_type)]);
+    write_tbl_borders(w, tbl.borders.as_ref());
     write_tbl_look(w, tbl.table_look_code());
     let _ = write_end(w, "w:tblPr");
 
@@ -220,49 +225,4 @@ fn write_table_cell<W: std::io::Write>(
     }
 
     let _ = write_end(w, "w:tc");
-}
-
-/// Writes one `w:tcBorders` edge from a model [`Border`]: style → `w:val`,
-/// width in points → `w:sz` (eighth-points), colour → hex (or `auto`).
-/// `BorderStyle::None` writes `w:val="nil"` (an explicit no-border, distinct
-/// from an absent edge, which inherits the table style).
-fn write_tc_border_edge<W: std::io::Write>(
-    w: &mut Writer<W>,
-    tag: &str,
-    border: Option<&loki_doc_model::style::props::border::Border>,
-) {
-    use loki_doc_model::style::props::border::BorderStyle;
-    let Some(b) = border else { return };
-    if b.style == BorderStyle::None {
-        let _ = write_empty(w, tag, &wval("nil"));
-        return;
-    }
-    let val = match b.style {
-        BorderStyle::Dashed => "dashed",
-        BorderStyle::Dotted => "dotted",
-        BorderStyle::Double => "double",
-        BorderStyle::Inset => "inset",
-        BorderStyle::Outset => "outset",
-        BorderStyle::Wave => "wave",
-        // Groove/Ridge have no OOXML equivalent (threeDEmboss/threeDEngrave
-        // are visually different); Solid and future variants map to single.
-        _ => "single",
-    };
-    // Eighth-points, clamped to OOXML's valid 2..=96 w:sz range.
-    #[allow(clippy::cast_possible_truncation)] // clamped to 2..=96 above the cast
-    let sz = ((b.width.value() * 8.0).round().clamp(2.0, 96.0) as i32).to_string();
-    let color = b
-        .color
-        .as_ref()
-        .map_or_else(|| "auto".to_string(), color_to_hex);
-    let _ = write_empty(
-        w,
-        tag,
-        &[
-            ("w:val", val),
-            ("w:sz", &sz),
-            ("w:space", "0"),
-            ("w:color", &color),
-        ],
-    );
 }

@@ -988,6 +988,7 @@ fn cell_background_round_trips_via_table_cell_style() {
     };
     let plain = |t: &str| Cell::simple(vec![Block::Para(vec![Inline::Str(t.into())])]);
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: Default::default(),
         width: None,
@@ -1071,6 +1072,7 @@ fn table_style_banding_resolves_into_per_cell_shading_on_odt_export() {
     // A 2×2 table with no direct cell shading, referencing "Banded".
     let cell = |t: &str| Cell::simple(vec![Block::Para(vec![Inline::Str(t.into())])]);
     let mut table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: Default::default(),
         width: None,
@@ -1329,6 +1331,7 @@ fn cell_borders_and_padding_round_trip_via_cell_style() {
     };
     let plain = Cell::simple(vec![Block::Para(vec![Inline::Str("y".into())])]);
     let table = Table {
+        borders: None,
         attr: NodeAttr::default(),
         caption: Default::default(),
         width: None,

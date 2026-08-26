@@ -139,6 +139,19 @@ pub struct Table {
     /// Overall table width. `None` means the renderer decides.
     /// ODF: `style:width` on table style; OOXML: `w:tblW`.
     pub width: Option<TableWidth>,
+    /// The table's **own** six-sided border set (`w:tblPr/w:tblBorders`): the
+    /// four outer edges plus the interior horizontal/vertical gridlines.
+    ///
+    /// Distinct from the identically-shaped set on
+    /// [`TableProps`](crate::style::table_style::TableProps), which belongs to a
+    /// named *style*. A table may carry either, and a direct set wins — Word
+    /// resolves the table's own properties over the style it references.
+    ///
+    /// `None` means the table states none and the style (if any) decides. This
+    /// sits beside [`width`](Self::width), the other direct `w:tblPr` property
+    /// the model already keeps on the table itself.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub borders: Option<crate::style::table_borders::TableBorders>,
     /// Column specifications, one per column in the table grid.
     pub col_specs: Vec<ColSpec>,
     /// The header row group.
@@ -226,6 +239,7 @@ impl Table {
             attr: NodeAttr::default(),
             caption: TableCaption::default(),
             width: None,
+            borders: None,
             col_specs,
             head: TableHead::empty(),
             bodies: vec![TableBody::from_rows(body_rows)],
@@ -251,6 +265,7 @@ mod tests {
         let row2 = Row::new(vec![Cell::simple(vec![]), Cell::simple(vec![])]);
         let body = TableBody::from_rows(vec![row1, row2]);
         let table = Table {
+            borders: None,
             attr: NodeAttr::default(),
             caption: TableCaption::default(),
             width: None,
