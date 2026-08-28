@@ -181,13 +181,13 @@ pub(super) fn compute_tab_plans(
 
         let mut width = (stop.position - offset - final_tab_x).max(0.0);
 
-        // Keep aligned column content (decimal/right/centre — atomic runs like a
-        // currency amount) within `line_w`: a stop near the line end (e.g. a
-        // decimal stop in a narrow cell) would otherwise expand the tab past the
-        // edge, so Parley wraps the run to the next line and loses the
-        // alignment. Cap the expansion so the run's right edge lands at the edge
-        // (right-aligned there). Left tabs are excluded — their content is
-        // flowing text that *should* wrap.
+        // TODO(decimal-tab-overflow): keep aligned content (decimal/right/centre
+        // — atomic runs like a currency amount) within `line_w`: a stop near the
+        // line end would otherwise expand past the edge, so Parley wraps the run
+        // and the alignment is lost. Capping right-aligns it at the edge — a
+        // stopgap, since §17.3.1.37 fixes the stop to the text origin and Word
+        // overflows instead. Left tabs are excluded (flowing text *should* wrap).
+        // Removal condition: **Tab Stops** in `docs/fidelity-status.md`.
         let aligned = matches!(
             stop.alignment,
             TabAlignment::Decimal | TabAlignment::Right | TabAlignment::Center

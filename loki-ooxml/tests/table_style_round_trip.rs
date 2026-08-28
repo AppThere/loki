@@ -399,7 +399,14 @@ fn inherited_cell_margins_shift_glyphs_in_the_acid_fixture() {
         DocxImport::import(Cursor::new(bytes), DocxImportOptions::default()).expect("import");
     let mut r = FontResources::new();
 
-    fn glyph_xs(doc: &loki_doc_model::Document, r: &mut FontResources) -> Vec<f32> {
+    /// Glyph x-origins, plus the cell rect each run sits in. Cell content is
+    /// wrapped in a per-cell `ClippedGroup`, so a flat scan of top-level items
+    /// misses every glyph inside a table — precisely where this change acts.
+    /// Descend, carrying the enclosing clip rect down.
+    fn glyph_xs(
+        doc: &loki_doc_model::Document,
+        r: &mut FontResources,
+    ) -> (Vec<f32>, Vec<Option<(f32, f32)>>) {
         let l = layout_document(
             r,
             doc,
@@ -407,44 +414,117 @@ fn inherited_cell_margins_shift_glyphs_in_the_acid_fixture() {
             1.0,
             &LayoutOptions::default(),
         );
-        // Cell content is wrapped in a per-cell `ClippedGroup`, so a flat scan
-        // of top-level items misses every glyph inside a table — precisely
-        // where this change acts. Descend.
-        fn walk(items: &[PositionedItem], out: &mut Vec<f32>) {
+        fn walk(
+            items: &[PositionedItem],
+            xs: &mut Vec<f32>,
+            cells: &mut Vec<Option<(f32, f32)>>,
+            c: Option<(f32, f32)>,
+        ) {
             for i in items {
                 match i {
-                    PositionedItem::ClippedGroup { items, .. }
-                    | PositionedItem::RotatedGroup { items, .. } => walk(items, out),
-                    PositionedItem::GlyphRun(g) => out.push(g.origin.x),
+                    PositionedItem::ClippedGroup {
+                        items, clip_rect, ..
+                    } => walk(items, xs, cells, Some((clip_rect.x(), clip_rect.width()))),
+                    PositionedItem::RotatedGroup { items, .. } => walk(items, xs, cells, c),
+                    PositionedItem::GlyphRun(g) => {
+                        xs.push(g.origin.x);
+                        cells.push(c);
+                    }
                     _ => {}
                 }
             }
         }
-        let mut out = Vec::new();
+        let (mut xs, mut cells) = (Vec::new(), Vec::new());
         for i in l.all_items().collect::<Vec<_>>() {
-            walk(std::slice::from_ref(i), &mut out);
+            walk(std::slice::from_ref(i), &mut xs, &mut cells, None);
         }
-        out
+        (xs, cells)
     }
 
-    let with_margins = glyph_xs(&doc, &mut r);
+    /// Clears every direct tab stop in the document, so all cell content is
+    /// positioned by paragraph alignment alone.
+    fn strip_tab_stops(blocks: &mut [loki_doc_model::content::block::Block]) {
+        use loki_doc_model::content::block::Block;
+        for b in blocks {
+            match b {
+                Block::StyledPara(p) => {
+                    if let Some(props) = p.direct_para_props.as_mut() {
+                        props.tab_stops = None;
+                    }
+                }
+                Block::BlockQuote(inner) | Block::Div(_, inner) | Block::Figure(_, _, inner) => {
+                    strip_tab_stops(inner)
+                }
+                Block::Table(t) => {
+                    let rows = t
+                        .head
+                        .rows
+                        .iter_mut()
+                        .chain(
+                            t.bodies
+                                .iter_mut()
+                                .flat_map(|b| b.head_rows.iter_mut().chain(b.body_rows.iter_mut())),
+                        )
+                        .chain(t.foot.rows.iter_mut());
+                    for row in rows {
+                        for cell in &mut row.cells {
+                            strip_tab_stops(&mut cell.blocks);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let (with_margins, cells_with) = glyph_xs(&doc, &mut r);
 
     // Strip only the style's contribution to recover the pre-fix geometry —
     // the cells themselves are untouched, so any difference is attributable to
     // the inherited `w:tblCellMar` and nothing else.
-    for st in doc.styles.table_styles.values_mut() {
+    let mut bare = doc.clone();
+    for st in bare.styles.table_styles.values_mut() {
         st.table_props.cell_padding = None;
     }
-    let without = glyph_xs(&doc, &mut r);
+    let (without, cells_without) = glyph_xs(&bare, &mut r);
 
     assert_eq!(
         with_margins.len(),
         without.len(),
         "stripping cell margins must not change how many runs are produced"
     );
-    let shifts: Vec<f32> = with_margins
+
+    // The invariant this test exists to defend, asserted directly rather than
+    // inferred from glyph offsets: `w:tblCellMar` insets a cell's *content*, it
+    // does not move the cell. These tables are `w:tblLayout w:type="fixed"` with
+    // explicit `w:gridCol` widths, so every cell rect must be bit-identical.
+    assert_eq!(
+        cells_with, cells_without,
+        "cell geometry must not move when cell margins change"
+    );
+
+    // Content offset. Tab-positioned runs are excluded — not by magnitude,
+    // which would let a real regression hide, but by removing the tab stops
+    // from the model so every run is positioned by alignment alone. A decimal
+    // stop's expansion is capped against the available width
+    // (TODO(decimal-tab-overflow) in `loki_layout::para_tabs`), so narrowing a
+    // cell moves a tabbed figure by the width of its fractional part rather
+    // than by the margin. That cap is a documented stopgap, and this test is
+    // deliberately not the thing that pins it.
+    let mut doc_no_tabs = doc.clone();
+    let mut bare_no_tabs = bare.clone();
+    for s in &mut doc_no_tabs.sections {
+        strip_tab_stops(&mut s.blocks);
+    }
+    for s in &mut bare_no_tabs.sections {
+        strip_tab_stops(&mut s.blocks);
+    }
+    let (with_aligned, _) = glyph_xs(&doc_no_tabs, &mut r);
+    let (without_aligned, _) = glyph_xs(&bare_no_tabs, &mut r);
+
+    let shifts: Vec<f32> = with_aligned
         .iter()
-        .zip(&without)
+        .zip(&without_aligned)
         .map(|(a, b)| a - b)
         .filter(|d| d.abs() > 0.01)
         .collect();
@@ -457,13 +537,12 @@ fn inherited_cell_margins_shift_glyphs_in_the_acid_fixture() {
     );
     // Every shift is exactly the specified margin: +5.4 where left-aligned
     // content is pushed in by `fo:padding-left`'s OOXML equivalent, -5.4 where
-    // right-aligned content is pulled in by the right margin. Any other
-    // magnitude would mean column geometry moved too, which `w:tblCellMar`
-    // must not do.
+    // right-aligned content is pulled in by the right margin.
     for d in &shifts {
         assert!(
             (d.abs() - 5.4).abs() < 0.01,
-            "every shift must be exactly the inherited 5.4pt margin, got {d}"
+            "every alignment-positioned shift must be exactly the inherited \
+             5.4pt margin, got {d}"
         );
     }
     // Both signs must appear: asserting only the magnitude would pass if the
